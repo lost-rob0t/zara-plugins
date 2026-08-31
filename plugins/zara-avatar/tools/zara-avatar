@@ -474,16 +474,16 @@ def cmd_verify(args, out) -> int:
 
     try:
         ready, problem = _wait_for(
-            lambda document: document.get("event") == "ready",
+            lambda document: document.get("event") == "windowReady",
             args.startup_timeout,
         )
         if ready is None:
             out(
-                "verify: FAIL - renderer never signaled ready "
+                "verify: FAIL - the renderer page never signaled ready "
                 f"({problem}); a broken GPU/sandbox or a page error blocks startup"
             )
             return EXIT_UNREACHABLE
-        out("verify: renderer ready; page signaled readiness")
+        out("verify: renderer up and page ready")
 
         handle = tempfile.NamedTemporaryFile(suffix=".vrm", delete=False)
         try:

@@ -23,6 +23,8 @@ import math
 import os
 import queue
 import re
+import shutil
+import stat
 import struct
 import subprocess
 import threading
@@ -2359,10 +2361,41 @@ def _renderer_roots() -> list:
     ]
 
 
+def _system_electron_candidates() -> list:
+    candidates = [
+        str(path) for path in sorted(Path("/usr/lib").glob("electron*/electron"))
+    ]
+    found = shutil.which("electron")
+    if found:
+        candidates.append(found)
+    return candidates
+
+
+def _electron_with_working_sandbox(candidates: Optional[list]):
+    """The first electron whose chrome-sandbox helper is SUID root.
+
+    Chromium's GPU and render processes refuse to run (and the avatar page
+    never loads) when the sandbox helper is missing; hardened systems also
+    refuse shared memory to unsandboxed chromium entirely.
+    """
+    for candidate in candidates or ():
+        electron = Path(candidate)
+        if not electron.is_file():
+            continue
+        try:
+            mode = (electron.parent / "chrome-sandbox").stat().st_mode
+        except OSError:
+            continue
+        if mode & stat.S_ISUID:
+            return electron
+    return None
+
+
 def _resolve_renderer_command(
     configuration: Mapping[str, Any],
     *,
     renderer_roots: Optional[list] = None,
+    electron_candidates: Optional[list] = None,
 ) -> Optional[list]:
     explicit = configuration.get("renderer_command")
     if explicit is not None:
@@ -2379,6 +2412,18 @@ def _resolve_renderer_command(
         if parts:
             return parts
     roots = _renderer_roots() if renderer_roots is None else renderer_roots
+
+    candidates = (
+        electron_candidates
+        if electron_candidates is not None
+        else _system_electron_candidates()
+    )
+    system = _electron_with_working_sandbox(candidates)
+    if system is not None:
+        for root in roots:
+            if (Path(root) / "main.mjs").is_file():
+                return [str(system), str(Path(root) / "main.mjs")]
+
     for root in roots:
         electron = Path(root) / "node_modules" / ".bin" / "electron"
         if electron.is_file():

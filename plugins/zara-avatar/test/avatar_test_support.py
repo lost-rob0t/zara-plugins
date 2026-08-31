@@ -1,8 +1,7 @@
 """Shared support for Zara avatar plugin tests.
 
 Loads ``zara-plugin/zara_avatar.py`` against a fake ``zara.plugins`` API so
-tests never require Zarathushtra to be installed. Mirrors the approach used by
-``test_mara_bridge.py``.
+tests never require Zarathushtra to be installed.
 """
 
 from __future__ import annotations

@@ -31,6 +31,7 @@ def main() -> None:
     if delay:
         time.sleep(delay)
     emit({"event": "ready", "params": {"stub": True}})
+    emit({"event": "windowReady", "params": {}})
     for line in sys.stdin:
         line = line.strip()
         if not line:

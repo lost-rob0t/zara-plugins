@@ -566,6 +566,59 @@ class RendererCommandResolutionTest(unittest.TestCase):
             if previous is not None:
                 os.environ["ZARA_AVATAR_RENDERER"] = previous
 
+    def _make_roots(self, tmp) -> Path:
+        root = Path(tmp) / "renderer"
+        (root / "node_modules" / ".bin").mkdir(parents=True)
+        (root / "node_modules" / ".bin" / "electron").write_text("")
+        (root / "main.mjs").write_text("")
+        return root
+
+    def test_system_electron_with_suid_sandbox_is_preferred(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._make_roots(tmp)
+            system = Path(tmp) / "electron41" / "electron"
+            system.parent.mkdir(parents=True)
+            system.write_text("")
+            (system.parent / "chrome-sandbox").write_text("")
+            os.chmod(system.parent / "chrome-sandbox", 0o4755)
+            resolved = AVATAR._resolve_renderer_command(
+                {},
+                renderer_roots=[root],
+                electron_candidates=[system],
+            )
+            self.assertEqual(resolved, [str(system), str(root / "main.mjs")])
+
+    def test_bundled_electron_used_when_system_lacks_suid_helper(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._make_roots(tmp)
+            system = Path(tmp) / "electron41" / "electron"
+            system.parent.mkdir(parents=True)
+            system.write_text("")
+            (system.parent / "chrome-sandbox").write_text("")
+            os.chmod(system.parent / "chrome-sandbox", 0o755)
+            resolved = AVATAR._resolve_renderer_command(
+                {},
+                renderer_roots=[root],
+                electron_candidates=[system],
+            )
+            self.assertEqual(
+                resolved,
+                [str(root / "node_modules" / ".bin" / "electron"), str(root / "main.mjs")],
+            )
+
+    def test_bundled_electron_used_without_system_electron(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._make_roots(tmp)
+            resolved = AVATAR._resolve_renderer_command(
+                {},
+                renderer_roots=[root],
+                electron_candidates=[],
+            )
+            self.assertEqual(
+                resolved,
+                [str(root / "node_modules" / ".bin" / "electron"), str(root / "main.mjs")],
+            )
+
     def test_electron_root_is_discovered(self) -> None:
         import tempfile
 
@@ -578,7 +631,7 @@ class RendererCommandResolutionTest(unittest.TestCase):
             previous = os.environ.pop("ZARA_AVATAR_RENDERER", None)
             try:
                 resolved = AVATAR._resolve_renderer_command(
-                    {}, renderer_roots=[root]
+                    {}, renderer_roots=[root], electron_candidates=[]
                 )
             finally:
                 if previous is not None:
