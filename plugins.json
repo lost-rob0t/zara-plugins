@@ -25,6 +25,28 @@
         "package": "zara-avatar",
         "aggregate": "zara-plugins"
       }
+    },
+    {
+      "name": "zara-discord",
+      "version": "0.1.0",
+      "api_version": "1",
+      "plugin_type": "service",
+      "description": "Talk to Zara through Discord with slash-configured user and channel access",
+      "path": "plugins/zara-discord",
+      "entrypoint": "zara-plugin/zara_discord.py",
+      "docs": "plugins/zara-discord/README.md",
+      "license": "GPL-3.0-or-later",
+      "tags": ["discord", "chat", "messaging", "access-control"],
+      "python_dependencies": ["discordpy", "audioop-lts"],
+      "install": {
+        "tool": "python3 plugins/zara-discord/tools/zara-discord install",
+        "nix": "nix run github:lost-rob0t/zara-plugins#zara-discord -- install"
+      },
+      "nix": {
+        "flake": "github:lost-rob0t/zara-plugins",
+        "package": "zara-discord",
+        "aggregate": "zara-plugins"
+      }
     }
   ]
 }

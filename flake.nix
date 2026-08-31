@@ -16,8 +16,31 @@
           pkgs = import nixpkgs { inherit system; };
 
           # Match Zara's pinned runtime; plugin code is stdlib-only but the
-          # test suites run against the same interpreter Zara uses.
+          # test suites run against the same interpreter Zara uses. Declared
+          # plugin dependencies are included in that plugin's installer and
+          # test interpreter.
           python = pkgs.python313;
+
+          pythonFor = entry:
+            let
+              dependencies = entry.python_dependencies or [ ];
+            in
+            if dependencies == [ ] then
+              python
+            else
+              python.withPackages (packages:
+                map (dependency: packages.${dependency}) dependencies
+              );
+
+          developmentPython = python.withPackages (packages:
+            map
+              (dependency: packages.${dependency})
+              (pkgs.lib.unique (
+                pkgs.lib.concatMap
+                  (entry: entry.python_dependencies or [ ])
+                  plugins
+              ))
+          );
 
           # Install the plugin tree verbatim under share/zara/plugins/<name>
           # so layout-relative tooling (installer, renderer resolution) keeps
@@ -38,7 +61,7 @@
               '' + pkgs.lib.optionalString
                 (builtins.pathExists (./. + "/plugins/${entry.name}/tools/${entry.name}")) ''
                 mkdir -p $out/bin
-                makeWrapper ${python}/bin/python3 $out/bin/${entry.name} \
+                makeWrapper ${pythonFor entry}/bin/python3 $out/bin/${entry.name} \
                   --add-flags "$out/share/zara/plugins/${entry.name}/tools/${entry.name}"
               '';
 
@@ -89,7 +112,7 @@
               (entry: pkgs.lib.nameValuePair "${entry.name}-tests" (
                 pkgs.runCommand "zara-check-${entry.name}-tests"
                   {
-                    nativeBuildInputs = [ python ];
+                    nativeBuildInputs = [ (pythonFor entry) ];
                     src = self;
                   }
                   ''
@@ -97,7 +120,7 @@
                     cp -r $src ./tree
                     chmod -R u+w ./tree
                     cd ./tree/plugins/${entry.name}
-                    ${python}/bin/python3 -m unittest discover -s test -t test
+                    ${(pythonFor entry)}/bin/python3 -m unittest discover -s test -t test
                     touch $out
                   ''
               ))
@@ -142,8 +165,8 @@
             name = "zara-plugins-dev-shell";
 
             packages = [
-              python
-              python.pkgs.pytest
+              developmentPython
+              developmentPython.pkgs.pytest
               pkgs.nodejs
             ];
 
@@ -152,7 +175,7 @@
               echo ""
               echo "Commands:"
               echo "  python3 scripts/validate-registry.py                          # validate registry"
-              echo "  python3 -m unittest discover -s plugins/zara-avatar/test -t plugins/zara-avatar/test"
+              echo "  python3 -m unittest discover -s plugins/<name>/test -t plugins/<name>/test"
               echo "  nix flake check                                               # registry + plugin suites"
             '';
           };

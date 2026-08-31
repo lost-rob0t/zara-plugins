@@ -13,6 +13,7 @@ bundled tool, with Nix, or (once landed in Zara) with a native
 | Plugin | Version | Type | Description |
 | --- | --- | --- | --- |
 | [zara-avatar](plugins/zara-avatar/) | 0.1.0 | service | Zara-owned 3D avatar presentation (VRM renderer, expression, lip sync) |
+| [zara-discord](plugins/zara-discord/) | 0.1.0 | service | Talk to Zara through Discord with slash-configured user and channel access |
 
 ## Registry
 
@@ -55,7 +56,12 @@ python3 plugins/zara-avatar/tools/zara-avatar install
 nix run github:lost-rob0t/zara-plugins#zara-avatar -- install
 ```
 
-Per-plugin details live in each plugin's `README.md`.
+Per-plugin details live in each plugin's `README.md`. For example, install the
+Discord service plugin with:
+
+```sh
+nix run github:lost-rob0t/zara-plugins#zara-discord -- install
+```
 
 ### Flake
 
@@ -65,6 +71,7 @@ automatically as a package, with install apps and checks:
 ```sh
 nix flake show github:lost-rob0t/zara-plugins
 nix build github:lost-rob0t/zara-plugins#zara-avatar   # plugin package
+nix build github:lost-rob0t/zara-plugins#zara-discord  # Discord plugin package
 nix build github:lost-rob0t/zara-plugins#zara-plugins  # aggregate of all plugins
 nix run github:lost-rob0t/zara-plugins#zara-avatar -- install
 nix flake check github:lost-rob0t/zara-plugins         # registry + plugin test suites

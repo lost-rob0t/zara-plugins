@@ -579,13 +579,25 @@ class RendererCommandResolutionTest(unittest.TestCase):
             system = Path(tmp) / "electron41" / "electron"
             system.parent.mkdir(parents=True)
             system.write_text("")
-            (system.parent / "chrome-sandbox").write_text("")
-            os.chmod(system.parent / "chrome-sandbox", 0o4755)
-            resolved = AVATAR._resolve_renderer_command(
-                {},
-                renderer_roots=[root],
-                electron_candidates=[system],
-            )
+            sandbox = system.parent / "chrome-sandbox"
+            sandbox.write_text("")
+            real_stat = Path.stat
+
+            def stat_with_suid(path, *args, **kwargs):
+                result = real_stat(path, *args, **kwargs)
+                if path == sandbox:
+                    values = list(result)
+                    values[0] |= 0o4000
+                    return os.stat_result(values)
+                return result
+
+            with unittest.mock.patch.object(Path, "stat", autospec=True) as stat_call:
+                stat_call.side_effect = stat_with_suid
+                resolved = AVATAR._resolve_renderer_command(
+                    {},
+                    renderer_roots=[root],
+                    electron_candidates=[system],
+                )
             self.assertEqual(resolved, [str(system), str(root / "main.mjs")])
 
     def test_bundled_electron_used_when_system_lacks_suid_helper(self) -> None:
