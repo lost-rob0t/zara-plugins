@@ -62,7 +62,7 @@ class ZaraOrgTodosPluginTest(unittest.TestCase):
         self.assertEqual(status["last_returncode"], 0)
         self.assertEqual(status["last_summary"], "synced")
 
-    def test_org_mutation_syncs_changed_file(self):
+    def test_org_mutation_syncs_before_and_after_changed_file(self):
         with tempfile.TemporaryDirectory() as directory:
             runtime = FakeRuntime({"auto_sync": False, "org_dir": directory})
             with patch("zara_org_todos_service.plugin.SyncRunner", FakeRunner):
@@ -70,5 +70,5 @@ class ZaraOrgTodosPluginTest(unittest.TestCase):
                 plugin.start(runtime)
                 result = plugin.add_todo("Ship Org plugin")
             self.assertIn("[TODO] Ship Org plugin", result)
-            self.assertEqual(plugin._runner.calls, 1)
+            self.assertEqual(plugin._runner.calls, 2)
             self.assertEqual(plugin._runner.saved_file, Path(directory) / "inbox.org")
