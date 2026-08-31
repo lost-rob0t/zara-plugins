@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""Install the Zara Discord service plugin and its Python dependencies."""
+
+import sys
+from pathlib import Path
+
+
+plugin_root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(plugin_root / "lib"))
+
+from zara_discord_service.install import main
+
+
+if __name__ == "__main__":
+    main()
