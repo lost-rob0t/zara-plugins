@@ -1,0 +1,313 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SOURCE_REPO="lost-rob0t/dotfiles"
+SOURCE_COMMIT="7b88a3c2ddef7f3fffc09fd049476e06cf13d93a"
+REPO_DIR="${GPT_TODOS_REPO_DIR:-$HOME/Documents/gpt-todos}"
+ORG_DIR="${GPT_TODOS_ORG_DIR:-$HOME/Documents/Notes/org/agenda}"
+REMOTE="${GPT_TODOS_REMOTE:-git@github.com:lost-rob0t/gpt-todos.git}"
+LOCK_DIR="${XDG_RUNTIME_DIR:-/tmp}"
+[[ -d "$LOCK_DIR" ]] || LOCK_DIR=/tmp
+LOCK="$LOCK_DIR/zara-org-todos-sync-${UID}.lock"
+RECOVERY_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/zara-org-todos-sync/recovery"
+
+SAVE_FILE=""
+SAVE_REL=""
+SAVE_BACKUP=""
+SAVE_ALIASED=0
+SAVE_REWOUND=0
+
+export GIT_TERMINAL_PROMPT=0
+if [[ -z "${GIT_SSH_COMMAND:-}" ]]; then
+  export GIT_SSH_COMMAND="ssh -o BatchMode=yes"
+fi
+
+if [[ "${1:-}" == "--file" ]]; then
+  [[ $# -eq 2 ]] || { echo "usage: $0 [--file AGENDA_FILE]" >&2; exit 2; }
+  SAVE_FILE="$2"
+elif [[ $# -ne 0 ]]; then
+  echo "usage: $0 [--file AGENDA_FILE]" >&2
+  exit 2
+fi
+
+on_exit() {
+  local rc=$?
+  trap - EXIT
+  set +e
+  if [[ -n "$SAVE_BACKUP" && -f "$SAVE_BACKUP" ]]; then
+    if (( rc == 0 )); then
+      rm -f -- "$SAVE_BACKUP"
+    else
+      if (( SAVE_ALIASED && SAVE_REWOUND )); then
+        mkdir -p -- "$(dirname "$REPO_DIR/$SAVE_REL")"
+        cp -p -- "$SAVE_BACKUP" "$REPO_DIR/$SAVE_REL"
+      fi
+      mkdir -p -- "$RECOVERY_DIR"
+      stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+      safe_rel="${SAVE_REL//\//__}"
+      recovery="$RECOVERY_DIR/${stamp}-${safe_rel:-agenda-save.org}"
+      mv -- "$SAVE_BACKUP" "$recovery"
+      printf 'zara-org-todos: save preserved at %s\n' "$recovery" >&2
+    fi
+  fi
+  exit "$rc"
+}
+trap on_exit EXIT
+
+mkdir -p "$(dirname "$REPO_DIR")" "$ORG_DIR"
+
+if [[ -n "$SAVE_FILE" ]]; then
+  org_root="$(realpath -m -s -- "$ORG_DIR")"
+  save_logical="$(realpath -m -s -- "$SAVE_FILE")"
+  case "$save_logical" in
+    "$org_root"/*.org) ;;
+    *)
+      printf 'zara-org-todos: --file must be an .org file below %s: %s\n' "$ORG_DIR" "$SAVE_FILE" >&2
+      exit 2
+      ;;
+  esac
+  [[ -f "$save_logical" ]] || {
+    printf 'zara-org-todos: saved agenda file does not exist: %s\n' "$save_logical" >&2
+    exit 2
+  }
+  SAVE_FILE="$save_logical"
+  SAVE_REL="agenda/${SAVE_FILE#"$org_root/"}"
+  tmp_root="${TMPDIR:-/tmp}"
+  [[ -d "$tmp_root" ]] || tmp_root=/tmp
+  SAVE_BACKUP="$(mktemp "$tmp_root/zara-org-todos-${UID}-XXXXXX.org")"
+  cp -p -- "$SAVE_FILE" "$SAVE_BACKUP"
+fi
+
+exec 9>"$LOCK"
+flock 9
+
+if [[ ! -d "$REPO_DIR/.git" ]]; then
+  git clone "$REMOTE" "$REPO_DIR"
+fi
+mkdir -p "$REPO_DIR/agenda"
+
+prepare_aliased_save() {
+  [[ -n "$SAVE_REL" ]] || return 0
+  local target="$REPO_DIR/$SAVE_REL"
+  [[ -e "$target" ]] || return 0
+  [[ "$SAVE_FILE" -ef "$target" ]] || return 0
+  SAVE_ALIASED=1
+  if ! git -C "$REPO_DIR" diff --cached --quiet -- "$SAVE_REL"; then
+    printf 'zara-org-todos: saved alias is already staged; refusing to discard index state: %s\n' "$SAVE_REL" >&2
+    return 6
+  fi
+  if git -C "$REPO_DIR" ls-files --error-unmatch -- "$SAVE_REL" >/dev/null 2>&1; then
+    git -C "$REPO_DIR" restore --worktree --source=HEAD -- "$SAVE_REL"
+  else
+    rm -f -- "$target"
+  fi
+  SAVE_REWOUND=1
+}
+
+blob_at() {
+  local ref="$1"
+  local rel="$2"
+  git -C "$REPO_DIR" rev-parse --verify "$ref:$rel" 2>/dev/null || printf '%s\n' '-'
+}
+
+file_blob() {
+  local file="$1"
+  [[ -f "$file" ]] || { printf '%s\n' '-'; return; }
+  git -C "$REPO_DIR" hash-object "$file"
+}
+
+copy_if_distinct() {
+  local src="$1"
+  local dst="$2"
+  if [[ -e "$dst" && "$src" -ef "$dst" ]]; then
+    return 0
+  fi
+  cp -p -- "$src" "$dst"
+}
+
+list_org_paths() {
+  local ref="$1"
+  local rel
+  while IFS= read -r rel; do
+    [[ "$rel" == agenda/*.org ]] && printf '%s\n' "$rel"
+  done < <(git -C "$REPO_DIR" ls-tree -r --name-only "$ref" -- agenda)
+}
+
+list_local_org_paths() {
+  local path rel
+  while IFS= read -r -d '' path; do
+    rel="${path#"$ORG_DIR/"}"
+    printf 'agenda/%s\n' "$rel"
+  done < <(find "$ORG_DIR" \( -type f -o -type l \) -name '*.org' -print0)
+}
+
+publish_local_commits() {
+  local ahead
+  ahead="$(git -C "$REPO_DIR" rev-list --count "$REMOTE_HEAD..HEAD")"
+  (( ahead > 0 )) || return 0
+  if (( $(git -C "$REPO_DIR" rev-list --count "HEAD..$REMOTE_HEAD") == 0 )) && git -C "$REPO_DIR" push; then
+    printf 'zara-org-todos: published %d unpushed local commit(s)\n' "$ahead"
+    return 0
+  fi
+  if ! git -C "$REPO_DIR" -c commit.gpgsign=false rebase "$REMOTE_HEAD"; then
+    git -C "$REPO_DIR" rebase --abort 2>/dev/null || true
+    printf 'zara-org-todos: unpushed local commits conflict with upstream; manual resolution required\n' >&2
+    exit 5
+  fi
+  git -C "$REPO_DIR" push
+  printf 'zara-org-todos: published %d unpushed local commit(s)\n' "$ahead"
+}
+
+classify_staged_file() {
+  git -C "$REPO_DIR" diff --cached -U0 -- "$1" | awk '
+    function cb_body(s) { sub(/^[ \t]*([-+*]|[0-9]+[.)])[ \t]+\[[Xx ]\][ \t]*/, "", s); return s }
+    function hl_body(s) { sub(/^[ \t]*\*+[ \t]+(TODO|DONE)[ \t:]*/, "", s); return s }
+    /^@@/ { inhunk = 1; next }
+    !inhunk { next }
+    {
+      side = substr($0, 1, 1); line = substr($0, 2)
+      if (line ~ /^[ \t]*([-+*]|[0-9]+[.)])[ \t]+\[[Xx]\]/) {
+        if (side == "-") xcount[cb_body(line)]++; else xbody[xn++] = cb_body(line)
+      } else if (line ~ /^[ \t]*([-+*]|[0-9]+[.)])[ \t]+\[ \]/) {
+        if (side == "-") ocount[cb_body(line)]++; else obody[on++] = cb_body(line)
+      } else if (line ~ /^[ \t]*\*+[ \t]+TODO([ \t:]|$)/) {
+        if (side == "-") tcount[hl_body(line)]++; else tbody[tn++] = hl_body(line)
+      } else if (line ~ /^[ \t]*\*+[ \t]+DONE([ \t:]|$)/) {
+        if (side == "-") dcount[hl_body(line)]++; else dbody[dn++] = hl_body(line)
+      } else if (line ~ /\[[0-9]+%\]|\[[0-9]+\/[0-9]+\][ \t]*$/) {
+      } else { other++ }
+    }
+    END {
+      done = 0
+      for (i = 0; i < xn; i++) if (ocount[xbody[i]] > 0) { ocount[xbody[i]]--; done++ }
+      reopened = 0
+      for (i = 0; i < on; i++) if (xcount[obody[i]] > 0) { xcount[obody[i]]--; reopened++ }
+      for (i = 0; i < dn; i++) if (tcount[dbody[i]] > 0) { tcount[dbody[i]]--; done++ }
+      for (i = 0; i < tn; i++) if (dcount[tbody[i]] > 0) { dcount[tbody[i]]--; reopened++ }
+      printf "%d %d %d\n", done, reopened, other
+    }
+  '
+}
+
+compose_commit_message() {
+  local st rel done_n reopened_n other_n parts_count plural
+  local files=0 added=0 changed=0 total_done=0 total_reopened=0 needs_body=0
+  local -a parts=() bullets=()
+  local only_rel="" subject=""
+  while IFS=$'\t' read -r st rel; do
+    [[ -n "$rel" ]] || continue
+    files=$((files + 1)); [[ "$files" -eq 1 ]] && only_rel="$rel"; parts=()
+    if [[ "$st" == A* ]]; then
+      added=$((added + 1)); parts+=("added")
+    else
+      changed=$((changed + 1))
+      read -r done_n reopened_n other_n <<<"$(classify_staged_file "$rel")"
+      : "${done_n:=0}" "${reopened_n:=0}" "${other_n:=0}"
+      total_done=$((total_done + done_n)); total_reopened=$((total_reopened + reopened_n))
+      (( done_n > 0 )) && parts+=("${done_n} done")
+      (( reopened_n > 0 )) && parts+=("${reopened_n} reopened")
+      (( ${#parts[@]} == 0 || other_n > 0 )) && parts+=("updated")
+    fi
+    parts_count=${#parts[@]}; (( files > 1 || parts_count > 1 )) && needs_body=1
+    bullets+=("- ${rel#agenda/}: $(IFS=' '; echo "${parts[*]}")")
+  done < <(git -C "$REPO_DIR" diff --cached --name-status)
+  if (( total_done > 0 && total_reopened > 0 )); then subject="mark ${total_done} done, reopen ${total_reopened}"
+  elif (( total_done > 0 )); then subject="mark ${total_done} done"
+  elif (( total_reopened > 0 )); then subject="reopen ${total_reopened}"; fi
+  if [[ -n "$subject" ]]; then
+    if (( files == 1 )); then subject="agenda: ${subject} in ${only_rel#agenda/}"; else subject="agenda: ${subject} across ${files} files"; fi
+  elif (( added > 0 && changed > 0 )); then subject="agenda: add ${added}, update ${changed} agenda files"
+  elif (( added > 0 )); then plural="files"; (( added == 1 )) && plural="file"; subject="agenda: add ${added} agenda ${plural}"
+  elif (( changed > 0 )); then plural="files"; (( changed == 1 )) && plural="file"; subject="agenda: update ${changed} agenda ${plural}"
+  else subject="Sync Org task state"; fi
+  if (( needs_body )); then printf '%s\n\n%s\n' "$subject" "$(printf '%s\n' "${bullets[@]}")"; else printf '%s\n' "$subject"; fi
+}
+
+prepare_aliased_save
+
+if [[ -n "$(git -C "$REPO_DIR" status --porcelain --untracked-files=all -- agenda)" ]]; then
+  printf 'zara-org-todos: durable agenda checkout is dirty; refusing to guess ownership\n' >&2
+  git -C "$REPO_DIR" status --short -- agenda >&2
+  exit 6
+fi
+
+git -C "$REPO_DIR" fetch --prune
+UPSTREAM="$(git -C "$REPO_DIR" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)" || {
+  printf 'zara-org-todos: current branch has no upstream\n' >&2
+  exit 7
+}
+BASE="$(git -C "$REPO_DIR" rev-parse HEAD)"
+REMOTE_HEAD="$(git -C "$REPO_DIR" rev-parse "$UPSTREAM")"
+publish_local_commits
+
+mapfile -t org_paths < <(
+  {
+    list_org_paths "$BASE"
+    list_org_paths "$REMOTE_HEAD"
+    list_local_org_paths
+    [[ -z "$SAVE_REL" ]] || printf '%s\n' "$SAVE_REL"
+  } | sort -u
+)
+
+if ((${#org_paths[@]} == 0)); then
+  printf 'zara-org-todos: no agenda .org files; nothing to sync\n'
+  exit 0
+fi
+
+local_changes=()
+conflicts=0
+for rel in "${org_paths[@]}"; do
+  local_rel="${rel#agenda/}"
+  org_file="$ORG_DIR/$local_rel"
+  local_source="$org_file"
+  if [[ -n "$SAVE_REL" && "$rel" == "$SAVE_REL" ]]; then local_source="$SAVE_BACKUP"; fi
+  base_hash="$(blob_at "$BASE" "$rel")"
+  remote_hash="$(blob_at "$REMOTE_HEAD" "$rel")"
+  local_hash="$(file_blob "$local_source")"
+  if [[ "$base_hash" != "-" && "$remote_hash" == "-" ]]; then
+    printf 'zara-org-todos: remote deletion requires manual resolution: %s\n' "$rel" >&2
+    conflicts=$((conflicts + 1)); continue
+  fi
+  if [[ "$base_hash" == "-" ]]; then
+    if [[ "$remote_hash" == "-" ]]; then [[ "$local_hash" == "-" ]] || local_changes+=("$rel"); continue; fi
+    if [[ "$local_hash" == "-" || "$local_hash" == "$remote_hash" ]]; then continue; fi
+    printf 'zara-org-todos: new remote file conflicts with local file: %s\n' "$rel" >&2
+    conflicts=$((conflicts + 1)); continue
+  fi
+  if [[ "$local_hash" == "-" || "$local_hash" == "$remote_hash" ]]; then continue; fi
+  local_changed=0; remote_changed=0
+  [[ "$local_hash" != "$base_hash" ]] && local_changed=1
+  [[ "$remote_hash" != "$base_hash" ]] && remote_changed=1
+  if (( local_changed && remote_changed )); then
+    printf 'zara-org-todos: concurrent local/remote edit conflict: %s\n' "$rel" >&2
+    conflicts=$((conflicts + 1))
+  elif (( local_changed )); then local_changes+=("$rel"); fi
+done
+
+(( conflicts == 0 )) || exit 5
+
+git -C "$REPO_DIR" merge --ff-only "$REMOTE_HEAD"
+for rel in "${local_changes[@]}"; do
+  local_rel="${rel#agenda/}"
+  local_source="$ORG_DIR/$local_rel"
+  if [[ -n "$SAVE_REL" && "$rel" == "$SAVE_REL" ]]; then local_source="$SAVE_BACKUP"; fi
+  mkdir -p "$(dirname "$REPO_DIR/$rel")"
+  copy_if_distinct "$local_source" "$REPO_DIR/$rel"
+done
+
+if ((${#local_changes[@]})); then git -C "$REPO_DIR" add -- "${local_changes[@]}"; fi
+if ! git -C "$REPO_DIR" diff --cached --quiet; then
+  commit_message="$(compose_commit_message)"
+  git -C "$REPO_DIR" -c commit.gpgsign=false commit --no-gpg-sign -m "$commit_message"
+  git -C "$REPO_DIR" push
+fi
+
+git -C "$REPO_DIR" fetch --prune
+git -C "$REPO_DIR" merge --ff-only "$UPSTREAM"
+mapfile -t org_paths < <(list_org_paths HEAD | sort -u)
+for rel in "${org_paths[@]}"; do
+  local_rel="${rel#agenda/}"
+  mkdir -p "$(dirname "$ORG_DIR/$local_rel")"
+  copy_if_distinct "$REPO_DIR/$rel" "$ORG_DIR/$local_rel"
+done
+SAVE_REWOUND=0
