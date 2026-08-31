@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Zara</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #1a1a22;
+      }
+      canvas {
+        display: block;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./node_modules/three/build/three.module.js",
+          "three/addons/": "./node_modules/three/examples/jsm/",
+          "@pixiv/three-vrm": "./node_modules/@pixiv/three-vrm/lib/three-vrm.module.js",
+          "@pixiv/three-vrm-animation": "./node_modules/@pixiv/three-vrm-animation/lib/three-vrm-animation.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <script type="module" src="./app.mjs"></script>
+  </body>
+</html>

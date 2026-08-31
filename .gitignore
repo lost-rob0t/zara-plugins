@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Renderer
+node_modules/
+result
+result-*
+.direnv/

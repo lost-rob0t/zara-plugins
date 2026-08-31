@@ -1,0 +1,626 @@
+#!/usr/bin/env python3
+"""zara-avatar CLI: install and control Zara's 3D avatar plugin.
+
+Standalone and stdlib-only; Emacs is not required:
+
+    zara-avatar install          # plugin + renderer into Zara's plugin dir
+    zara-avatar doctor           # installation, renderer, server report
+    zara-avatar verify           # end-to-end renderer smoke test
+    zara-avatar status           # avatar status document
+    zara-avatar show | hide | unload
+    zara-avatar import NAME FILE.vrm
+    zara-avatar select ID | load ID | delete ID
+    zara-avatar emotion happy | gesture wave | expression surprised
+    zara-avatar animation play wave [--loop --speed 1.5 --duration 2]
+    zara-avatar gaze user | --point X Y Z
+    zara-avatar transform [--position X Y Z] [--scale S]
+    zara-avatar speech-begin | speech-audio FILE | speech-end | speech-cancel
+
+The plugin itself runs inside Zara; this tool talks HTTP to it
+(override the endpoint with --base-url or ZARA_AVATAR_URL).
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import os
+import shlex
+import shutil
+import struct
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import urllib.error
+import urllib.request
+from queue import Empty, Queue
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+PLUGIN_SOURCE = REPO_ROOT / "zara-plugin" / "zara_avatar.py"
+RENDERER_SOURCE = REPO_ROOT / "renderer"
+
+OWNERSHIP_MARKER = "ZARA_AVATAR = True"
+PLUGIN_FILE_NAME = "zara_avatar.py"
+DEFAULT_BASE_URL = "http://127.0.0.1:7321"
+DEFAULT_PLUGINS_DIR = "~/.zarathushtra/plugins"
+DEFAULT_DATA_DIR = "~/.local/share/zara"
+
+RENDERER_CODE_FILES = (
+    "main.mjs",
+    "app.mjs",
+    "preload.cjs",
+    "index.html",
+    "package.json",
+    "package-lock.json",
+    "README.md",
+    "animations/manifest.json",
+)
+
+EXIT_OK = 0
+EXIT_HTTP_ERROR = 2
+EXIT_UNREACHABLE = 3
+EXIT_REFUSED = 4
+EXIT_MISSING = 5
+
+
+class AvatarHttpError(Exception):
+    def __init__(self, status: int, message: str) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+class AvatarConnectionError(Exception):
+    pass
+
+
+class Client:
+    """HTTP client for the plugin's localhost API."""
+
+    def __init__(self, base_url: str, timeout: float = 30.0) -> None:
+        self.base = base_url.rstrip("/")
+
+    def request(self, method: str, path: str, payload=None):
+        data = None
+        headers = {}
+        if payload is not None:
+            data = json.dumps(payload).encode("utf-8")
+            headers = {"Content-Type": "application/json"}
+        request = urllib.request.Request(
+            self.base + path, data=data, headers=headers, method=method
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                body = response.read()
+        except urllib.error.HTTPError as error:
+            raw = error.read()
+            try:
+                message = json.loads(raw).get("error", str(error))
+            except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
+                message = str(error)
+            raise AvatarHttpError(error.code, str(message)) from error
+        except (urllib.error.URLError, OSError) as error:
+            raise AvatarConnectionError(str(error)) from error
+        if not body:
+            return 200, {}
+        try:
+            return 200, json.loads(body)
+        except json.JSONDecodeError:
+            raise AvatarHttpError(500, "server sent a non-JSON response")
+
+
+def build_parser():
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="zara-avatar",
+        description="Install and control Zara's 3D avatar plugin (no Emacs needed).",
+    )
+    parser.add_argument(
+        "--base-url",
+        default=os.environ.get("ZARA_AVATAR_URL", DEFAULT_BASE_URL),
+        help="avatar plugin HTTP base URL (default: %(default)s)",
+    )
+    sub = parser.add_subparsers(dest="op", required=True)
+
+    install = sub.add_parser("install", help="install plugin and renderer")
+    install.add_argument("--zara-plugins-dir", default=DEFAULT_PLUGINS_DIR)
+    install.add_argument("--data-dir", default=DEFAULT_DATA_DIR)
+    install.add_argument(
+        "--skip-npm",
+        action="store_true",
+        help="copy renderer code without running npm install",
+    )
+
+    uninstall = sub.add_parser("uninstall", help="remove the installed plugin")
+    uninstall.add_argument("--zara-plugins-dir", default=DEFAULT_PLUGINS_DIR)
+
+    doctor = sub.add_parser("doctor", help="report installation and server state")
+    doctor.add_argument("--zara-plugins-dir", default=DEFAULT_PLUGINS_DIR)
+    doctor.add_argument("--data-dir", default=DEFAULT_DATA_DIR)
+
+    verify = sub.add_parser("verify", help="end-to-end renderer smoke test")
+    verify.add_argument(
+        "--command",
+        default=None,
+        help="renderer command; default: the installed electron renderer",
+    )
+    verify.add_argument("--data-dir", default=DEFAULT_DATA_DIR)
+    verify.add_argument("--startup-timeout", type=float, default=10.0)
+    verify.add_argument("--load-timeout", type=float, default=30.0)
+
+    sub.add_parser("status", help="print the avatar status document")
+    sub.add_parser("list", help="list imported avatars")
+    sub.add_parser("show")
+    sub.add_parser("hide")
+    sub.add_parser("unload")
+    sub.add_parser("animation-stop")
+
+    speech_begin = sub.add_parser("speech-begin")
+    sub.add_parser("speech-end")
+    sub.add_parser("speech-cancel")
+
+    for verb in ("select", "load", "delete"):
+        parser_verb = sub.add_parser(verb)
+        parser_verb.add_argument("avatar_id")
+
+    imp = sub.add_parser("import", help="import a .vrm file")
+    imp.add_argument("name")
+    imp.add_argument("path")
+
+    animation = sub.add_parser("animation")
+    animation_sub = animation.add_subparsers(dest="animation_sub", required=True)
+    play = animation_sub.add_parser("play")
+    play.add_argument("clip")
+    play.add_argument("--loop", action="store_true", default=None)
+    play.add_argument("--speed", type=float)
+    play.add_argument("--duration", type=float)
+    animation_sub.add_parser("stop")
+
+    gaze = sub.add_parser("gaze")
+    gaze.add_argument(
+        "value", nargs="?", choices=("user", "auto", "center"), default=None
+    )
+    gaze.add_argument("--point", nargs=3, type=float, metavar=("X", "Y", "Z"))
+
+    transform = sub.add_parser("transform")
+    transform.add_argument("--position", nargs=3, type=float)
+    transform.add_argument("--rotation", nargs=3, type=float)
+    transform.add_argument("--scale", type=float)
+
+    speech_audio = sub.add_parser("speech-audio")
+    speech_audio.add_argument("path")
+    speech_audio.add_argument("--sample-rate", type=int, default=16000)
+
+    for verb, choices in (
+        ("emotion", ("neutral", "happy", "sad", "annoyed", "excited", "embarrassed")),
+        (
+            "expression",
+            (
+                "neutral",
+                "happy",
+                "sad",
+                "angry",
+                "annoyed",
+                "relaxed",
+                "surprised",
+                "excited",
+                "embarrassed",
+            ),
+        ),
+        ("gesture", ("wave", "nod", "shrug", "point")),
+        ("presence", ("idle", "listening", "thinking", "speaking")),
+    ):
+        parser_verb = sub.add_parser(verb)
+        parser_verb.add_argument("value", choices=choices)
+
+    framing = sub.add_parser("framing")
+    framing.add_argument("value", choices=("half", "full"))
+
+    return parser
+
+
+def build_request(args):
+    """Map parsed arguments onto (method, path, payload)."""
+    op = args.op
+    if op == "status":
+        return "GET", "/v1/avatar/status", None
+    if op == "list":
+        return "GET", "/v1/avatar/list", None
+    if op in ("show", "hide", "unload"):
+        return "POST", f"/v1/avatar/{op}", {}
+    if op == "select" or op == "load" or op == "delete":
+        return "POST", f"/v1/avatar/{op}", {"avatarId": args.avatar_id}
+    if op == "import":
+        return "POST", "/v1/avatar/import", _file_payload(args.name, args.path)
+    if op == "animation":
+        if args.animation_sub == "play":
+            payload = {"animation": args.clip}
+            if args.loop is not None:
+                payload["loop"] = bool(args.loop)
+            if args.speed is not None:
+                payload["speed"] = args.speed
+            if args.duration is not None:
+                payload["duration"] = args.duration
+            return "POST", "/v1/avatar/animation/play", payload
+        return "POST", "/v1/avatar/animation/stop", {}
+    if op == "animation-stop":
+        return "POST", "/v1/avatar/animation/stop", {}
+    if op == "gaze":
+        if args.point is not None:
+            x, y, z = args.point
+            return "POST", "/v1/avatar/gaze", {"target": {"x": x, "y": y, "z": z}}
+        if args.value is None:
+            raise ValueError("gaze needs a target or --point X Y Z")
+        return "POST", "/v1/avatar/gaze", {"target": args.value}
+    if op == "transform":
+        payload = {}
+        if args.position is not None:
+            payload["position"] = list(args.position)
+        if args.rotation is not None:
+            payload["rotation"] = list(args.rotation)
+        if args.scale is not None:
+            payload["scale"] = args.scale
+        if not payload:
+            raise ValueError("transform needs --position, --rotation, or --scale")
+        return "POST", "/v1/avatar/transform", payload
+    if op == "speech-audio":
+        source = Path(args.path).expanduser()
+        if not source.is_file():
+            raise FileNotFoundError(f"no such audio file: {source}")
+        return (
+            "POST",
+            "/v1/avatar/speech/audio",
+            {
+                "audio": _base64_file(source),
+                "sampleRate": int(args.sample_rate),
+            },
+        )
+    if op == "speech-begin":
+        return "POST", "/v1/avatar/speech/begin", {}
+    if op == "speech-end":
+        return "POST", "/v1/avatar/speech/end", {}
+    if op == "speech-cancel":
+        return "POST", "/v1/avatar/speech/cancel", {}
+    # presence / emotion / expression / gesture share the value shape
+    if op in ("emotion", "expression", "gesture", "presence"):
+        return "POST", f"/v1/avatar/{op}", {op: args.value}
+    if op == "framing":
+        return "POST", "/v1/avatar/framing", {"framing": args.value}
+    raise ValueError(f"unsupported operation {op!r}")
+
+
+def _base64_file(source: Path) -> str:
+    return base64.b64encode(source.read_bytes()).decode("ascii")
+
+
+def _file_payload(name: str, path: str) -> dict:
+    source = Path(path).expanduser()
+    if not source.is_file():
+        raise FileNotFoundError(f"no such file: {source}")
+    return {"name": name, "data": _base64_file(source)}
+
+
+def _owned(path) -> bool:
+    try:
+        return OWNERSHIP_MARKER in path.read_text(errors="replace")
+    except OSError:
+        return False
+
+
+def _atomic_copy(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=str(destination.parent), prefix=f".{destination.name}-"
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as target, open(source, "rb") as origin:
+            shutil.copyfileobj(origin, target)
+        temporary.chmod(0o644)
+        os.replace(temporary, destination)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+RENDERER_CODE_FILES = (
+    "main.mjs",
+    "app.mjs",
+    "preload.cjs",
+    "index.html",
+    "package.json",
+    "package-lock.json",
+    "README.md",
+    "animations/manifest.json",
+)
+
+
+def cmd_install(args, out) -> int:
+    if not PLUGIN_SOURCE.is_file():
+        out(f"missing plugin source: {PLUGIN_SOURCE}")
+        return EXIT_MISSING
+    for relative in RENDERER_CODE_FILES:
+        if not (RENDERER_SOURCE / relative).is_file():
+            out(f"missing renderer source: {RENDERER_SOURCE / relative}")
+            return EXIT_MISSING
+
+    plugins_dir = Path(args.zara_plugins_dir).expanduser()
+    installed = plugins_dir / PLUGIN_FILE_NAME
+    if installed.exists() and not _owned(installed):
+        out(f"refusing to replace non-Zara plugin: {installed}")
+        return EXIT_REFUSED
+    _atomic_copy(PLUGIN_SOURCE, installed)
+
+    renderer_target = Path(args.data_dir).expanduser() / "renderer"
+    for relative in RENDERER_CODE_FILES:
+        destination = renderer_target / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(RENDERER_SOURCE / relative, destination)
+    if args.skip_npm:
+        out("renderer code installed (npm install skipped)")
+    else:
+        npm = shutil.which("npm")
+        if npm is None:
+            out(
+                "renderer code installed; npm not found, run manually:\n"
+                f"  cd {renderer_target} && npm install"
+            )
+        else:
+            out(f"running npm install in {renderer_target} ...")
+            result = subprocess.run(
+                ["npm", "install", "--no-audit", "--no-fund"],
+                cwd=str(renderer_target),
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.STDOUT,
+            )
+            if result.returncode != 0:
+                out(
+                    "npm install failed; run it manually inside the renderer directory"
+                )
+    out(f"installed plugin at {installed}")
+    out(f"installed renderer at {renderer_target}")
+    out("restart Zara to load it; then check: zara-avatar status")
+    return EXIT_OK
+
+
+def cmd_uninstall(args, out) -> int:
+    installed = Path(args.zara_plugins_dir).expanduser() / PLUGIN_FILE_NAME
+    if not installed.exists():
+        out("zara-avatar plugin is not installed")
+        return EXIT_OK
+    if not _owned(installed):
+        out(f"refusing to remove non-Zara plugin: {installed}")
+        return EXIT_REFUSED
+    installed.unlink()
+    out(f"removed {installed}; restart Zara to unload it")
+    return EXIT_OK
+
+
+def _minimal_vrm_bytes() -> bytes:
+    document = {
+        "asset": {"version": "2.0"},
+        "extensionsUsed": ["VRMCvrm"],
+        "extensions": {"VRMCvrm": {"specVersion": "1.0"}},
+    }
+    payload = json.dumps(document).encode("utf-8")
+    while len(payload) % 4:
+        payload += b" "
+    header = struct.pack("<4sII", b"glTF", 2, 12 + 8 + len(payload))
+    return header + struct.pack("<I", len(payload)) + b"JSON" + payload
+
+
+def _default_verify_command(data_dir: Path):
+    renderer = data_dir / "renderer"
+    electron = renderer / "node_modules" / ".bin" / "electron"
+    if not electron.is_file():
+        return None
+    return [str(electron), str(renderer / "main.mjs")]
+
+
+def cmd_verify(args, out) -> int:
+    data_dir = Path(args.data_dir).expanduser()
+    if args.command:
+        command = shlex.split(args.command)
+    else:
+        command = _default_verify_command(data_dir)
+        if command is None:
+            out(f"no renderer installed at {data_dir / 'renderer'}; run: zara-avatar install")
+            return EXIT_MISSING
+    out(f"verify: starting renderer {command!r}")
+
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        bufsize=1,
+    )
+    messages: Queue = Queue()
+
+    def _read() -> None:
+        assert process.stdout is not None
+        for line in process.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                messages.put(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        messages.put(None)
+
+    threading.Thread(target=_read, daemon=True).start()
+
+    def _wait_for(predicate, timeout):
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None, "timed out"
+            try:
+                document = messages.get(timeout=remaining)
+            except Empty:
+                return None, "timed out"
+            if document is None:
+                return None, "renderer exited"
+            if predicate(document):
+                return document, None
+
+    try:
+        ready, problem = _wait_for(
+            lambda document: document.get("event") == "ready",
+            args.startup_timeout,
+        )
+        if ready is None:
+            out(
+                "verify: FAIL - renderer never signaled ready "
+                f"({problem}); a broken GPU/sandbox or a page error blocks startup"
+            )
+            return EXIT_UNREACHABLE
+        out("verify: renderer ready; page signaled readiness")
+
+        handle = tempfile.NamedTemporaryFile(suffix=".vrm", delete=False)
+        try:
+            handle.write(_minimal_vrm_bytes())
+            fixture = handle.name
+        finally:
+            handle.close()
+        try:
+            process.stdin.write(
+                json.dumps(
+                    {
+                        "id": 1,
+                        "command": "LoadAvatar",
+                        "params": {
+                            "avatarId": "verify",
+                            "path": fixture,
+                            "seed": 7,
+                        },
+                    }
+                )
+                + "\n"
+            )
+            process.stdin.flush()
+            response, problem = _wait_for(
+                lambda document: document.get("id") == 1, args.load_timeout
+            )
+        finally:
+            os.unlink(fixture)
+
+        if response is None:
+            out(
+                "verify: FAIL - LoadAvatar never completed "
+                f"({problem}); the page is up but the load pipeline is stuck"
+            )
+            return EXIT_UNREACHABLE
+        if not response.get("ok"):
+            out(
+                "verify: FAIL - renderer rejected the verification model: "
+                f"{response.get('error')}"
+            )
+            return EXIT_HTTP_ERROR
+        result = response.get("result") or {}
+        out(
+            "verify: PASS - avatar loaded "
+            f"(vrm {result.get('vrmVersion', 'unknown')}) "
+            f"expressions={result.get('expressions')}"
+        )
+        return EXIT_OK
+    finally:
+        try:
+            process.stdin.write(
+                json.dumps({"id": 0, "command": "Shutdown", "params": {}}) + "\n"
+            )
+            process.stdin.flush()
+        except (OSError, ValueError):
+            pass
+        try:
+            process.stdin.close()
+        except OSError:
+            pass
+        try:
+            process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=3)
+
+
+def cmd_doctor(args, out) -> int:
+    installed = Path(args.zara_plugins_dir).expanduser() / PLUGIN_FILE_NAME
+    if not installed.exists():
+        out("plugin: not installed (run: zara-avatar install)")
+    elif not _owned(installed):
+        out("plugin: FOREIGN file present; refusing to manage it")
+    else:
+        out("plugin: installed")
+
+    renderer = Path(args.data_dir).expanduser() / "renderer"
+    electron = renderer / "node_modules" / ".bin" / "electron"
+    if electron.is_file():
+        out("renderer: installed with dependencies")
+    elif (renderer / "main.mjs").is_file():
+        out("renderer: code installed; dependencies missing (npm install)")
+    else:
+        out("renderer: not installed (run: zara-avatar install)")
+
+    client = Client(args.base_url)
+    try:
+        _, document = client.request("GET", "/v1/avatar/status")
+        avatar = document.get("avatar", {})
+        out(
+            "server: running "
+            f"(presence={avatar.get('presence')}, loaded={avatar.get('loaded')})"
+        )
+    except AvatarHttpError as error:
+        out(f"server: responding with HTTP {error.status}: {error}")
+    except AvatarConnectionError:
+        out(
+            f"server: not reachable at {args.base_url} "
+            "(start Zara with the zara-avatar plugin enabled)"
+        )
+    return EXIT_OK
+
+
+def main(argv=None, *, client_factory=None, out=None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    emit = out if out is not None else (lambda line: print(line))
+
+    if args.op == "install":
+        return cmd_install(args, emit)
+    if args.op == "uninstall":
+        return cmd_uninstall(args, emit)
+    if args.op == "doctor":
+        return cmd_doctor(args, emit)
+    if args.op == "verify":
+        return cmd_verify(args, emit)
+
+    factory = client_factory or (lambda base: Client(base))
+    client = factory(args.base_url)
+    try:
+        method, path, payload = build_request(args)
+        _, document = client.request(method, path, payload)
+    except AvatarHttpError as error:
+        emit(f"error: HTTP {error.status}: {error}")
+        return EXIT_HTTP_ERROR
+    except AvatarConnectionError as error:
+        emit(
+            f"zara-avatar plugin is not reachable at {args.base_url} ({error}); "
+            "is Zara running with the plugin enabled?"
+        )
+        return EXIT_UNREACHABLE
+    except (OSError, ValueError) as error:
+        emit(f"error: {error}")
+        return EXIT_MISSING
+    emit(json.dumps(document, indent=2, sort_keys=True))
+    return EXIT_OK
+
+
+if __name__ == "__main__":
+    sys.exit(main())

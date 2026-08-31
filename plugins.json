@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "updated": "2026-08-31",
+  "registry": "https://github.com/lost-rob0t/zara-plugins",
+  "registry_raw": "https://raw.githubusercontent.com/lost-rob0t/zara-plugins/main/plugins.json",
+  "plugin_search_paths": ["~/.zarathushtra/plugins"],
+  "plugins": [
+    {
+      "name": "zara-avatar",
+      "version": "0.1.0",
+      "api_version": "1",
+      "plugin_type": "service",
+      "description": "Zara-owned 3D avatar presentation (VRM renderer, expression, lip sync)",
+      "path": "plugins/zara-avatar",
+      "entrypoint": "zara-plugin/zara_avatar.py",
+      "docs": "plugins/zara-avatar/README.md",
+      "license": "GPL-3.0-or-later",
+      "tags": ["avatar", "presentation", "vrm", "3d", "renderer", "lipsync"],
+      "install": {
+        "tool": "python3 plugins/zara-avatar/tools/zara-avatar install",
+        "nix": "nix run github:lost-rob0t/zara-plugins#zara-avatar -- install"
+      },
+      "nix": {
+        "flake": "github:lost-rob0t/zara-plugins",
+        "package": "zara-avatar",
+        "aggregate": "zara-plugins"
+      }
+    }
+  ]
+}
