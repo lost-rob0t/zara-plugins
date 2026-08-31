@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""Install the Zara Org Todos service plugin."""
+
+import sys
+from pathlib import Path
+
+
+plugin_root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(plugin_root / "lib"))
+
+from zara_org_todos_service.install import main
+
+
+if __name__ == "__main__":
+    main()
