@@ -86,24 +86,28 @@ class ZaraOrgTodosPlugin:
         return "\n".join(task.render() for task in tasks) if tasks else "No matching Org todos."
 
     def add_todo(self, title: str) -> str:
+        self.sync_now()
         store = self._require_store()
         task = store.add(title)
         sync = self._sync_file(task.path)
         return f"{task.render()}\n{sync}"
 
     def edit_todo(self, task_id: str, title: str) -> str:
+        self.sync_now()
         store = self._require_store()
         task = store.edit(task_id, title)
         sync = self._sync_file(task.path)
         return f"{task.render()}\n{sync}"
 
     def complete_todo(self, task_id: str) -> str:
+        self.sync_now()
         store = self._require_store()
         task = store.complete(task_id)
         sync = self._sync_file(task.path)
         return f"{task.render()}\n{sync}"
 
     def reopen_todo(self, task_id: str) -> str:
+        self.sync_now()
         store = self._require_store()
         task = store.reopen(task_id)
         sync = self._sync_file(task.path)
@@ -115,6 +119,7 @@ class ZaraOrgTodosPlugin:
         return "\n".join(task.render() for task in tasks) if tasks else "No matching Org todos."
 
     def schedule_todo(self, task_id: str, schedule: str) -> str:
+        self.sync_now()
         store = self._require_store()
         task = store.schedule(task_id, schedule)
         sync = self._sync_file(task.path)
