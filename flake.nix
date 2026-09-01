@@ -15,10 +15,9 @@
         let
           pkgs = import nixpkgs { inherit system; };
 
-          # Match Zara's pinned runtime; plugin code is stdlib-only but the
-          # test suites run against the same interpreter Zara uses. Declared
-          # plugin dependencies are included in that plugin's installer and
-          # test interpreter.
+          # Match Zara's pinned runtime. Declared plugin dependencies are
+          # included in the installer/test interpreter and in the immutable
+          # runtime library exported by each plugin package.
           python = pkgs.python313;
 
           pythonFor = entry:
@@ -42,11 +41,43 @@
               ))
           );
 
+          # Export a stable, immutable runtime layout for Home Manager and
+          # other declarative consumers:
+          #
+          #   share/zara/runtime/<name>/entrypoint.py
+          #   share/zara/runtime/<name>/lib/
+          #
+          # The lib directory combines plugin-owned Python modules with the
+          # complete Python environment needed by declared dependencies. A
+          # discovery entry can therefore prepend one directory and run
+          # without an imperative installer copying dependencies into $HOME.
+          runtimeLibraryFor = entry:
+            let
+              pluginSource = ./. + ("/plugins/" + entry.name);
+              pluginPython = pythonFor entry;
+            in
+            pkgs.runCommand "${entry.name}-runtime-lib"
+              { nativeBuildInputs = [ pkgs.coreutils ]; }
+              ''
+                mkdir -p "$out"
+
+                if [ -d ${pluginSource}/lib ]; then
+                  cp -r ${pluginSource}/lib/. "$out/"
+                fi
+
+                if [ -d ${pluginPython}/${python.sitePackages} ]; then
+                  cp -rs ${pluginPython}/${python.sitePackages}/. "$out/"
+                fi
+              '';
+
           # Install the plugin tree verbatim under share/zara/plugins/<name>
-          # so layout-relative tooling (installer, renderer resolution) keeps
-          # working from the store path, and expose the plugin CLI on bin/
+          # so layout-relative tooling keeps working, and also publish the
+          # declarative runtime layout above. Expose the plugin CLI on bin/
           # when the plugin ships one.
           mkPluginPackage = entry:
+            let
+              runtimeLibrary = runtimeLibraryFor entry;
+            in
             pkgs.stdenv.mkDerivation {
               pname = entry.name;
               inherit (entry) version;
@@ -58,6 +89,12 @@
                 mkdir -p $out/share/zara/plugins
                 cp -r $src $out/share/zara/plugins/${entry.name}
                 chmod -R u+w $out/share/zara/plugins/${entry.name}
+
+                mkdir -p $out/share/zara/runtime/${entry.name}
+                ln -s ${runtimeLibrary} $out/share/zara/runtime/${entry.name}/lib
+                ln -s \
+                  $out/share/zara/plugins/${entry.name}/${entry.entrypoint} \
+                  $out/share/zara/runtime/${entry.name}/entrypoint.py
               '' + pkgs.lib.optionalString
                 (builtins.pathExists (./. + "/plugins/${entry.name}/tools/${entry.name}")) ''
                 mkdir -p $out/bin
@@ -107,6 +144,20 @@
                 ${python}/bin/python3 $src/scripts/validate-registry.py
                 touch $out
               '';
+
+            runtime-layout = pkgs.runCommand "zara-check-runtime-layout"
+              { nativeBuildInputs = [ python ]; }
+              (pkgs.lib.concatMapStringsSep "\n"
+                (entry: ''
+                  test -f ${pluginPackages.${entry.name}}/share/zara/runtime/${entry.name}/entrypoint.py
+                  test -d ${pluginPackages.${entry.name}}/share/zara/runtime/${entry.name}/lib
+                '')
+                plugins
+              + ''
+                PYTHONPATH=${pluginPackages.zara-discord}/share/zara/runtime/zara-discord/lib \
+                  ${python}/bin/python3 -c 'import discord, audioop, zara_discord_service'
+                touch $out
+              '');
           } // pkgs.lib.listToAttrs (
             map
               (entry: pkgs.lib.nameValuePair "${entry.name}-tests" (
