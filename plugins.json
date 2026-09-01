@@ -53,7 +53,7 @@
       "version": "0.1.0",
       "api_version": "1",
       "plugin_type": "service",
-      "description": "Use a recursive Org-mode agenda as Zara's durable todo backend with Git synchronization",
+      "description": "Use a recursive Org-mode agenda as Zara's todo backend with optional Git synchronization",
       "path": "plugins/zara-org-todos",
       "entrypoint": "zara-plugin/zara_org_todos.py",
       "docs": "plugins/zara-org-todos/README.md",
