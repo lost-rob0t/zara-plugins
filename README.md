@@ -14,6 +14,7 @@ bundled tool, with Nix, or (once landed in Zara) with a native
 | --- | --- | --- | --- |
 | [zara-avatar](plugins/zara-avatar/) | 0.1.0 | service | Zara-owned 3D avatar presentation (VRM renderer, expression, lip sync) |
 | [zara-discord](plugins/zara-discord/) | 0.2.0 | service | Talk to Zara through Discord with access controls, bare mentions, and spontaneous replies |
+| [zara-persona](plugins/zara-persona/) | 0.1.0 | service | Operator-owned persona context with optional SWI-Prolog |
 
 ## Registry
 
@@ -63,6 +64,13 @@ Discord service plugin with:
 nix run github:lost-rob0t/zara-plugins#zara-discord -- install
 ```
 
+The persona plugin is package-only and keeps operator context outside the Nix
+store:
+
+```sh
+nix build github:lost-rob0t/zara-plugins#zara-persona
+```
+
 ### Flake
 
 This repository is a Nix flake. Every registered plugin is exposed
@@ -72,6 +80,7 @@ automatically as a package, with install apps and checks:
 nix flake show github:lost-rob0t/zara-plugins
 nix build github:lost-rob0t/zara-plugins#zara-avatar   # plugin package
 nix build github:lost-rob0t/zara-plugins#zara-discord  # Discord plugin package
+nix build github:lost-rob0t/zara-plugins#zara-persona  # persona context plugin
 nix build github:lost-rob0t/zara-plugins#zara-plugins  # aggregate of all plugins
 nix run github:lost-rob0t/zara-plugins#zara-avatar -- install
 nix flake check github:lost-rob0t/zara-plugins         # registry + plugin test suites
