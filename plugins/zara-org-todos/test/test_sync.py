@@ -23,6 +23,7 @@ class SyncRunnerTest(unittest.TestCase):
         self.config = OrgTodosConfig(
             repo_dir=root / "repo",
             org_dir=root / "org",
+            git_sync=True,
             remote="ssh://example/repo",
             interval_seconds=300,
             auto_sync=True,
@@ -65,6 +66,20 @@ class SyncRunnerTest(unittest.TestCase):
 
         runner = SyncRunner(self.config, script_path=self.script, run_process=fake_run)
         with self.assertRaisesRegex(SyncError, "concurrent local/remote edit conflict"):
+            runner.run()
+
+    def test_disabled_git_sync_never_spawns_process(self):
+        disabled = OrgTodosConfig(
+            repo_dir=self.config.repo_dir,
+            org_dir=self.config.org_dir,
+            git_sync=False,
+            remote=None,
+            interval_seconds=300,
+            auto_sync=False,
+            timeout_seconds=30,
+        )
+        runner = SyncRunner(disabled, script_path=self.script)
+        with self.assertRaisesRegex(SyncError, "disabled"):
             runner.run()
 
     def test_concurrent_sync_is_rejected(self):
