@@ -40,6 +40,15 @@ class ResponseText(RuntimeEvent):
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
+class ToolWaitingForUser(RuntimeEvent):
+    conversation_id: str | None = None
+    tool_run_id: str | None = None
+    tool_name: str | None = None
+    kind: str = "approval"
+    prompt: str = ""
+
+
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class AgentFailed(RuntimeEvent):
     reason: str = ""
 
@@ -66,6 +75,12 @@ class SubmitTurn:
     request_id: str = dataclasses.field(default_factory=lambda: str(uuid.uuid4()))
 
 
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class ApproveTool:
+    tool_run_id: str
+    request_id: str = dataclasses.field(default_factory=lambda: str(uuid.uuid4()))
+
+
 @dataclasses.dataclass(frozen=True)
 class CommandReceipt:
     request_id: str
@@ -82,11 +97,13 @@ def install_zara_stubs() -> None:
     plugins_module.PluginMetadata = PluginMetadata
     plugins_module.ServicePlugin = ServicePlugin
     events_module.ResponseText = ResponseText
+    events_module.ToolWaitingForUser = ToolWaitingForUser
     events_module.AgentFailed = AgentFailed
     events_module.AssistantFailed = AssistantFailed
     events_module.TurnCancelled = TurnCancelled
     events_module.RuntimeIdle = RuntimeIdle
     commands_module.SubmitTurn = SubmitTurn
+    commands_module.ApproveTool = ApproveTool
     commands_module.CommandReceipt = CommandReceipt
     runtime_module.events = events_module
     runtime_module.commands = commands_module
