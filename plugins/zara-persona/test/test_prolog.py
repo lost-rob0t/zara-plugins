@@ -1,4 +1,3 @@
-import os
 import stat
 import sys
 import tempfile
@@ -15,7 +14,7 @@ from zara_persona_service.prolog import PersonaPrologError, load_prolog_context
 class PersonaPrologTest(unittest.TestCase):
     def _fake_swipl(self, directory: str, body: str) -> Path:
         path = Path(directory) / "swipl"
-        path.write_text("#!/usr/bin/env python3\n" + body, encoding="utf-8")
+        path.write_text(f"#!{sys.executable}\n" + body, encoding="utf-8")
         path.chmod(path.stat().st_mode | stat.S_IXUSR)
         return path
 
