@@ -69,7 +69,7 @@ class PluginTests(unittest.TestCase):
 
         self.assertIsInstance(plugin, ServicePlugin)
         self.assertEqual(plugin.metadata.name, "zara-discord")
-        self.assertEqual(plugin.metadata.version, "0.1.0")
+        self.assertEqual(plugin.metadata.version, "0.2.0")
         self.assertEqual(plugin.metadata.api_version, "1")
 
     def test_starts_bounded_workers_and_stops_gateway(self):
