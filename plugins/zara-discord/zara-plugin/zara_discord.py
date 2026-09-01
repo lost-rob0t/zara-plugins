@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 
-PLUGIN_VERSION = "0.1.0"
+PLUGIN_VERSION = "0.2.0"
 
 xdg_root = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
 library_dir = xdg_root / "zarathushtra" / "plugins" / "zara-discord" / "lib"
