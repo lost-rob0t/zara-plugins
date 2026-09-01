@@ -121,6 +121,36 @@ class StarIntelClientTest(unittest.TestCase):
             "bootstrap-secret",
         )
 
+    def test_form_body_supports_oauth_token_requests(self):
+        opener = RecordingOpener(FakeResponse({"access_token": "issued"}))
+        client = StarIntelClient(self.config(), opener=opener)
+
+        result = client.request(
+            "POST",
+            "/oauth/token",
+            body={
+                "grant_type": "authorization_code",
+                "code": "code-1",
+                "redirect_uri": "https://client.example/callback",
+            },
+            body_format="form",
+        )
+
+        request = opener.requests[0]
+        self.assertEqual(
+            request.get_header("Content-type"),
+            "application/x-www-form-urlencoded",
+        )
+        self.assertEqual(
+            parse_qs(request.data.decode("utf-8")),
+            {
+                "grant_type": ["authorization_code"],
+                "code": ["code-1"],
+                "redirect_uri": ["https://client.example/callback"],
+            },
+        )
+        self.assertEqual(result["data"]["access_token"], "issued")
+
     def test_disabled_client_fails_before_transport(self):
         opener = RecordingOpener(FakeResponse({}))
         client = StarIntelClient(
