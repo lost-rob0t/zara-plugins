@@ -47,6 +47,27 @@
         "package": "zara-discord",
         "aggregate": "zara-plugins"
       }
+    },
+    {
+      "name": "zara-org-todos",
+      "version": "0.1.0",
+      "api_version": "1",
+      "plugin_type": "service",
+      "description": "Use a recursive Org-mode agenda as Zara's todo backend with optional Git synchronization",
+      "path": "plugins/zara-org-todos",
+      "entrypoint": "zara-plugin/zara_org_todos.py",
+      "docs": "plugins/zara-org-todos/README.md",
+      "license": "GPL-3.0-or-later",
+      "tags": ["org-mode", "todos", "tasks", "git", "sync"],
+      "install": {
+        "tool": "python3 plugins/zara-org-todos/tools/zara-org-todos install",
+        "nix": "nix run github:lost-rob0t/zara-plugins#zara-org-todos -- install"
+      },
+      "nix": {
+        "flake": "github:lost-rob0t/zara-plugins",
+        "package": "zara-org-todos",
+        "aggregate": "zara-plugins"
+      }
     }
   ]
 }
