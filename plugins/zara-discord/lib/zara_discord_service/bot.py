@@ -73,10 +73,17 @@ class ZaraDiscordBot(discord.Client):
         @root.command(name="ask", description="Send a message to Zara")
         async def ask(interaction: discord.Interaction, message: str) -> None:
             if not self._interaction_allowed(interaction):
-                await interaction.response.send_message(
-                    "You are not authorized to talk to Zara here.",
-                    ephemeral=True,
+                policy = (
+                    self.policies.policy(interaction.guild_id)
+                    if interaction.guild_id is not None
+                    else None
                 )
+                reason = (
+                    "Zara is disabled in this Discord server."
+                    if policy is not None and not policy.enabled
+                    else "You are not authorized to talk to Zara here."
+                )
+                await interaction.response.send_message(reason, ephemeral=True)
                 return
             await interaction.response.defer(thinking=True)
             loop = asyncio.get_running_loop()
@@ -114,7 +121,10 @@ class ZaraDiscordBot(discord.Client):
                 or "all channels"
             )
             random_text = "on" if policy.random_mode else "off"
+            discord_text = "on" if policy.enabled else "off"
             await interaction.response.send_message(
+                f"Discord: **{discord_text}**\n"
+                f"Tools: **auto-approved** for accepted Discord turns\n"
                 f"Access: **{policy.access_mode}**\n"
                 f"Authorized users: {users_text}\n"
                 f"Allowed channels: {channels_text}\n"
@@ -122,6 +132,38 @@ class ZaraDiscordBot(discord.Client):
                 f"({policy.random_reply_chance * 100:g}% chance)",
                 ephemeral=True,
                 allowed_mentions=discord.AllowedMentions.none(),
+            )
+
+        @root.command(name="discord", description="Enable or disable Zara in this Discord server")
+        @app_commands.guild_only()
+        @app_commands.default_permissions(manage_guild=True)
+        async def set_discord(
+            interaction: discord.Interaction,
+            enabled: bool,
+        ) -> None:
+            if not await self._require_manager(interaction):
+                return
+            self.policies.set_enabled(interaction.guild_id, enabled)
+            state = "on" if enabled else "off"
+            await interaction.response.send_message(
+                f"Zara Discord access is now **{state}**.",
+                ephemeral=True,
+            )
+
+        @root.command(name="restrict", description="Restrict Zara to an authorized user")
+        @app_commands.guild_only()
+        @app_commands.default_permissions(manage_guild=True)
+        async def restrict(
+            interaction: discord.Interaction,
+            user: discord.User,
+        ) -> None:
+            if not await self._require_manager(interaction):
+                return
+            self.policies.set_access_mode(interaction.guild_id, "restricted")
+            self.policies.add_authorized_user(interaction.guild_id, user.id)
+            await interaction.response.send_message(
+                f"Zara is now restricted to authorized users; {user.mention} is authorized.",
+                ephemeral=True,
             )
 
         @access.command(name="set", description="Set open or authorized-user access")
@@ -260,13 +302,16 @@ class ZaraDiscordBot(discord.Client):
         mentioned = message.guild is not None and self.user in message.mentions
         spontaneous = False
 
-        if message.guild is not None and not mentioned:
+        if message.guild is not None:
             policy = self.policies.policy(message.guild.id)
-            if not policy.random_mode:
+            if not policy.enabled:
                 return
-            if random.random() >= policy.random_reply_chance:
-                return
-            spontaneous = True
+            if not mentioned:
+                if not policy.random_mode:
+                    return
+                if random.random() >= policy.random_reply_chance:
+                    return
+                spontaneous = True
 
         if not self.policies.is_allowed(
             guild_id=guild_id,
