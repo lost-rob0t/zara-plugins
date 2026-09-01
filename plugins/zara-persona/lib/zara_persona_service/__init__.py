@@ -1,5 +1,3 @@
 """Configurable persona support for Zara."""
 
-from .plugin import create_plugin
-
-__all__ = ["create_plugin"]
+__all__ = []
