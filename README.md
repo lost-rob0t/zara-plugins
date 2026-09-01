@@ -12,6 +12,7 @@ bundled tool, with Nix, or (once landed in Zara) with a native
 
 | Plugin | Version | Type | Description |
 | --- | --- | --- | --- |
+| [zara-agent-zero](plugins/zara-agent-zero/) | 0.1.0 | service | Delegate selected Zara work to Agent Zero through the A0 connector |
 | [zara-avatar](plugins/zara-avatar/) | 0.1.0 | service | Zara-owned 3D avatar presentation (VRM renderer, expression, lip sync) |
 | [zara-discord](plugins/zara-discord/) | 0.2.0 | service | Talk to Zara through Discord with access controls, bare mentions, and spontaneous replies |
 | [zara-persona](plugins/zara-persona/) | 0.1.0 | service | Operator-owned persona context with optional SWI-Prolog |
@@ -64,10 +65,11 @@ Discord service plugin with:
 nix run github:lost-rob0t/zara-plugins#zara-discord -- install
 ```
 
-The persona plugin is package-only and keeps operator context outside the Nix
-store:
+Package-only bridge/context plugins keep runtime connection state outside the
+Nix store:
 
 ```sh
+nix build github:lost-rob0t/zara-plugins#zara-agent-zero
 nix build github:lost-rob0t/zara-plugins#zara-persona
 ```
 
@@ -78,12 +80,13 @@ automatically as a package, with install apps and checks:
 
 ```sh
 nix flake show github:lost-rob0t/zara-plugins
-nix build github:lost-rob0t/zara-plugins#zara-avatar   # plugin package
-nix build github:lost-rob0t/zara-plugins#zara-discord  # Discord plugin package
-nix build github:lost-rob0t/zara-plugins#zara-persona  # persona context plugin
-nix build github:lost-rob0t/zara-plugins#zara-plugins  # aggregate of all plugins
+nix build github:lost-rob0t/zara-plugins#zara-agent-zero # Agent Zero bridge
+nix build github:lost-rob0t/zara-plugins#zara-avatar     # plugin package
+nix build github:lost-rob0t/zara-plugins#zara-discord    # Discord plugin package
+nix build github:lost-rob0t/zara-plugins#zara-persona    # persona context plugin
+nix build github:lost-rob0t/zara-plugins#zara-plugins    # aggregate of all plugins
 nix run github:lost-rob0t/zara-plugins#zara-avatar -- install
-nix flake check github:lost-rob0t/zara-plugins         # registry + plugin test suites
+nix flake check github:lost-rob0t/zara-plugins           # registry + plugin test suites
 ```
 
 Packages install to `share/zara/plugins/<name>/` and expose the plugin's
