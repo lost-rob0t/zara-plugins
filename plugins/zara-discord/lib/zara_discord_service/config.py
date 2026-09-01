@@ -4,13 +4,14 @@ import json
 import os
 import stat
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 
 
 PLUGIN_NAME = "zara-discord"
 SETTINGS_VERSION = 1
+DEFAULT_RANDOM_REPLY_CHANCE = 0.05
 
 
 class ConfigError(RuntimeError):
@@ -22,6 +23,8 @@ class GuildPolicy:
     access_mode: str = "open"
     authorized_user_ids: frozenset[int] = frozenset()
     allowed_channel_ids: frozenset[int] = frozenset()
+    random_mode: bool = False
+    random_reply_chance: float = DEFAULT_RANDOM_REPLY_CHANCE
 
 
 def config_directory() -> Path:
@@ -97,11 +100,19 @@ class PolicyStore:
     def set_access_mode(self, guild_id: int, mode: str) -> None:
         if mode not in {"open", "restricted"}:
             raise ValueError("access mode must be open or restricted")
-        self._update(guild_id, lambda policy: GuildPolicy(
-            access_mode=mode,
-            authorized_user_ids=policy.authorized_user_ids,
-            allowed_channel_ids=policy.allowed_channel_ids,
-        ))
+        self._update(guild_id, lambda policy: replace(policy, access_mode=mode))
+
+    def set_random_mode(self, guild_id: int, enabled: bool) -> None:
+        self._update(guild_id, lambda policy: replace(policy, random_mode=bool(enabled)))
+
+    def set_random_reply_chance(self, guild_id: int, chance: float) -> None:
+        chance = float(chance)
+        if not 0.0 <= chance <= 1.0:
+            raise ValueError("random reply chance must be between 0 and 1")
+        self._update(
+            guild_id,
+            lambda policy: replace(policy, random_reply_chance=chance),
+        )
 
     def add_authorized_user(self, guild_id: int, user_id: int) -> bool:
         return self._change_set(guild_id, "authorized_user_ids", user_id, add=True)
@@ -130,13 +141,7 @@ class PolicyStore:
             before = set(values)
             values.add(int(value)) if add else values.discard(int(value))
             changed = values != before
-            fields = {
-                "access_mode": policy.access_mode,
-                "authorized_user_ids": policy.authorized_user_ids,
-                "allowed_channel_ids": policy.allowed_channel_ids,
-            }
-            fields[field] = frozenset(values)
-            return GuildPolicy(**fields)
+            return replace(policy, **{field: frozenset(values)})
 
         self._update(guild_id, mutate, save_only_when=lambda: changed)
         return changed
@@ -147,13 +152,7 @@ class PolicyStore:
         def mutate(policy: GuildPolicy) -> GuildPolicy:
             nonlocal changed
             changed = bool(getattr(policy, field))
-            fields = {
-                "access_mode": policy.access_mode,
-                "authorized_user_ids": policy.authorized_user_ids,
-                "allowed_channel_ids": policy.allowed_channel_ids,
-            }
-            fields[field] = frozenset()
-            return GuildPolicy(**fields)
+            return replace(policy, **{field: frozenset()})
 
         self._update(guild_id, mutate, save_only_when=lambda: changed)
         return changed
@@ -193,6 +192,14 @@ class PolicyStore:
                 mode = value.get("access_mode", "open")
                 if mode not in {"open", "restricted"}:
                     raise ValueError(f"invalid access mode {mode!r}")
+                random_mode = value.get("random_mode", False)
+                if not isinstance(random_mode, bool):
+                    raise ValueError("random_mode must be true or false")
+                random_reply_chance = float(
+                    value.get("random_reply_chance", DEFAULT_RANDOM_REPLY_CHANCE)
+                )
+                if not 0.0 <= random_reply_chance <= 1.0:
+                    raise ValueError("random_reply_chance must be between 0 and 1")
                 policies[int(guild_id)] = GuildPolicy(
                     access_mode=mode,
                     authorized_user_ids=frozenset(
@@ -201,6 +208,8 @@ class PolicyStore:
                     allowed_channel_ids=frozenset(
                         int(item) for item in value.get("allowed_channel_ids", [])
                     ),
+                    random_mode=random_mode,
+                    random_reply_chance=random_reply_chance,
                 )
         except (AttributeError, TypeError, ValueError) as error:
             raise ConfigError(f"invalid Discord plugin settings: {error}") from error
@@ -216,6 +225,8 @@ class PolicyStore:
                     "access_mode": policy.access_mode,
                     "authorized_user_ids": sorted(policy.authorized_user_ids),
                     "allowed_channel_ids": sorted(policy.allowed_channel_ids),
+                    "random_mode": policy.random_mode,
+                    "random_reply_chance": policy.random_reply_chance,
                 }
                 for guild_id, policy in sorted(self._policies.items())
             },
