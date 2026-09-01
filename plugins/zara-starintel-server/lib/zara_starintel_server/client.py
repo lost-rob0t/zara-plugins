@@ -103,6 +103,7 @@ class StarIntelClient:
         self,
         path: str,
         body: bytes | None,
+        content_type: str | None,
         headers: Mapping[str, Any] | None,
     ) -> dict[str, str]:
         result = {
@@ -112,8 +113,8 @@ class StarIntelClient:
                 max(1, int(self.config.timeout_seconds * 1000))
             ),
         }
-        if body is not None:
-            result["Content-Type"] = "application/json"
+        if body is not None and content_type:
+            result["Content-Type"] = content_type
         if self.config.api_key:
             result["Authorization"] = f"Bearer {self.config.api_key}"
         if path == "/auth/bootstrap" and self.config.bootstrap_secret:
@@ -121,20 +122,45 @@ class StarIntelClient:
         result.update(self._custom_headers(headers))
         return result
 
-    def _encode_body(self, body: Any) -> bytes | None:
+    def _encode_body(
+        self,
+        body: Any,
+        body_format: str,
+    ) -> tuple[bytes | None, str | None]:
         if body is None:
-            return None
+            return None, None
+        normalized = str(body_format).strip().lower()
         try:
-            data = json.dumps(
-                body,
-                ensure_ascii=False,
-                separators=(",", ":"),
-            ).encode("utf-8")
+            if normalized == "json":
+                data = json.dumps(
+                    body,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+                content_type = "application/json"
+            elif normalized == "form":
+                if not isinstance(body, Mapping):
+                    raise StarIntelError(
+                        "form request body must be a JSON object"
+                    )
+                data = urllib.parse.urlencode(body, doseq=True).encode("utf-8")
+                content_type = "application/x-www-form-urlencoded"
+            elif normalized == "text":
+                if not isinstance(body, str):
+                    raise StarIntelError(
+                        "text request body must be a JSON string"
+                    )
+                data = body.encode("utf-8")
+                content_type = "text/plain; charset=utf-8"
+            else:
+                raise StarIntelError(
+                    "body_format must be json, form, or text"
+                )
         except (TypeError, ValueError) as error:
-            raise StarIntelError("request body is not valid JSON data") from error
+            raise StarIntelError("request body is not valid") from error
         if len(data) > self.config.max_request_bytes:
             raise StarIntelError("StarIntel request body exceeded configured limit")
-        return data
+        return data, content_type
 
     def _response_headers(self, response: Any) -> dict[str, str]:
         source = getattr(response, "headers", None)
@@ -182,6 +208,7 @@ class StarIntelClient:
         *,
         query: Mapping[str, Any] | None = None,
         body: Any = None,
+        body_format: str = "json",
         headers: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         self._require_ready()
@@ -191,11 +218,16 @@ class StarIntelClient:
                 f"HTTP method is not supported: {normalized_method or '<empty>'}"
             )
         url = self._request_url(path, query)
-        body_data = self._encode_body(body)
+        body_data, content_type = self._encode_body(body, body_format)
         request = urllib.request.Request(
             url,
             data=body_data,
-            headers=self._request_headers(path, body_data, headers),
+            headers=self._request_headers(
+                path,
+                body_data,
+                content_type,
+                headers,
+            ),
             method=normalized_method,
         )
         try:
