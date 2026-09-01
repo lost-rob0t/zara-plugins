@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from discord_test_support import install_zara_stubs
 
@@ -24,8 +25,11 @@ if DISCORD_AVAILABLE:
 
 
 class FakeController:
-    def submit(self, **_kwargs):
-        pass
+    def __init__(self):
+        self.calls = []
+
+    def submit(self, **kwargs):
+        self.calls.append(kwargs)
 
 
 class FakeResponse:
@@ -40,10 +44,29 @@ class FakeResponse:
 class BotTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
-        self.bot = ZaraDiscordBot(FakeController(), PolicyStore(Path(self.temporary.name)))
+        self.controller = FakeController()
+        self.bot = ZaraDiscordBot(
+            self.controller,
+            PolicyStore(Path(self.temporary.name)),
+        )
+        self.bot._connection.user = SimpleNamespace(id=42)
 
     def tearDown(self):
         self.temporary.cleanup()
+
+    def _message(self, *, mentioned=False, content="", user_id=20):
+        return SimpleNamespace(
+            author=SimpleNamespace(
+                bot=False,
+                id=user_id,
+                name="Mina",
+                display_name="Mina",
+            ),
+            guild=SimpleNamespace(id=10),
+            mentions=[self.bot.user] if mentioned else [],
+            channel=SimpleNamespace(id=30, parent_id=None),
+            content=content,
+        )
 
     def test_uses_non_privileged_message_intents(self):
         self.assertTrue(self.bot.intents.guilds)
@@ -135,6 +158,45 @@ class BotTests(unittest.TestCase):
 
         self.assertFalse(asyncio.run(self.bot._require_manager(interaction)))
         self.assertIn("Manage Server permission", interaction.response.messages[0][0])
+
+    def test_bare_mention_is_submitted_to_zara(self):
+        asyncio.run(
+            self.bot.on_message(
+                self._message(mentioned=True, content="<@42>"),
+            )
+        )
+
+        self.assertEqual(len(self.controller.calls), 1)
+        self.assertIn("pinged you", self.controller.calls[0]["text"])
+        self.assertEqual(
+            self.controller.calls[0]["conversation_id"],
+            "discord:guild:10:channel:30",
+        )
+
+    def test_random_mode_can_spontaneously_reply_without_a_mention(self):
+        self.bot.policies.set_random_mode(10, True)
+        with mock.patch("zara_discord_service.bot.random.random", return_value=0.0):
+            asyncio.run(self.bot.on_message(self._message()))
+
+        self.assertEqual(len(self.controller.calls), 1)
+        self.assertIn("Spontaneously", self.controller.calls[0]["text"])
+        self.assertIn("Mina", self.controller.calls[0]["text"])
+
+    def test_random_mode_respects_probability(self):
+        self.bot.policies.set_random_mode(10, True)
+        self.bot.policies.set_random_reply_chance(10, 0.05)
+        with mock.patch("zara_discord_service.bot.random.random", return_value=0.5):
+            asyncio.run(self.bot.on_message(self._message()))
+
+        self.assertEqual(self.controller.calls, [])
+
+    def test_random_mode_does_not_bypass_access_policy(self):
+        self.bot.policies.set_access_mode(10, "restricted")
+        self.bot.policies.set_random_mode(10, True)
+        with mock.patch("zara_discord_service.bot.random.random", return_value=0.0):
+            asyncio.run(self.bot.on_message(self._message(user_id=99)))
+
+        self.assertEqual(self.controller.calls, [])
 
     def test_removes_both_discord_mention_forms(self):
         self.assertEqual(remove_bot_mention("<@42> hello", 42), "hello")
