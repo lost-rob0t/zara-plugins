@@ -17,7 +17,7 @@ class ZaraPersonaPlugin(ServicePlugin):
         name="zara-persona",
         version=PLUGIN_VERSION,
         api_version="1",
-        description="Private local persona context with optional SWI-Prolog",
+        description="Operator-owned persona context with optional SWI-Prolog",
     )
 
     def __init__(self) -> None:
@@ -40,7 +40,7 @@ class ZaraPersonaPlugin(ServicePlugin):
                 func=self.persona_context,
                 name="persona_context",
                 description=(
-                    "Return the operator-configured private persona/style context. "
+                    "Return the operator-configured persona/style context. "
                     "Use it when persona guidance is needed; do not invent missing context."
                 ),
             ),
