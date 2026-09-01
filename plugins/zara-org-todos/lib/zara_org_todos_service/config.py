@@ -64,6 +64,8 @@ class OrgTodosConfig:
             values.get("git_sync", False),
         )
         git_sync = _parse_bool(git_sync_raw, name="git_sync")
+        if git_sync and remote is None:
+            raise ValueError("remote is required when git_sync=true")
 
         interval_raw = os.environ.get(
             "ZARA_ORG_TODOS_INTERVAL",
