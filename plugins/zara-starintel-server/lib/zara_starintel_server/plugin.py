@@ -91,8 +91,9 @@ class ZaraStarIntelServerPlugin(ServicePlugin):
                 name="starintel_api_request",
                 description=(
                     "Send a bounded same-origin GET, POST, PUT, PATCH, or DELETE request "
-                    "to any StarIntel API path, including legacy and newly deployed routes. "
-                    "This can perform destructive or administrative operations."
+                    "to any StarIntel API path with JSON, form, or text bodies, including "
+                    "legacy and newly deployed routes. This can perform destructive or "
+                    "administrative operations."
                 ),
             ),
         )
@@ -159,6 +160,7 @@ class ZaraStarIntelServerPlugin(ServicePlugin):
         path: str,
         query_json: str = "{}",
         body_json: str = "",
+        body_format: str = "json",
         headers_json: str = "{}",
     ) -> str:
         result = self._client.request(
@@ -166,6 +168,7 @@ class ZaraStarIntelServerPlugin(ServicePlugin):
             path,
             query=_json_mapping(query_json, "query_json"),
             body=_json_value(body_json, "body_json", None),
+            body_format=body_format,
             headers=_json_mapping(headers_json, "headers_json"),
         )
         return json.dumps(result, ensure_ascii=False, sort_keys=True)
