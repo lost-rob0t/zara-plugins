@@ -7,10 +7,12 @@ from unittest import mock
 
 from discord_test_support import LIB_ROOT
 from zara_discord_service.config import (
+    DEFAULT_CONTEXT_BUDGET_CHARS,
     DEFAULT_RANDOM_REPLY_CHANCE,
     ConfigError,
     PolicyStore,
     config_directory,
+    load_context_budget_chars,
     load_token,
 )
 
@@ -29,6 +31,33 @@ class ConfigTests(unittest.TestCase):
                 config_directory(),
                 self.directory / "zarathushtra" / "plugins" / "zara-discord",
             )
+
+    def test_context_budget_defaults_and_can_be_overridden(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(load_context_budget_chars(), DEFAULT_CONTEXT_BUDGET_CHARS)
+        with mock.patch.dict(
+            os.environ,
+            {"ZARA_DISCORD_CONTEXT_BUDGET_CHARS": "4096"},
+            clear=True,
+        ):
+            self.assertEqual(load_context_budget_chars(), 4096)
+
+    def test_context_budget_can_be_disabled_but_rejects_invalid_values(self):
+        with mock.patch.dict(
+            os.environ,
+            {"ZARA_DISCORD_CONTEXT_BUDGET_CHARS": "0"},
+            clear=True,
+        ):
+            self.assertEqual(load_context_budget_chars(), 0)
+        for value in ("-1", "64001", "nope"):
+            with self.subTest(value=value):
+                with mock.patch.dict(
+                    os.environ,
+                    {"ZARA_DISCORD_CONTEXT_BUDGET_CHARS": value},
+                    clear=True,
+                ):
+                    with self.assertRaisesRegex(ConfigError, "context budget"):
+                        load_context_budget_chars()
 
     def test_missing_policy_allows_every_user_and_channel(self):
         store = PolicyStore(self.directory)
