@@ -54,6 +54,8 @@ class SyncRunner:
         self._lock = threading.Lock()
 
     def run(self, *, saved_file: Optional[Path] = None) -> SyncResult:
+        if not self.config.git_sync:
+            raise SyncError("Git synchronization is disabled for zara-org-todos")
         if not self._lock.acquire(blocking=False):
             raise SyncBusyError("Org todo sync is already running")
         started = time.monotonic()
@@ -68,7 +70,6 @@ class SyncRunner:
                 {
                     "GPT_TODOS_REPO_DIR": str(self.config.repo_dir),
                     "GPT_TODOS_ORG_DIR": str(self.config.org_dir),
-                    "GPT_TODOS_REMOTE": self.config.remote,
                     "GIT_TERMINAL_PROMPT": "0",
                     "DOTFILES_DIR": str(
                         Path(environment.get("XDG_RUNTIME_DIR", "/tmp"))
@@ -76,6 +77,10 @@ class SyncRunner:
                     ),
                 }
             )
+            if self.config.remote:
+                environment["GPT_TODOS_REMOTE"] = self.config.remote
+            else:
+                environment.pop("GPT_TODOS_REMOTE", None)
             try:
                 completed = self._run_process(
                     command,
