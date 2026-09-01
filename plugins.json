@@ -6,6 +6,26 @@
   "plugin_search_paths": ["~/.zarathushtra/plugins"],
   "plugins": [
     {
+      "name": "zara-agent-zero",
+      "version": "0.1.0",
+      "api_version": "1",
+      "plugin_type": "service",
+      "description": "Delegate selected Zara work to Agent Zero through the A0 connector",
+      "path": "plugins/zara-agent-zero",
+      "entrypoint": "zara-plugin/zara_agent_zero.py",
+      "docs": "plugins/zara-agent-zero/README.md",
+      "license": "GPL-3.0-or-later",
+      "tags": ["agent-zero", "bridge", "delegation", "connector"],
+      "install": {
+        "nix": "nix build github:lost-rob0t/zara-plugins#zara-agent-zero"
+      },
+      "nix": {
+        "flake": "github:lost-rob0t/zara-plugins",
+        "package": "zara-agent-zero",
+        "aggregate": "zara-plugins"
+      }
+    },
+    {
       "name": "zara-avatar",
       "version": "0.1.0",
       "api_version": "1",
