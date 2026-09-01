@@ -6,7 +6,13 @@ from pathlib import Path
 from unittest import mock
 
 from discord_test_support import LIB_ROOT
-from zara_discord_service.config import ConfigError, PolicyStore, config_directory, load_token
+from zara_discord_service.config import (
+    DEFAULT_RANDOM_REPLY_CHANCE,
+    ConfigError,
+    PolicyStore,
+    config_directory,
+    load_token,
+)
 
 
 class ConfigTests(unittest.TestCase):
@@ -31,6 +37,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(store.policy(10).access_mode, "open")
         self.assertEqual(store.policy(10).authorized_user_ids, frozenset())
         self.assertEqual(store.policy(10).allowed_channel_ids, frozenset())
+        self.assertFalse(store.policy(10).random_mode)
+        self.assertEqual(store.policy(10).random_reply_chance, DEFAULT_RANDOM_REPLY_CHANCE)
 
     def test_restricted_policy_requires_authorized_user_and_allowed_channel(self):
         store = PolicyStore(self.directory)
@@ -75,14 +83,46 @@ class ConfigTests(unittest.TestCase):
         store.set_access_mode(10, "restricted")
         store.add_authorized_user(10, 20)
         store.add_allowed_channel(10, 30)
+        store.set_random_mode(10, True)
+        store.set_random_reply_chance(10, 0.25)
 
         reloaded = PolicyStore(self.directory)
         self.assertEqual(reloaded.policy(10).authorized_user_ids, frozenset({20}))
         self.assertEqual(reloaded.policy(10).allowed_channel_ids, frozenset({30}))
+        self.assertTrue(reloaded.policy(10).random_mode)
+        self.assertEqual(reloaded.policy(10).random_reply_chance, 0.25)
         self.assertTrue(reloaded.remove_authorized_user(10, 20))
         self.assertFalse(reloaded.remove_authorized_user(10, 20))
         self.assertTrue(reloaded.clear_allowed_channels(10))
         self.assertFalse(reloaded.clear_allowed_channels(10))
+
+    def test_random_reply_chance_must_be_between_zero_and_one(self):
+        store = PolicyStore(self.directory)
+
+        with self.assertRaisesRegex(ValueError, "between 0 and 1"):
+            store.set_random_reply_chance(10, -0.01)
+        with self.assertRaisesRegex(ValueError, "between 0 and 1"):
+            store.set_random_reply_chance(10, 1.01)
+
+    def test_old_settings_without_random_fields_load_with_defaults(self):
+        self.directory.joinpath("settings.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "guilds": {
+                        "10": {
+                            "access_mode": "open",
+                            "authorized_user_ids": [],
+                            "allowed_channel_ids": [],
+                        }
+                    },
+                }
+            )
+        )
+
+        policy = PolicyStore(self.directory).policy(10)
+        self.assertFalse(policy.random_mode)
+        self.assertEqual(policy.random_reply_chance, DEFAULT_RANDOM_REPLY_CHANCE)
 
     def test_policy_file_is_private_and_contains_no_token(self):
         store = PolicyStore(self.directory)

@@ -13,7 +13,7 @@ bundled tool, with Nix, or (once landed in Zara) with a native
 | Plugin | Version | Type | Description |
 | --- | --- | --- | --- |
 | [zara-avatar](plugins/zara-avatar/) | 0.1.0 | service | Zara-owned 3D avatar presentation (VRM renderer, expression, lip sync) |
-| [zara-discord](plugins/zara-discord/) | 0.1.0 | service | Talk to Zara through Discord with slash-configured user and channel access |
+| [zara-discord](plugins/zara-discord/) | 0.2.0 | service | Talk to Zara through Discord with access controls, bare mentions, and spontaneous replies |
 
 ## Registry
 
