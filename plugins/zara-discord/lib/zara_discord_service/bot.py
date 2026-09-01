@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import re
 import threading
 from typing import Literal
@@ -27,6 +28,26 @@ def remove_bot_mention(text: str, bot_user_id: int) -> str:
     return mention.sub("", text).strip()
 
 
+def bare_mention_prompt(display_name: str) -> str:
+    return (
+        f"{display_name} pinged you in Discord without adding a message. "
+        "Reply naturally, briefly, and in character."
+    )
+
+
+def spontaneous_reply_prompt(display_name: str, content: str) -> str:
+    content = content.strip()
+    if content:
+        return (
+            f"Spontaneously join the Discord conversation by replying to {display_name}. "
+            f"They just said: {content}"
+        )
+    return (
+        f"Spontaneously say something brief and in character to {display_name} "
+        "in this Discord channel."
+    )
+
+
 class ZaraDiscordBot(discord.Client):
     def __init__(self, controller, policies: PolicyStore) -> None:
         intents = discord.Intents.none()
@@ -44,6 +65,10 @@ class ZaraDiscordBot(discord.Client):
         access = app_commands.Group(name="access", description="Configure who can talk", parent=root)
         users = app_commands.Group(name="users", description="Configure authorized users", parent=root)
         channels = app_commands.Group(name="channels", description="Configure allowed channels", parent=root)
+        random_group = app_commands.Group(
+            name="random",
+            description="Configure Zara's spontaneous replies",
+        )
 
         @root.command(name="ask", description="Send a message to Zara")
         async def ask(interaction: discord.Interaction, message: str) -> None:
@@ -88,10 +113,13 @@ class ZaraDiscordBot(discord.Client):
                 )
                 or "all channels"
             )
+            random_text = "on" if policy.random_mode else "off"
             await interaction.response.send_message(
                 f"Access: **{policy.access_mode}**\n"
                 f"Authorized users: {users_text}\n"
-                f"Allowed channels: {channels_text}",
+                f"Allowed channels: {channels_text}\n"
+                f"Random replies: **{random_text}** "
+                f"({policy.random_reply_chance * 100:g}% chance)",
                 ephemeral=True,
                 allowed_mentions=discord.AllowedMentions.none(),
             )
@@ -177,7 +205,48 @@ class ZaraDiscordBot(discord.Client):
             message = "Zara is now allowed in every channel." if changed else "Zara is already allowed in every channel."
             await interaction.response.send_message(message, ephemeral=True)
 
+        @random_group.command(name="on", description="Enable spontaneous Zara replies")
+        @app_commands.guild_only()
+        @app_commands.default_permissions(manage_guild=True)
+        async def random_on(interaction: discord.Interaction) -> None:
+            if not await self._require_manager(interaction):
+                return
+            self.policies.set_random_mode(interaction.guild_id, True)
+            chance = self.policies.policy(interaction.guild_id).random_reply_chance * 100
+            await interaction.response.send_message(
+                f"Random replies are **on** ({chance:g}% chance per eligible message).",
+                ephemeral=True,
+            )
+
+        @random_group.command(name="off", description="Disable spontaneous Zara replies")
+        @app_commands.guild_only()
+        @app_commands.default_permissions(manage_guild=True)
+        async def random_off(interaction: discord.Interaction) -> None:
+            if not await self._require_manager(interaction):
+                return
+            self.policies.set_random_mode(interaction.guild_id, False)
+            await interaction.response.send_message(
+                "Random replies are **off**.",
+                ephemeral=True,
+            )
+
+        @random_group.command(name="chance", description="Set random reply chance from 0 to 100 percent")
+        @app_commands.guild_only()
+        @app_commands.default_permissions(manage_guild=True)
+        async def random_chance(
+            interaction: discord.Interaction,
+            percent: app_commands.Range[float, 0.0, 100.0],
+        ) -> None:
+            if not await self._require_manager(interaction):
+                return
+            self.policies.set_random_reply_chance(interaction.guild_id, percent / 100.0)
+            await interaction.response.send_message(
+                f"Random reply chance is now **{percent:g}%**.",
+                ephemeral=True,
+            )
+
         self.tree.add_command(root)
+        self.tree.add_command(random_group)
 
     async def setup_hook(self) -> None:
         self._gateway_loop = asyncio.get_running_loop()
@@ -186,44 +255,60 @@ class ZaraDiscordBot(discord.Client):
     async def on_message(self, message: discord.Message) -> None:
         if message.author.bot or self.user is None:
             return
-        if message.guild is not None and self.user not in message.mentions:
-            return
+
+        guild_id = message.guild.id if message.guild else None
+        mentioned = message.guild is not None and self.user in message.mentions
+        spontaneous = False
+
+        if message.guild is not None and not mentioned:
+            policy = self.policies.policy(message.guild.id)
+            if not policy.random_mode:
+                return
+            if random.random() >= policy.random_reply_chance:
+                return
+            spontaneous = True
+
         if not self.policies.is_allowed(
-            guild_id=message.guild.id if message.guild else None,
+            guild_id=guild_id,
             user_id=message.author.id,
             channel_id=message.channel.id,
             parent_channel_id=getattr(message.channel, "parent_id", None),
         ):
-            await message.channel.send(
-                "You are not authorized to talk to Zara here.",
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
+            if not spontaneous:
+                await message.channel.send(
+                    "You are not authorized to talk to Zara here.",
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
             return
-        text = (
-            remove_bot_mention(message.content, self.user.id)
-            if message.guild is not None
-            else message.content.strip()
-        )
+
+        display_name = getattr(message.author, "display_name", message.author.name)
+        if message.guild is None:
+            text = message.content.strip()
+        elif spontaneous:
+            text = spontaneous_reply_prompt(display_name, message.content)
+        else:
+            text = remove_bot_mention(message.content, self.user.id)
+            if not text:
+                text = bare_mention_prompt(display_name)
+
         if not text:
-            await message.channel.send(
-                "Mention me with a message, or use `/zara ask`.",
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
             return
+
         loop = asyncio.get_running_loop()
+        send = self._send_reply if message.guild is not None else self._send_channel_message
         self.controller.submit(
             text=text,
             conversation_id=conversation_id(
-                guild_id=message.guild.id if message.guild else None,
+                guild_id=guild_id,
                 channel_id=message.channel.id,
             ),
             on_response=lambda response: self._schedule(
                 loop,
-                self._send_channel(message.channel, response),
+                send(message, response),
             ),
             on_error=lambda error: self._schedule(
                 loop,
-                self._send_channel(message.channel, error),
+                send(message, error),
             ),
         )
 
@@ -245,11 +330,21 @@ class ZaraDiscordBot(discord.Client):
     @staticmethod
     async def _require_manager(interaction: discord.Interaction) -> bool:
         if interaction.guild_id is not None:
-            permissions = getattr(interaction.user, "guild_permissions", None)
-            if permissions is not None and (
-                permissions.manage_guild or permissions.administrator
-            ):
+            guild = interaction.guild
+            if guild is not None and guild.owner_id == interaction.user.id:
                 return True
+
+            permission_sets = (
+                getattr(interaction, "permissions", None),
+                getattr(interaction.user, "guild_permissions", None),
+            )
+            for permissions in permission_sets:
+                if permissions is not None and (
+                    getattr(permissions, "manage_guild", False)
+                    or getattr(permissions, "administrator", False)
+                ):
+                    return True
+
         await interaction.response.send_message(
             "Manage Server permission is required for this setup command.",
             ephemeral=True,
@@ -268,6 +363,25 @@ class ZaraDiscordBot(discord.Client):
         chunks = split_discord_message(text) or ["Zara returned an empty response."]
         for chunk in chunks:
             await channel.send(chunk, allowed_mentions=discord.AllowedMentions.none())
+
+    @staticmethod
+    async def _send_channel_message(message: discord.Message, text: str) -> None:
+        await ZaraDiscordBot._send_channel(message.channel, text)
+
+    @staticmethod
+    async def _send_reply(message: discord.Message, text: str) -> None:
+        chunks = split_discord_message(text) or ["Zara returned an empty response."]
+        first, *rest = chunks
+        await message.reply(
+            first,
+            mention_author=False,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        for chunk in rest:
+            await message.channel.send(
+                chunk,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
 
     @staticmethod
     async def _send_interaction(interaction: discord.Interaction, text: str) -> None:
