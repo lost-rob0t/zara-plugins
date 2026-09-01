@@ -20,6 +20,7 @@ class ConfigError(RuntimeError):
 
 @dataclass(frozen=True)
 class GuildPolicy:
+    enabled: bool = True
     access_mode: str = "open"
     authorized_user_ids: frozenset[int] = frozenset()
     allowed_channel_ids: frozenset[int] = frozenset()
@@ -85,6 +86,8 @@ class PolicyStore:
                 for policy in restricted
             )
         policy = self.policy(guild_id)
+        if not policy.enabled:
+            return False
         if (
             policy.access_mode == "restricted"
             and int(user_id) not in policy.authorized_user_ids
@@ -96,6 +99,9 @@ class PolicyStore:
         if parent_channel_id is not None:
             channel_ids.add(int(parent_channel_id))
         return not policy.allowed_channel_ids.isdisjoint(channel_ids)
+
+    def set_enabled(self, guild_id: int, enabled: bool) -> None:
+        self._update(guild_id, lambda policy: replace(policy, enabled=bool(enabled)))
 
     def set_access_mode(self, guild_id: int, mode: str) -> None:
         if mode not in {"open", "restricted"}:
@@ -189,6 +195,9 @@ class PolicyStore:
         policies: dict[int, GuildPolicy] = {}
         try:
             for guild_id, value in guilds.items():
+                enabled = value.get("enabled", True)
+                if not isinstance(enabled, bool):
+                    raise ValueError("enabled must be true or false")
                 mode = value.get("access_mode", "open")
                 if mode not in {"open", "restricted"}:
                     raise ValueError(f"invalid access mode {mode!r}")
@@ -201,6 +210,7 @@ class PolicyStore:
                 if not 0.0 <= random_reply_chance <= 1.0:
                     raise ValueError("random_reply_chance must be between 0 and 1")
                 policies[int(guild_id)] = GuildPolicy(
+                    enabled=enabled,
                     access_mode=mode,
                     authorized_user_ids=frozenset(
                         int(item) for item in value.get("authorized_user_ids", [])
@@ -222,6 +232,7 @@ class PolicyStore:
             "version": SETTINGS_VERSION,
             "guilds": {
                 str(guild_id): {
+                    "enabled": policy.enabled,
                     "access_mode": policy.access_mode,
                     "authorized_user_ids": sorted(policy.authorized_user_ids),
                     "allowed_channel_ids": sorted(policy.allowed_channel_ids),
