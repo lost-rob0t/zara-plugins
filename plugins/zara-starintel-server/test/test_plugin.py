@@ -57,8 +57,19 @@ class FakeClient:
     def __init__(self):
         self.calls = []
 
-    def request(self, method, path, *, query=None, body=None, headers=None):
-        self.calls.append(("request", method, path, query, body, headers))
+    def request(
+        self,
+        method,
+        path,
+        *,
+        query=None,
+        body=None,
+        body_format="json",
+        headers=None,
+    ):
+        self.calls.append(
+            ("request", method, path, query, body, body_format, headers)
+        )
         return {"status": 200, "ok": True, "data": {"path": path}}
 
     def capabilities(self):
@@ -143,7 +154,7 @@ class ZaraStarIntelServerPluginTest(unittest.TestCase):
         status = json.loads(plugin.starintel_status())
 
         self.assertEqual(status["health"]["status"], 200)
-        self.assertEqual(client.calls, [("request", "GET", "/health", None, None, None)])
+        self.assertEqual(client.calls, [("request", "GET", "/health", None, None, "json", None)])
 
     def test_capabilities_and_operations_are_json(self):
         plugin = ZaraStarIntelServerPlugin()
@@ -197,13 +208,24 @@ class ZaraStarIntelServerPluginTest(unittest.TestCase):
             "DELETE",
             "/document/doc-1",
             query_json="{}",
-            body_json="",
+            body_json='{"grant_type":"client_credentials"}',
+            body_format="form",
             headers_json="{}",
         )
 
         self.assertEqual(
             client.calls,
-            [("request", "DELETE", "/document/doc-1", {}, None, {})],
+            [
+                (
+                    "request",
+                    "DELETE",
+                    "/document/doc-1",
+                    {},
+                    {"grant_type": "client_credentials"},
+                    "form",
+                    {},
+                )
+            ],
         )
 
     def test_mapping_arguments_reject_non_objects(self):
