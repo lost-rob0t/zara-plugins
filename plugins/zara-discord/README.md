@@ -44,13 +44,21 @@ Slash commands are synchronized when the bot connects.
 
 ## Discord setup commands
 
-The default policy is intentionally open: every user can talk to Zara in every
-channel. Setup commands require Manage Server (Discord's `manage_guild`) and
-server owners/administrators are accepted by the runtime guard as well:
+The default policy is intentionally permissive for an installed bot: Discord
+use is enabled, every user can talk to Zara in every channel, and tool approval
+requests raised by accepted Discord turns are automatically approved. The
+controller only auto-approves events whose conversation id is in Zara's
+`discord:` namespace; desktop or other runtime turns are not approved by the
+Discord plugin.
+
+Setup commands require Manage Server (Discord's `manage_guild`) and server
+owners/administrators are accepted by the runtime guard as well:
 
 ```text
 /zara ask message:<text>
 /zara status
+/zara discord enabled:<true|false>
+/zara restrict user:<member>
 /zara access set mode:<open|restricted>
 /zara users add user:<member>
 /zara users remove user:<member>
@@ -62,6 +70,12 @@ server owners/administrators are accepted by the runtime guard as well:
 /random off
 /random chance percent:<0..100>
 ```
+
+`/zara discord enabled:false` makes Zara ignore server messages and rejects
+`/zara ask` until a manager enables it again. `/zara restrict user:<member>` is
+the fast path for switching to restricted mode and authorizing the first user;
+run it again or use `/zara users add` for additional users. `/zara access set
+mode:open` returns to open access.
 
 In `restricted` mode, only users added with `/zara users add` may talk. If one
 or more channels are configured, Zara accepts messages in those channels and
