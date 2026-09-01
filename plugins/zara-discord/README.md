@@ -42,6 +42,23 @@ message body. The `/zara ask` command is available in both servers and DMs.
 Restart Zara after installing so its service-plugin host discovers the entry.
 Slash commands are synchronized when the bot connects.
 
+## Conversation context
+
+Each Discord channel or DM has a stable Zara conversation id. The plugin keeps
+the most recent routed user turns plus Zara responses and failures in an
+in-memory history and prepends that history to the next turn. This makes short
+follow-ups such as `retry`, `do that again`, or `use the previous file` retain
+the immediately preceding Discord conversation even when the underlying model
+starts a fresh session for the new turn.
+
+History is bounded to 12,000 characters per conversation and at most 256 active
+conversations. Oldest entries are evicted first, oversized entries are clipped,
+and separate channels never share history. The current message is outside the
+history budget, so a long new request cannot evict itself before submission.
+The history is deliberately process-local and resets when the Zara service
+restarts; it does not scrape arbitrary channel backlog and therefore does not
+require Discord's privileged Message Content intent.
+
 ## Discord setup commands
 
 The default policy is intentionally open: every user can talk to Zara in every
