@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""Install the Zara Local Recall service plugin."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import sys
+from pathlib import Path
+
+
+PLUGIN_NAME = "zara-local-recall"
+PLUGIN_VERSION = "0.1.0"
+
+
+def _copy_writable(source: str, destination: str) -> str:
+    shutil.copyfile(source, destination)
+    os.chmod(destination, 0o644)
+    return destination
+
+
+def _ignore_bytecode(_directory: str, names: list[str]) -> set[str]:
+    return {name for name in names if name == "__pycache__" or name.endswith(".pyc")}
+
+
+def install(
+    *,
+    home: Path | None = None,
+    xdg_config_home: Path | None = None,
+) -> tuple[Path, Path]:
+    resolved_home = home or Path.home()
+    resolved_xdg = xdg_config_home or Path(
+        os.environ.get("XDG_CONFIG_HOME", resolved_home / ".config")
+    )
+    config_dir = resolved_xdg / "zarathushtra" / "plugins" / PLUGIN_NAME
+    library_dir = config_dir / "lib"
+    plugin_dir = resolved_home / ".zarathushtra" / "plugins"
+    plugin_entry = plugin_dir / "zara_local_recall.py"
+
+    config_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(config_dir, 0o700)
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+
+    staging = config_dir / ".lib.tmp"
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir()
+    source_package = Path(__file__).resolve().parents[1] / "lib" / "zara_local_recall_service"
+    shutil.copytree(
+        source_package,
+        staging / "zara_local_recall_service",
+        copy_function=_copy_writable,
+        ignore=_ignore_bytecode,
+    )
+    if library_dir.exists():
+        shutil.rmtree(library_dir)
+    staging.rename(library_dir)
+
+    entry_source = Path(__file__).resolve().parents[1] / "zara-plugin" / "zara_local_recall.py"
+    shutil.copyfile(entry_source, plugin_entry)
+    os.chmod(plugin_entry, 0o644)
+
+    return plugin_entry, library_dir
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog=PLUGIN_NAME,
+        description=f"Install the {PLUGIN_NAME} Zara service plugin (v{PLUGIN_VERSION}).",
+    )
+    parser.add_argument(
+        "action",
+        nargs="?",
+        default="install",
+        choices=["install"],
+        help="install the plugin into Zara's search path",
+    )
+    arguments = parser.parse_args()
+
+    if not shutil.which("local-recall"):
+        print(
+            "warning: the local-recall CLI was not found on PATH; "
+            "install Local Recall first (see https://github.com/lost-rob0t/local-recall)",
+            file=sys.stderr,
+        )
+
+    plugin_entry, library_dir = install()
+    print(f"installed discovery entry: {plugin_entry}")
+    print(f"installed plugin library:  {library_dir}")
+    print(
+        "restart Zara to load the plugin. The plugin talks only to the "
+        "owner-only Local Recall daemon over the authenticated local IPC boundary."
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
