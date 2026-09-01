@@ -3,7 +3,9 @@
   "updated": "2026-09-01",
   "registry": "https://github.com/lost-rob0t/zara-plugins",
   "registry_raw": "https://raw.githubusercontent.com/lost-rob0t/zara-plugins/main/plugins.json",
-  "plugin_search_paths": ["~/.zarathushtra/plugins"],
+  "plugin_search_paths": [
+    "~/.zarathushtra/plugins"
+  ],
   "plugins": [
     {
       "name": "zara-agent-zero",
@@ -15,7 +17,12 @@
       "entrypoint": "zara-plugin/zara_agent_zero.py",
       "docs": "plugins/zara-agent-zero/README.md",
       "license": "GPL-3.0-or-later",
-      "tags": ["agent-zero", "bridge", "delegation", "connector"],
+      "tags": [
+        "agent-zero",
+        "bridge",
+        "delegation",
+        "connector"
+      ],
       "install": {
         "nix": "nix build github:lost-rob0t/zara-plugins#zara-agent-zero"
       },
@@ -35,7 +42,14 @@
       "entrypoint": "zara-plugin/zara_avatar.py",
       "docs": "plugins/zara-avatar/README.md",
       "license": "GPL-3.0-or-later",
-      "tags": ["avatar", "presentation", "vrm", "3d", "renderer", "lipsync"],
+      "tags": [
+        "avatar",
+        "presentation",
+        "vrm",
+        "3d",
+        "renderer",
+        "lipsync"
+      ],
       "install": {
         "tool": "python3 plugins/zara-avatar/tools/zara-avatar install",
         "nix": "nix run github:lost-rob0t/zara-plugins#zara-avatar -- install"
@@ -56,8 +70,17 @@
       "entrypoint": "zara-plugin/zara_discord.py",
       "docs": "plugins/zara-discord/README.md",
       "license": "GPL-3.0-or-later",
-      "tags": ["discord", "chat", "messaging", "access-control", "random-replies"],
-      "python_dependencies": ["discordpy", "audioop-lts"],
+      "tags": [
+        "discord",
+        "chat",
+        "messaging",
+        "access-control",
+        "random-replies"
+      ],
+      "python_dependencies": [
+        "discordpy",
+        "audioop-lts"
+      ],
       "install": {
         "tool": "python3 plugins/zara-discord/tools/zara-discord install",
         "nix": "nix run github:lost-rob0t/zara-plugins#zara-discord -- install"
@@ -78,13 +101,46 @@
       "entrypoint": "zara-plugin/zara_persona.py",
       "docs": "plugins/zara-persona/README.md",
       "license": "GPL-3.0-or-later",
-      "tags": ["persona", "context", "prolog", "privacy"],
+      "tags": [
+        "persona",
+        "context",
+        "prolog",
+        "privacy"
+      ],
       "install": {
         "nix": "nix build github:lost-rob0t/zara-plugins#zara-persona"
       },
       "nix": {
         "flake": "github:lost-rob0t/zara-plugins",
         "package": "zara-persona",
+        "aggregate": "zara-plugins"
+      }
+    },
+    {
+      "name": "zara-local-recall",
+      "version": "0.1.0",
+      "api_version": "1",
+      "plugin_type": "service",
+      "description": "Query Local Recall from Zara: cited activity answers, bounded search, status, and policy-gated screen-context explanation",
+      "path": "plugins/zara-local-recall",
+      "entrypoint": "zara-plugin/zara_local_recall.py",
+      "docs": "plugins/zara-local-recall/README.md",
+      "license": "GPL-3.0-or-later",
+      "tags": [
+        "local-recall",
+        "memory",
+        "activity-recall",
+        "screen-context",
+        "search",
+        "privacy"
+      ],
+      "install": {
+        "tool": "python3 plugins/zara-local-recall/tools/zara-local-recall install",
+        "nix": "nix run github:lost-rob0t/zara-plugins#zara-local-recall -- install"
+      },
+      "nix": {
+        "flake": "github:lost-rob0t/zara-plugins",
+        "package": "zara-local-recall",
         "aggregate": "zara-plugins"
       }
     }
