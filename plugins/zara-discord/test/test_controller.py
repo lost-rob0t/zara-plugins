@@ -1,7 +1,7 @@
 import concurrent.futures
 import unittest
 
-from discord_test_support import CommandReceipt, install_zara_stubs
+from discord_test_support import ApproveTool, CommandReceipt, install_zara_stubs
 
 install_zara_stubs()
 
@@ -49,6 +49,63 @@ class ControllerTests(unittest.TestCase):
 
         self.assertEqual(responses, ["Hi from Zara"])
         self.assertEqual(errors, [])
+
+    def test_auto_approves_tool_waits_for_discord_turns(self):
+        runtime = FakeRuntime()
+        controller = ConversationController(runtime)
+        controller.submit(
+            text="open firefox",
+            conversation_id="discord:guild:10:channel:30",
+            on_response=lambda _text: None,
+            on_error=lambda _text: None,
+        )
+        runtime.next_future.set_result(CommandReceipt("request", "turn-1"))
+
+        handled = controller.handle_event(
+            events.ToolWaitingForUser(
+                turn_id="turn-1",
+                conversation_id="discord:guild:10:channel:30",
+                tool_run_id="tool-1",
+                tool_name="bash",
+            )
+        )
+
+        self.assertTrue(handled)
+        self.assertEqual(len(runtime.commands), 2)
+        self.assertIsInstance(runtime.commands[1], ApproveTool)
+        self.assertEqual(runtime.commands[1].tool_run_id, "tool-1")
+
+    def test_does_not_auto_approve_non_discord_tool_waits(self):
+        runtime = FakeRuntime()
+        controller = ConversationController(runtime)
+
+        handled = controller.handle_event(
+            events.ToolWaitingForUser(
+                turn_id="turn-desktop",
+                conversation_id="desktop:main",
+                tool_run_id="tool-desktop",
+                tool_name="bash",
+            )
+        )
+
+        self.assertFalse(handled)
+        self.assertEqual(runtime.commands, [])
+
+    def test_auto_approval_can_be_disabled(self):
+        runtime = FakeRuntime()
+        controller = ConversationController(runtime, auto_approve_tools=False)
+
+        handled = controller.handle_event(
+            events.ToolWaitingForUser(
+                turn_id="turn-1",
+                conversation_id="discord:guild:10:channel:30",
+                tool_run_id="tool-1",
+                tool_name="bash",
+            )
+        )
+
+        self.assertFalse(handled)
+        self.assertEqual(runtime.commands, [])
 
     def test_reports_async_dispatch_failure_without_exception_details(self):
         runtime = FakeRuntime()
