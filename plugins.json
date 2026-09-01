@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated": "2026-08-31",
+  "updated": "2026-09-01",
   "registry": "https://github.com/lost-rob0t/zara-plugins",
   "registry_raw": "https://raw.githubusercontent.com/lost-rob0t/zara-plugins/main/plugins.json",
   "plugin_search_paths": ["~/.zarathushtra/plugins"],
@@ -45,6 +45,26 @@
       "nix": {
         "flake": "github:lost-rob0t/zara-plugins",
         "package": "zara-discord",
+        "aggregate": "zara-plugins"
+      }
+    },
+    {
+      "name": "zara-persona",
+      "version": "0.1.0",
+      "api_version": "1",
+      "plugin_type": "service",
+      "description": "Operator-owned persona context with optional SWI-Prolog",
+      "path": "plugins/zara-persona",
+      "entrypoint": "zara-plugin/zara_persona.py",
+      "docs": "plugins/zara-persona/README.md",
+      "license": "GPL-3.0-or-later",
+      "tags": ["persona", "context", "prolog", "privacy"],
+      "install": {
+        "nix": "nix build github:lost-rob0t/zara-plugins#zara-persona"
+      },
+      "nix": {
+        "flake": "github:lost-rob0t/zara-plugins",
+        "package": "zara-persona",
         "aggregate": "zara-plugins"
       }
     }
