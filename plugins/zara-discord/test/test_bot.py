@@ -81,7 +81,7 @@ class BotTests(unittest.TestCase):
         self.assertIsNotNone(random_group)
         self.assertEqual(
             {command.name for command in root.commands},
-            {"ask", "status", "access", "users", "channels"},
+            {"ask", "status", "discord", "restrict", "access", "users", "channels"},
         )
         self.assertEqual(
             {command.name for command in root.get_command("access").commands},
@@ -108,7 +108,10 @@ class BotTests(unittest.TestCase):
             for command in root.get_command(group_name).commands:
                 self.assertTrue(command.default_permissions.manage_guild)
                 self.assertTrue(command.guild_only)
-        self.assertTrue(root.get_command("status").default_permissions.manage_guild)
+        for command_name in ("status", "discord", "restrict"):
+            command = root.get_command(command_name)
+            self.assertTrue(command.default_permissions.manage_guild)
+            self.assertTrue(command.guild_only)
         for command in random_group.commands:
             self.assertTrue(command.default_permissions.manage_guild)
             self.assertTrue(command.guild_only)
@@ -172,6 +175,17 @@ class BotTests(unittest.TestCase):
             self.controller.calls[0]["conversation_id"],
             "discord:guild:10:channel:30",
         )
+
+    def test_disabled_guild_ignores_mentions(self):
+        self.bot.policies.set_enabled(10, False)
+
+        asyncio.run(
+            self.bot.on_message(
+                self._message(mentioned=True, content="<@42> open firefox"),
+            )
+        )
+
+        self.assertEqual(self.controller.calls, [])
 
     def test_random_mode_can_spontaneously_reply_without_a_mention(self):
         self.bot.policies.set_random_mode(10, True)
