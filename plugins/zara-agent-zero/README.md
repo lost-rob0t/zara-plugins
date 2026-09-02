@@ -2,9 +2,9 @@
 
 `zara-agent-zero` lets Zara delegate selected work to an existing Agent Zero instance through Agent Zero's native external HTTP API.
 
-It does not start Agent Zero, duplicate Agent Zero's runtime, or create a second bridge protocol. Message delegation uses:
+It does not start Agent Zero, duplicate Agent Zero's runtime, or create a second bridge protocol. Message delegation uses the runtime route registered by `helpers.api.register_api_route`:
 
-- `POST /api_message`
+- `POST /api/api_message`
 - `X-API-KEY: <Agent Zero API token>`
 
 The native response contains Agent Zero's `context_id` and `response` fields.
@@ -12,7 +12,7 @@ The native response contains Agent Zero's `context_id` and `response` fields.
 ## Zara tools
 
 - `agent_zero_status` — report whether the native API URL and API key are configured. It does not expose the key or invent a capabilities endpoint.
-- `agent_zero_message` — send one message/task through `/api_message`. The result includes Agent Zero's `context_id`; pass it back on later calls to continue the same Agent Zero conversation. Optional `project_name`, `agent_profile`, and `lifetime_hours` map directly to Agent Zero's native request fields.
+- `agent_zero_message` — send one message/task through `/api/api_message`. The result includes Agent Zero's `context_id`; pass it back on later calls to continue the same Agent Zero conversation. Optional `project_name`, `agent_profile`, and `lifetime_hours` map directly to Agent Zero's native request fields.
 
 ## Configuration
 
@@ -40,7 +40,7 @@ export ZARA_AGENT_ZERO_API_KEY='...'
 
 ## Agent Zero token
 
-Agent Zero exposes the API token under **Settings > External Services**. The current Agent Zero source protects `/api_message` with the API-key middleware and accepts the token through `X-API-KEY`.
+Agent Zero exposes the API token under **Settings > External Services**. The current Agent Zero source protects `api/api_message.py` with the API-key middleware; the generic API router maps that built-in handler to `/api/api_message`.
 
 ## Network policy
 
