@@ -1,4 +1,4 @@
-"""Configuration for the Agent Zero bridge."""
+"""Configuration for the Agent Zero native API bridge."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ class AgentZeroConfig:
     enabled: bool = True
     base_url: str = ""
     allow_remote: bool = False
-    session_cookie: str = ""
+    api_key: str = ""
     timeout_seconds: float = 60.0
     max_message_chars: int = 20000
     max_response_bytes: int = 1048576
@@ -43,9 +43,13 @@ class AgentZeroConfig:
         source = dict(mapping or {})
         config = cls(
             enabled=_bool(source.get("enabled", True)),
-            base_url=str(_env("ZARA_AGENT_ZERO_URL", source.get("base_url", ""))).strip().rstrip("/"),
+            base_url=str(
+                _env("ZARA_AGENT_ZERO_URL", source.get("base_url", ""))
+            ).strip().rstrip("/"),
             allow_remote=_bool(source.get("allow_remote", False)),
-            session_cookie=str(_env("ZARA_AGENT_ZERO_COOKIE", source.get("session_cookie", ""))).strip(),
+            api_key=str(
+                _env("ZARA_AGENT_ZERO_API_KEY", source.get("api_key", ""))
+            ).strip(),
             timeout_seconds=float(source.get("timeout_seconds", 60.0)),
             max_message_chars=int(source.get("max_message_chars", 20000)),
             max_response_bytes=int(source.get("max_response_bytes", 1048576)),
@@ -67,7 +71,9 @@ class AgentZeroConfig:
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
             raise AgentZeroConfigError("base_url must be an http(s) URL")
         if parsed.username or parsed.password or parsed.query or parsed.fragment:
-            raise AgentZeroConfigError("base_url must not contain credentials, query, or fragment")
+            raise AgentZeroConfigError(
+                "base_url must not contain credentials, query, or fragment"
+            )
         if self.allow_remote:
             return
 
@@ -77,6 +83,10 @@ class AgentZeroConfig:
         try:
             address = ipaddress.ip_address(host)
         except ValueError as error:
-            raise AgentZeroConfigError("remote Agent Zero host requires allow_remote=true") from error
+            raise AgentZeroConfigError(
+                "remote Agent Zero host requires allow_remote=true"
+            ) from error
         if not address.is_loopback:
-            raise AgentZeroConfigError("remote Agent Zero host requires allow_remote=true")
+            raise AgentZeroConfigError(
+                "remote Agent Zero host requires allow_remote=true"
+            )
