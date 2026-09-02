@@ -15,6 +15,7 @@ class AgentZeroConfigTest(unittest.TestCase):
     def test_empty_url_is_allowed_until_tool_use(self):
         config = AgentZeroConfig.load({})
         self.assertEqual(config.base_url, "")
+        self.assertEqual(config.api_key, "")
         self.assertTrue(config.enabled)
 
     def test_loopback_url_is_allowed_by_default(self):
@@ -25,18 +26,18 @@ class AgentZeroConfigTest(unittest.TestCase):
         with self.assertRaisesRegex(AgentZeroConfigError, "allow_remote=true"):
             AgentZeroConfig.load({"base_url": "https://agent-zero.example"})
 
-    def test_environment_supplies_runtime_url_and_cookie(self):
+    def test_environment_supplies_runtime_url_and_api_key(self):
         with patch.dict(
             os.environ,
             {
                 "ZARA_AGENT_ZERO_URL": "http://localhost:5000",
-                "ZARA_AGENT_ZERO_COOKIE": "session=private",
+                "ZARA_AGENT_ZERO_API_KEY": "private-token",
             },
             clear=False,
         ):
             config = AgentZeroConfig.load({"base_url": "http://127.0.0.1:1"})
         self.assertEqual(config.base_url, "http://localhost:5000")
-        self.assertEqual(config.session_cookie, "session=private")
+        self.assertEqual(config.api_key, "private-token")
 
 
 if __name__ == "__main__":
