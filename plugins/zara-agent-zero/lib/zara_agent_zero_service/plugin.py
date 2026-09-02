@@ -44,7 +44,7 @@ class ZaraAgentZeroPlugin(ServicePlugin):
                 func=self.agent_zero_message,
                 name="agent_zero_message",
                 description=(
-                    "Send one task or message through Agent Zero's native /api_message API. "
+                    "Send one task or message through Agent Zero's native /api/api_message API. "
                     "Reuse context_id from a prior result to continue the same conversation."
                 ),
             ),
