@@ -38,41 +38,43 @@ class RecordingOpener:
 
 
 class AgentZeroClientTest(unittest.TestCase):
-    def test_capabilities_uses_connector_endpoint_and_cookie(self):
-        opener = RecordingOpener(
-            {"protocol": "a0-connector.v1", "features": ["message_send"]}
-        )
+    def test_send_message_uses_native_endpoint_and_api_key(self):
+        opener = RecordingOpener({"context_id": "ctx-1", "response": "done"})
         client = AgentZeroClient(
             AgentZeroConfig.load(
                 {
                     "base_url": "http://localhost:5000",
-                    "session_cookie": "session=secret",
+                    "api_key": "secret-token",
                 }
             ),
             opener=opener,
         )
-        result = client.capabilities()
+        result = client.send_message("do work")
         request = opener.requests[0]
-        self.assertEqual(result["protocol"], "a0-connector.v1")
-        self.assertTrue(request.full_url.endswith("/api/plugins/_a0_connector/v1/capabilities"))
-        self.assertEqual(request.get_header("Cookie"), "session=secret")
+        self.assertEqual(result["response"], "done")
+        self.assertTrue(request.full_url.endswith("/api_message"))
+        self.assertEqual(request.get_header("X-api-key"), "secret-token")
+        self.assertIsNone(request.get_header("Cookie"))
 
-    def test_send_message_preserves_context_routing(self):
-        opener = RecordingOpener(
-            {"context_id": "ctx-1", "status": "completed", "response": "done"}
-        )
+    def test_send_message_preserves_native_context_routing(self):
+        opener = RecordingOpener({"context_id": "ctx-1", "response": "done"})
         client = AgentZeroClient(
-            AgentZeroConfig.load({"base_url": "http://127.0.0.1:5000"}),
+            AgentZeroConfig.load(
+                {
+                    "base_url": "http://127.0.0.1:5000",
+                    "api_key": "secret-token",
+                }
+            ),
             opener=opener,
         )
-        result = client.send_message(
+        client.send_message(
             "do work",
             context_id="ctx-1",
             project_name="demo",
             agent_profile="symbolics",
+            lifetime_hours=12,
         )
         request_payload = json.loads(opener.requests[0].data.decode("utf-8"))
-        self.assertEqual(result["response"], "done")
         self.assertEqual(
             request_payload,
             {
@@ -80,14 +82,47 @@ class AgentZeroClientTest(unittest.TestCase):
                 "context_id": "ctx-1",
                 "project_name": "demo",
                 "agent_profile": "symbolics",
+                "lifetime_hours": 12.0,
             },
         )
+
+    def test_status_reports_native_contract_without_transport(self):
+        opener = RecordingOpener({})
+        client = AgentZeroClient(
+            AgentZeroConfig.load(
+                {
+                    "base_url": "http://localhost:5000",
+                    "api_key": "secret-token",
+                }
+            ),
+            opener=opener,
+        )
+        status = client.status()
+        self.assertEqual(status["api"], "agent-zero-native")
+        self.assertEqual(status["endpoint"], "/api_message")
+        self.assertTrue(status["configured"])
+        self.assertTrue(status["api_key_configured"])
+        self.assertEqual(opener.requests, [])
+
+    def test_missing_api_key_fails_before_transport(self):
+        opener = RecordingOpener({})
+        client = AgentZeroClient(
+            AgentZeroConfig.load({"base_url": "http://localhost:5000"}),
+            opener=opener,
+        )
+        with self.assertRaisesRegex(AgentZeroBridgeError, "api_key is not configured"):
+            client.send_message("do work")
+        self.assertEqual(opener.requests, [])
 
     def test_message_limit_is_enforced_before_transport(self):
         opener = RecordingOpener({})
         client = AgentZeroClient(
             AgentZeroConfig.load(
-                {"base_url": "http://localhost:5000", "max_message_chars": 4}
+                {
+                    "base_url": "http://localhost:5000",
+                    "api_key": "secret-token",
+                    "max_message_chars": 4,
+                }
             ),
             opener=opener,
         )
@@ -95,13 +130,20 @@ class AgentZeroClientTest(unittest.TestCase):
             client.send_message("12345")
         self.assertEqual(opener.requests, [])
 
-    def test_protocol_mismatch_fails_closed(self):
+    def test_lifetime_must_be_positive_before_transport(self):
+        opener = RecordingOpener({})
         client = AgentZeroClient(
-            AgentZeroConfig.load({"base_url": "http://localhost:5000"}),
-            opener=RecordingOpener({"protocol": "something-else"}),
+            AgentZeroConfig.load(
+                {
+                    "base_url": "http://localhost:5000",
+                    "api_key": "secret-token",
+                }
+            ),
+            opener=opener,
         )
-        with self.assertRaisesRegex(AgentZeroBridgeError, "incompatible"):
-            client.capabilities()
+        with self.assertRaisesRegex(AgentZeroBridgeError, "lifetime_hours"):
+            client.send_message("do work", lifetime_hours=0)
+        self.assertEqual(opener.requests, [])
 
 
 if __name__ == "__main__":
