@@ -52,7 +52,7 @@ class AgentZeroClientTest(unittest.TestCase):
         result = client.send_message("do work")
         request = opener.requests[0]
         self.assertEqual(result["response"], "done")
-        self.assertTrue(request.full_url.endswith("/api_message"))
+        self.assertTrue(request.full_url.endswith("/api/api_message"))
         self.assertEqual(request.get_header("X-api-key"), "secret-token")
         self.assertIsNone(request.get_header("Cookie"))
 
@@ -99,7 +99,7 @@ class AgentZeroClientTest(unittest.TestCase):
         )
         status = client.status()
         self.assertEqual(status["api"], "agent-zero-native")
-        self.assertEqual(status["endpoint"], "/api_message")
+        self.assertEqual(status["endpoint"], "/api/api_message")
         self.assertTrue(status["configured"])
         self.assertTrue(status["api_key_configured"])
         self.assertEqual(opener.requests, [])
