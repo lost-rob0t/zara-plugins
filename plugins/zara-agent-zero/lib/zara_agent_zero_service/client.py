@@ -74,7 +74,7 @@ class AgentZeroClient:
     def status(self) -> dict[str, Any]:
         return {
             "api": "agent-zero-native",
-            "endpoint": "/api_message",
+            "endpoint": "/api/api_message",
             "enabled": self.config.enabled,
             "configured": bool(
                 self.config.enabled and self.config.base_url and self.config.api_key
@@ -114,4 +114,4 @@ class AgentZeroClient:
             payload["project_name"] = project_name.strip()
         if agent_profile.strip():
             payload["agent_profile"] = agent_profile.strip()
-        return self._post("/api_message", payload)
+        return self._post("/api/api_message", payload)
