@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated": "2026-09-01",
+  "updated": "2026-09-02",
   "registry": "https://github.com/lost-rob0t/zara-plugins",
   "registry_raw": "https://raw.githubusercontent.com/lost-rob0t/zara-plugins/main/plugins.json",
   "plugin_search_paths": [
@@ -9,10 +9,10 @@
   "plugins": [
     {
       "name": "zara-agent-zero",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "api_version": "1",
       "plugin_type": "service",
-      "description": "Delegate selected Zara work to Agent Zero through the A0 connector",
+      "description": "Delegate selected Zara work to Agent Zero through its native external API",
       "path": "plugins/zara-agent-zero",
       "entrypoint": "zara-plugin/zara_agent_zero.py",
       "docs": "plugins/zara-agent-zero/README.md",
@@ -21,7 +21,7 @@
         "agent-zero",
         "bridge",
         "delegation",
-        "connector"
+        "api"
       ],
       "install": {
         "nix": "nix build github:lost-rob0t/zara-plugins#zara-agent-zero"
