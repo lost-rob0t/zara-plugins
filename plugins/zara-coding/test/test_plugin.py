@@ -57,7 +57,13 @@ class CodingPluginTests(unittest.TestCase):
         tools = {tool.name: tool for tool in ZaraCodingPlugin().tools()}
         self.assertEqual(
             set(tools),
-            {"coding.status", "coding.repo.inspect", "coding.git.log", "coding.spec.normalize"},
+            {
+                "coding.status",
+                "coding.repo.inspect",
+                "coding.git.log",
+                "coding.git.branches",
+                "coding.spec.normalize",
+            },
         )
         for tool in tools.values():
             self.assertFalse(bool((tool.metadata or {}).get("zara_requires_approval", False)))
@@ -73,6 +79,8 @@ class CodingPluginTests(unittest.TestCase):
             plugin.inspect_repo("/")
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.git_log("/")
+        with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
+            plugin.git_branches("/")
         with self.assertRaisesRegex(RuntimeError, "Prolog-RLM"):
             plugin.normalize_spec("spec([]).")
 
@@ -128,6 +136,20 @@ class CodingPluginTests(unittest.TestCase):
             evidence = json.loads(plugin.git_log(str(repo), limit=7))
             self.assertEqual(evidence[0]["commit"], "c" * 40)
             log.assert_called_once_with(repo, limit=7)
+
+    @patch("zara_coding.plugin.shutil.which", return_value="/usr/bin/git")
+    @patch("zara_coding.plugin.RepositoryInspector.branches")
+    def test_git_branches_returns_structured_local_inventory_with_explicit_bound(self, branches, _which):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = root / "repo"
+            repo.mkdir()
+            branches.return_value = [{"name": "main", "commit": "d" * 40, "upstream": "origin/main"}]
+            plugin = ZaraCodingPlugin()
+            plugin.start(Runtime({"plugins": {"zara-coding": {"allowed_roots": [str(root)]}}}))
+            evidence = json.loads(plugin.git_branches(str(repo), limit=9))
+            self.assertEqual(evidence[0]["name"], "main")
+            branches.assert_called_once_with(repo, limit=9)
 
 
 if __name__ == "__main__":
