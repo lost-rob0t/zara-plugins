@@ -60,6 +60,7 @@ class CodingPluginTests(unittest.TestCase):
             {
                 "coding.status",
                 "coding.repo.inspect",
+                "coding.git.diff",
                 "coding.git.log",
                 "coding.git.branches",
                 "coding.spec.normalize",
@@ -77,6 +78,8 @@ class CodingPluginTests(unittest.TestCase):
         self.assertEqual(status["prolog_rlm"], {"status": "unavailable", "reason": "prolog-rlm-checkout-not-configured"})
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.inspect_repo("/")
+        with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
+            plugin.git_diff("/")
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.git_log("/")
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
@@ -122,6 +125,20 @@ class CodingPluginTests(unittest.TestCase):
             self.assertEqual(evidence["head"], "b" * 40)
             self.assertFalse(evidence["dirty"])
             inspect.assert_called_once_with(repo)
+
+    @patch("zara_coding.plugin.shutil.which", return_value="/usr/bin/git")
+    @patch("zara_coding.plugin.RepositoryInspector.diff")
+    def test_git_diff_returns_structured_summary_with_explicit_bound(self, diff, _which):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = root / "repo"
+            repo.mkdir()
+            diff.return_value = [{"path": "file.py", "additions": 4, "deletions": 2, "binary": False}]
+            plugin = ZaraCodingPlugin()
+            plugin.start(Runtime({"plugins": {"zara-coding": {"allowed_roots": [str(root)]}}}))
+            evidence = json.loads(plugin.git_diff(str(repo), max_files=7))
+            self.assertEqual(evidence[0]["path"], "file.py")
+            diff.assert_called_once_with(repo, max_files=7)
 
     @patch("zara_coding.plugin.shutil.which", return_value="/usr/bin/git")
     @patch("zara_coding.plugin.RepositoryInspector.log")
