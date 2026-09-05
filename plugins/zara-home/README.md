@@ -8,9 +8,11 @@ Writes are validated against the device capability schema before a provider call
 
 The default plugin has no configured provider and reports `smart-home-provider-not-configured` instead of fabricating device state or successful actions. Real provider adapters remain explicit configuration/integration work; tests use fake adapters only and require no network.
 
-## Expert integration
+## Facts and planning
 
-The normalized domain is suitable for projecting room/device/state observations into `zara-expert` rules for higher-level plans such as comfort, lighting, and climate. Expert reasoning may propose operations, but mutations still pass through the capability validator and provider verification path.
+`home.room.state` returns one normalized room snapshot with device, presence, and environment data. `home.plan` is deliberately non-mutating. The initial deterministic rule surface accepts only `make the <room> comfortable`, projects explicit facts such as `occupied(office)` and `temperature_c(office,18.0)`, and returns proposed actions with stable rule IDs plus a human-readable reason. Unknown high-level intents fail instead of being guessed.
+
+This keeps planning separate from execution: proposed actions still have to pass `home.device.set` capability/range/security validation and post-write verification. The same normalized facts and rule identifiers are suitable for projection into `zara-expert` once Zara exposes a canonical cross-plugin service lookup; `zara-home` does not instantiate a second expert runtime to fake that integration.
 
 ## Tests
 
