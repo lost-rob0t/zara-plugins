@@ -4,10 +4,12 @@
             repository_branch_args/1,
             repository_clean_args/1,
             worktree_locked_args/1,
+            worktree_absent_args/1,
             repository_head_evaluator/3,
             repository_branch_evaluator/3,
             repository_clean_evaluator/3,
-            worktree_locked_evaluator/3
+            worktree_locked_evaluator/3,
+            worktree_absent_evaluator/3
           ]).
 
 registry([
@@ -74,6 +76,22 @@ registry([
            latency:pure,
            argument_schema:_{type:dict,required:_{path:text,head:git_object_id}},
            description:"require one registered worktree at an exact commit to be coordination-locked"
+         }),
+    assertion_provider(
+        worktree_absent,
+        1,
+        zara_coding_assertions:worktree_absent_args,
+        zara_coding_assertions:worktree_absent_evaluator,
+        none,
+        _{ verifier:_{id:zara_coding_repository,version:1},
+           collector:_{id:none,version:1},
+           evidence_policy:_{required_evidence:true,
+                             source_classes:[repository],
+                             trust_classes:[trusted,observed],
+                             freshness:current},
+           latency:pure,
+           argument_schema:_{type:dict,required:_{path:text}},
+           description:"require one worktree path to be absent"
          })
 ]).
 
@@ -108,6 +126,12 @@ worktree_locked_args(Args) :-
     nonempty_text(Path),
     get_dict(head, Args, Head),
     git_object_id(Head).
+
+worktree_absent_args(Args) :-
+    is_dict(Args),
+    dict_keys(Args, [path]),
+    get_dict(path, Args, Path),
+    nonempty_text(Path).
 
 repository_head_evaluator(Assertion, Observation, Status) :-
     (   get_dict(root, Assertion.args, ExpectedRoot),
@@ -155,6 +179,16 @@ worktree_locked_evaluator(Assertion, Observation, Status) :-
         get_dict(locked, Observation.value, true),
         ActualPath == ExpectedPath,
         ActualHead == ExpectedHead
+    ->  Status = passed
+    ;   Status = failed
+    ).
+
+worktree_absent_evaluator(Assertion, Observation, Status) :-
+    (   get_dict(path, Assertion.args, ExpectedPath),
+        is_dict(Observation.value),
+        get_dict(path, Observation.value, ActualPath),
+        get_dict(present, Observation.value, false),
+        ActualPath == ExpectedPath
     ->  Status = passed
     ;   Status = failed
     ).
