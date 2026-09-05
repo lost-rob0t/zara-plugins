@@ -56,7 +56,7 @@ class CodingPluginTests(unittest.TestCase):
         self.assertEqual(plugin.metadata.version, "0.1.0")
         self.assertEqual(plugin.metadata.api_version, "1")
 
-    def test_read_only_initial_surface_has_no_approval_bypass(self):
+    def test_tool_surface_requires_approval_only_for_mutation(self):
         tools = {tool.name: tool for tool in ZaraCodingPlugin().tools()}
         self.assertEqual(
             set(tools),
@@ -68,12 +68,16 @@ class CodingPluginTests(unittest.TestCase):
                 "coding.git.diff",
                 "coding.git.log",
                 "coding.git.branches",
+                "coding.git.branch.create",
                 "coding.git.worktree.list",
                 "coding.spec.catalog",
                 "coding.spec.normalize",
             },
         )
-        for tool in tools.values():
+        self.assertTrue(bool((tools["coding.git.branch.create"].metadata or {}).get("zara_requires_approval", False)))
+        for name, tool in tools.items():
+            if name == "coding.git.branch.create":
+                continue
             self.assertFalse(bool((tool.metadata or {}).get("zara_requires_approval", False)))
 
     def test_unconfigured_plugin_loads_degraded_and_fails_repo_inspection_closed(self):
@@ -95,6 +99,8 @@ class CodingPluginTests(unittest.TestCase):
             plugin.git_log("/")
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.git_branches("/")
+        with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
+            plugin.git_branch_create("/", "feature")
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.git_worktrees("/")
         with self.assertRaisesRegex(RuntimeError, "Prolog-RLM"):
