@@ -6,7 +6,15 @@
 
 Writes are validated against the device capability schema before a provider call. Enum membership and numeric ranges are enforced. Capabilities marked `security_sensitive` are refused by the generic mutation path, so vague intent cannot unlock/open security-sensitive devices. Provider acceptance alone is not reported as success: device writes are re-read and return explicit `verified` state plus the original provider evidence.
 
-The default plugin has no configured provider and reports `smart-home-provider-not-configured` instead of fabricating device state or successful actions. Real provider adapters remain explicit configuration/integration work; tests use fake adapters only and require no network.
+The default plugin has no configured provider and reports `smart-home-provider-not-configured` instead of fabricating device state or successful actions. Provider credentials and network transports remain runtime configuration; they are not stored by this plugin or written into the Nix store.
+
+## Home Assistant adapter
+
+`zara_home.home_assistant.HomeAssistantAdapter` is a bounded adapter over an injected Home Assistant transport. The transport owns URL/authentication/timeouts and exposes a structured `request(method, path, payload=None)` seam. The adapter normalizes Home Assistant wire state into the existing provider-neutral device model, so no public Zara tool schema changes are required.
+
+The initial mapping intentionally stays small: light/switch power and climate temperature are writable; lock and cover state are exposed as `security_sensitive` capabilities and are not writable through the adapter. Unsupported domains and capabilities fail explicitly. Service-call responses are retained as provider evidence, while `HomeService` performs the authoritative post-write re-read before reporting `verified=true`.
+
+Tests use an in-memory fake transport and require no Home Assistant instance or network access.
 
 ## Facts and planning
 
