@@ -79,6 +79,20 @@
       "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-github", "aggregate": "zara-plugins"}
     },
     {
+      "name": "zara-knowledge",
+      "version": "0.1.0",
+      "api_version": "1",
+      "plugin_type": "service",
+      "description": "Provider-neutral sourced knowledge retrieval with a first-class Brave Search adapter",
+      "path": "plugins/zara-knowledge",
+      "entrypoint": "zara-plugin/zara_knowledge_entrypoint.py",
+      "docs": "plugins/zara-knowledge/README.md",
+      "license": "GPL-3.0-or-later",
+      "tags": ["knowledge", "search", "brave", "citations", "provenance"],
+      "install": {"nix": "nix build github:lost-rob0t/zara-plugins#zara-knowledge"},
+      "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-knowledge", "aggregate": "zara-plugins"}
+    },
+    {
       "name": "zara-local-recall",
       "version": "0.1.0",
       "api_version": "1",
