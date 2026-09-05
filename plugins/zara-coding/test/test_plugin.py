@@ -1,11 +1,11 @@
 import json
-import subprocess
 import sys
 import tempfile
 import types
 import unittest
 from dataclasses import dataclass
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
@@ -58,26 +58,40 @@ class CodingPluginTests(unittest.TestCase):
         self.assertEqual(status["status"], "degraded")
         self.assertEqual(status["repository"], {"status": "unavailable", "reason": "allowed-roots-not-configured"})
         self.assertEqual(status["prolog_rlm"], {"status": "unavailable", "reason": "prolog-rlm-checkout-not-configured"})
-        with self.assertRaisesRegex(RuntimeError, "allowed_roots"):
+        with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.inspect_repo("/")
 
-    def test_configured_plugin_returns_structured_repo_evidence(self):
+    @patch("zara_coding.plugin.shutil.which", return_value=None)
+    def test_missing_git_degrades_honestly(self, _which):
+        with tempfile.TemporaryDirectory() as temporary:
+            plugin = ZaraCodingPlugin()
+            plugin.start(Runtime({"plugins": {"zara-coding": {"allowed_roots": [temporary]}}}))
+            status = json.loads(plugin.status())
+            self.assertEqual(status["repository"], {"status": "unavailable", "reason": "git-executable-not-found"})
+            with self.assertRaisesRegex(RuntimeError, "git-executable-not-found"):
+                plugin.inspect_repo(temporary)
+
+    @patch("zara_coding.plugin.shutil.which", return_value="/usr/bin/git")
+    @patch("zara_coding.plugin.RepositoryInspector.inspect")
+    def test_configured_plugin_returns_structured_repo_evidence(self, inspect, _which):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo = root / "repo"
             repo.mkdir()
-            subprocess.run(["git", "init", "-q", str(repo)], check=True)
-            subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.invalid"], check=True)
-            subprocess.run(["git", "-C", str(repo), "config", "user.name", "Zara Plugin Test"], check=True)
-            (repo / "file.txt").write_text("base\n")
-            subprocess.run(["git", "-C", str(repo), "add", "file.txt"], check=True)
-            subprocess.run(["git", "-C", str(repo), "commit", "-qm", "initial"], check=True)
+            inspect.return_value = {
+                "root": str(repo.resolve()),
+                "head": "b" * 40,
+                "branch": "main",
+                "dirty": False,
+                "changed_paths": [],
+            }
             plugin = ZaraCodingPlugin()
             plugin.start(Runtime({"plugins": {"zara-coding": {"allowed_roots": [str(root)]}}}))
             evidence = json.loads(plugin.inspect_repo(str(repo)))
             self.assertEqual(evidence["root"], str(repo.resolve()))
-            self.assertEqual(len(evidence["head"]), 40)
+            self.assertEqual(evidence["head"], "b" * 40)
             self.assertFalse(evidence["dirty"])
+            inspect.assert_called_once_with(repo)
 
 
 if __name__ == "__main__":
