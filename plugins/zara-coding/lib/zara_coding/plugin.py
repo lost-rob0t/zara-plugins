@@ -84,6 +84,14 @@ class ZaraCodingPlugin(ServicePlugin):
                 description="Return bounded structured local branch refs for an allowed repository.",
             ),
             StructuredTool.from_function(
+                func=self.spec_catalog,
+                name="coding.spec.catalog",
+                description=(
+                    "Return Prolog-RLM's canonical closed SPEC structural vocabulary and the assertion "
+                    "kinds currently admitted by this bridge."
+                ),
+            ),
+            StructuredTool.from_function(
                 func=self.normalize_spec,
                 name="coding.spec.normalize",
                 description=(
@@ -131,15 +139,23 @@ class ZaraCodingPlugin(ServicePlugin):
             raise ValueError("path must be a non-empty string")
         return json.dumps(inspector.branches(Path(path), limit=limit), sort_keys=True)
 
+    def spec_catalog(self) -> str:
+        bridge = self._require_prolog_rlm()
+        return json.dumps(bridge.spec_catalog(), sort_keys=True)
+
     def normalize_spec(self, source: str) -> str:
-        if self.prolog_rlm is None:
-            raise RuntimeError("zara-coding Prolog-RLM checkout is not configured")
-        return json.dumps(self.prolog_rlm.normalize_spec(source), sort_keys=True)
+        bridge = self._require_prolog_rlm()
+        return json.dumps(bridge.normalize_spec(source), sort_keys=True)
 
     def _require_inspector(self) -> RepositoryInspector:
         if self.inspector is None:
             raise RuntimeError(f"zara-coding repository inspection unavailable: {self.repository_reason}")
         return self.inspector
+
+    def _require_prolog_rlm(self) -> PrologRLMBridge:
+        if self.prolog_rlm is None:
+            raise RuntimeError("zara-coding Prolog-RLM checkout is not configured")
+        return self.prolog_rlm
 
     @staticmethod
     def _section(configuration) -> Mapping[str, object]:
