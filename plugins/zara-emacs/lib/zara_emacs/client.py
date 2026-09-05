@@ -84,9 +84,10 @@ class EmacsClient:
             date.fromisoformat(value)
         except ValueError as error:
             raise EmacsError("daily date must be ISO YYYY-MM-DD or today") from error
+        encoded = json.dumps(value)
         expression = (
             "(progn (require 'org-roam-dailies) "
-            f"(org-roam-dailies-goto-date {json.dumps(value)}) "
+            f"(org-roam-dailies--capture (org-read-date nil t {encoded}) t nil) "
             "(or (buffer-file-name) (buffer-name)))"
         )
         observed = self._eval(expression)
