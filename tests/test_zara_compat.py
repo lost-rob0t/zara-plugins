@@ -15,6 +15,7 @@ from scripts.zara_compat import (
     plugin_import_environment,
     plugin_paths,
     require_metadata,
+    require_search_path_discovery,
     require_tool_names,
     temporary_runtime_environment,
     validate_zara_source,
@@ -94,6 +95,18 @@ class ZaraCompatibilityGateTest(unittest.TestCase):
             self.assertEqual(sys.path, [str(other), *previous])
         finally:
             sys.path[:] = previous
+
+    def test_search_path_discovery_names_missing_plugin(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "entrypoint.py"
+            target.write_text("pass\n", encoding="utf-8")
+            expected = {target.resolve(): "zara-example"}
+
+            with self.assertRaisesRegex(
+                CompatibilityError,
+                "zara-example.*not discoverable.*plugin search path",
+            ):
+                require_search_path_discovery(expected, lambda paths: ())
 
     def test_zara_source_must_contain_the_real_plugin_api(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

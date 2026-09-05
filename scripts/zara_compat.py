@@ -83,6 +83,19 @@ def require_tool_names(name: str, tools: tuple[Any, ...] | list[Any], seen: dict
         seen[tool_name] = name
 
 
+def require_search_path_discovery(
+    expected: dict[Path, str],
+    iter_plugin_files,
+    search_path: Path = Path("."),
+) -> None:
+    discovered = {Path(path).resolve() for path in iter_plugin_files((search_path,))}
+    for entrypoint, name in expected.items():
+        if entrypoint.resolve() not in discovered:
+            raise CompatibilityError(
+                f"{name}: packaged entrypoint is not discoverable through Zara plugin search path"
+            )
+
+
 def plugin_paths(
     root: Path,
     entry: dict[str, Any],
@@ -137,12 +150,19 @@ def _load_runtime_contracts(zara_source: Path):
     try:
         from langchain_core.tools import BaseTool
         from zara.plugins import PLUGIN_API_VERSION, PluginMetadata, ServicePlugin
-        from zara.plugins.loader import load_plugin_module
+        from zara.plugins.loader import iter_plugin_files, load_plugin_module
     except Exception as error:
         raise CompatibilityError(
             f"could not import pinned Zara plugin API: {type(error).__name__}: {error}"
         ) from error
-    return BaseTool, PLUGIN_API_VERSION, PluginMetadata, ServicePlugin, load_plugin_module
+    return (
+        BaseTool,
+        PLUGIN_API_VERSION,
+        PluginMetadata,
+        ServicePlugin,
+        iter_plugin_files,
+        load_plugin_module,
+    )
 
 
 def _qualified_type(value: object) -> str:
@@ -160,14 +180,23 @@ def check_registry(
     runtime_root = runtime_root.resolve() if runtime_root is not None else None
     zara_source = validate_zara_source(zara_source)
     entries = load_registry(root / "plugins.json")
-    BaseTool, api_version, PluginMetadata, ServicePlugin, load_plugin_module = (
-        _load_runtime_contracts(zara_source)
-    )
+    (
+        BaseTool,
+        api_version,
+        PluginMetadata,
+        ServicePlugin,
+        iter_plugin_files,
+        load_plugin_module,
+    ) = _load_runtime_contracts(zara_source)
 
     failures: list[str] = []
     seen_tool_names: dict[str, str] = {}
     with tempfile.TemporaryDirectory(prefix="zara-plugin-compat-") as temporary_home:
-        with temporary_runtime_environment(Path(temporary_home)):
+        home = Path(temporary_home)
+        search_path = home / ".zarathushtra" / "plugins"
+        search_path.mkdir(parents=True, exist_ok=True)
+        expected_discovery: dict[Path, str] = {}
+        with temporary_runtime_environment(home):
             for entry in entries:
                 name = str(entry.get("name", "?"))
                 if str(entry.get("api_version", "")) != api_version:
@@ -178,6 +207,15 @@ def check_registry(
                 entrypoint, _ = plugin_paths(root, entry, runtime_root=runtime_root)
                 if not entrypoint.is_file():
                     failures.append(f"{name}: installed entrypoint is missing: {entrypoint}")
+                    continue
+                discovery_link = search_path / f"{name}.py"
+                try:
+                    discovery_link.symlink_to(entrypoint.resolve())
+                    expected_discovery[entrypoint.resolve()] = name
+                except OSError as error:
+                    failures.append(
+                        f"{name}: could not project packaged entrypoint into Zara plugin search path: {error}"
+                    )
                     continue
                 try:
                     with plugin_import_environment(root, entry, runtime_root=runtime_root):
@@ -230,6 +268,14 @@ def check_registry(
                                 require_tool_names(name, tools, seen_tool_names)
                 except Exception as error:
                     failures.append(f"{name}: {type(error).__name__}: {error}")
+            try:
+                require_search_path_discovery(
+                    expected_discovery,
+                    iter_plugin_files,
+                    search_path,
+                )
+            except CompatibilityError as error:
+                failures.append(str(error))
     return failures
 
 
