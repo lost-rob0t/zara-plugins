@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 from langchain_core.tools import StructuredTool
@@ -25,12 +26,12 @@ class ZaraFilesPlugin(ServicePlugin):
 
     def start(self, runtime) -> None:
         configuration = runtime.configuration
-        section = {}
-        if isinstance(configuration, dict):
+        section: Mapping[str, object] = {}
+        if isinstance(configuration, Mapping):
             plugins = configuration.get("plugins")
-            if isinstance(plugins, dict):
+            if isinstance(plugins, Mapping):
                 candidate = plugins.get("zara-files", {})
-                if isinstance(candidate, dict):
+                if isinstance(candidate, Mapping):
                     section = candidate
         roots = section.get("roots", [])
         if roots is None:
@@ -61,16 +62,23 @@ class ZaraFilesPlugin(ServicePlugin):
     def status(self) -> str:
         if self.domain is None:
             return self._json({"status": "unavailable", "reason": "file-roots-not-configured"})
-        return self._json({"status": "ready", "root_ids": sorted(self.domain._roots)})
+        return self._json({"status": "ready", "root_ids": sorted(self.domain.root_ids)})
 
     def search(self, name: str = "*") -> str:
         return self._json(self._require_domain().search(name=name))
 
-    def metadata(self, root_id: str, relative_path: str) -> str:
+    def file_metadata(self, root_id: str, relative_path: str) -> str:
         return self._json(self._require_domain().metadata(root_id, relative_path))
 
-    def read_text(self, root_id: str, relative_path: str, max_bytes: int = 65536) -> str:
-        return self._json(self._require_domain().read_text(root_id, relative_path, max_bytes=max_bytes))
+    def read_text(self, root_id: str, relative_path: str, max_bytes: int = 0) -> str:
+        effective_limit = None if max_bytes == 0 else max_bytes
+        return self._json(
+            self._require_domain().read_text(
+                root_id,
+                relative_path,
+                max_bytes=effective_limit,
+            )
+        )
 
     def create_text(self, root_id: str, relative_path: str, text: str) -> str:
         return self._json(self._require_domain().create_text(root_id, relative_path, text))
@@ -94,8 +102,8 @@ class ZaraFilesPlugin(ServicePlugin):
         return (
             StructuredTool.from_function(func=self.status, name="files.status", description="Report configured root IDs without exposing host root paths."),
             StructuredTool.from_function(func=self.search, name="files.search", description="Search configured roots by bounded filename glob."),
-            StructuredTool.from_function(func=self.metadata, name="files.metadata", description="Inspect metadata for a root-confined relative path."),
-            StructuredTool.from_function(func=self.read_text, name="files.read_text", description="Read bounded UTF-8 text from a root-confined regular file."),
+            StructuredTool.from_function(func=self.file_metadata, name="files.metadata", description="Inspect metadata for a root-confined relative path."),
+            StructuredTool.from_function(func=self.read_text, name="files.read_text", description="Read bounded UTF-8 text from a root-confined regular file; max_bytes=0 uses the configured limit."),
             StructuredTool.from_function(func=self.create_text, name="files.create_text", description="Create a new bounded text file without overwrite."),
             StructuredTool.from_function(func=self.copy, name="files.copy", description="Copy a regular file between configured roots without overwrite."),
             StructuredTool.from_function(func=self.move, name="files.move", description="Move a regular file between configured roots without overwrite."),
