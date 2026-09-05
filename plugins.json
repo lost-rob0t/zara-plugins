@@ -64,6 +64,20 @@
       "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-calendar", "aggregate": "zara-plugins"}
     },
     {
+      "name": "zara-comms",
+      "version": "0.1.0",
+      "api_version": "1",
+      "plugin_type": "service",
+      "description": "Provider-neutral messaging with ambiguity-safe contacts and verified sends",
+      "path": "plugins/zara-comms",
+      "entrypoint": "zara-plugin/zara_comms_entrypoint.py",
+      "docs": "plugins/zara-comms/README.md",
+      "license": "GPL-3.0-or-later",
+      "tags": ["comms", "email", "chat", "messages", "contacts", "drafts"],
+      "install": {"nix": "nix build github:lost-rob0t/zara-plugins#zara-comms"},
+      "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-comms", "aggregate": "zara-plugins"}
+    },
+    {
       "name": "zara-contacts",
       "version": "0.1.0",
       "api_version": "1",
