@@ -14,6 +14,7 @@ Runner = Callable[..., subprocess.CompletedProcess[str]]
 
 class RepositoryInspector:
     MAX_DISCOVERY_ENTRIES = 1000
+    MAX_COMMIT_MESSAGE_CHARS = 4096
 
     def __init__(
         self,
@@ -177,6 +178,41 @@ class RepositoryInspector:
         self._git(root, "update-ref", "-d", ref, expected_head)
         return {"branch": name, "deleted_head": expected_head}
 
+    def commit(self, path: Path, message: str, expected_head: str) -> dict[str, str]:
+        if not isinstance(message, str) or not message.strip():
+            raise ValueError("message must be a non-empty string")
+        if "\x00" in message or len(message) > self.MAX_COMMIT_MESSAGE_CHARS:
+            raise ValueError(f"message must contain at most {self.MAX_COMMIT_MESSAGE_CHARS} characters and no NUL")
+        self._require_full_object_id(expected_head)
+        root = self._repository_root(path)
+        try:
+            branch_result = self._run(root, "symbolic-ref", "-q", "HEAD", check=False)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as exc:
+            raise CodingError("git commit requires an attached branch") from exc
+        branch_ref = branch_result.stdout.strip() if branch_result.returncode == 0 else ""
+        if not branch_ref.startswith("refs/heads/"):
+            raise CodingError("git commit requires an attached branch")
+        actual_head = self._git(root, "rev-parse", "HEAD").strip()
+        if actual_head.lower() != expected_head.lower():
+            raise CodingError("repository HEAD changed since expected_head was observed")
+        tree = self._git(root, "write-tree").strip()
+        parent_tree = self._git(root, "rev-parse", f"{expected_head}^{{tree}}").strip()
+        if tree == parent_tree:
+            raise CodingError("git commit has no staged changes")
+        commit_message = message if message.endswith("\n") else f"{message}\n"
+        commit_oid = self._git_input(root, commit_message, "commit-tree", tree, "-p", expected_head).strip()
+        try:
+            self._require_full_object_id(commit_oid)
+        except ValueError as exc:
+            raise CodingError("git commit-tree returned malformed object ID") from exc
+        self._git(root, "update-ref", branch_ref, commit_oid, expected_head)
+        return {
+            "branch": branch_ref.removeprefix("refs/heads/"),
+            "parent": expected_head,
+            "commit": commit_oid,
+            "tree": tree,
+        }
+
     def worktrees(self, path: Path, *, limit: int = 50) -> list[dict[str, object]]:
         limit = self._bounded_limit(limit)
         root = self._repository_root(path)
@@ -276,6 +312,21 @@ class RepositoryInspector:
             timeout=5,
             shell=False,
         )
+
+    def _git_input(self, root: Path, input_text: str, *args: str) -> str:
+        try:
+            result = self._runner(
+                [self._executable, "-C", str(root), *args],
+                input=input_text,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                shell=False,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as exc:
+            raise CodingError(f"git operation failed: {' '.join(args)}") from exc
+        return result.stdout
 
     def _git(self, root: Path, *args: str, repository_error: bool = False) -> str:
         try:
