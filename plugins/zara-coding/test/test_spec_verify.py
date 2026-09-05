@@ -31,6 +31,7 @@ class RepositorySpecVerifyTests(unittest.TestCase):
             {
                 "root": "/srv/demo",
                 "head": "a" * 40,
+                "branch": "main",
                 "dirty": False,
             }
         )
@@ -53,6 +54,7 @@ class RepositorySpecVerifyTests(unittest.TestCase):
         payload = json.loads(evidence_input)
         self.assertEqual(payload["root"], "/srv/demo")
         self.assertEqual(payload["head"], "a" * 40)
+        self.assertEqual(payload["branch"], "main")
         self.assertFalse(payload["dirty"])
 
     def test_verify_rejects_non_repository_evidence_before_prolog(self):
@@ -64,6 +66,7 @@ class RepositorySpecVerifyTests(unittest.TestCase):
             {
                 "root": "/srv/demo",
                 "head": "a" * 40,
+                "branch": "main",
                 "dirty": False,
             }
         )
@@ -81,6 +84,7 @@ class RepositorySpecVerifyTests(unittest.TestCase):
             {
                 "root": "/srv/demo",
                 "head": "a" * 40,
+                "branch": "main",
                 "dirty": False,
             }
         )
