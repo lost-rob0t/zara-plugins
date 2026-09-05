@@ -9,7 +9,9 @@ from langchain_core.tools import StructuredTool
 from zara.plugins import PluginMetadata, ServicePlugin
 
 from .domain import PrologRLMBridge, RepositoryInspector
+from .repository_evidence import build_repository_evidence
 from .spec_compile import catalog_spec, compile_spec
+from .spec_verify import verify_repository_spec as verify_repository_spec_pure
 from .worktree import add_detached_worktree
 
 
@@ -143,6 +145,11 @@ class ZaraCodingPlugin(ServicePlugin):
                 name="coding.spec.compile",
                 description="Validate and freeze one closed SPEC through zara-coding's fixed trusted Prolog-RLM assertion registry.",
             ),
+            StructuredTool.from_function(
+                func=self.verify_repository_spec,
+                name="coding.spec.verify-repository",
+                description="Reconcile one frozen SPEC against a fresh bounded repository snapshot using Prolog-RLM's pure verifier.",
+            ),
         )
 
     def status(self) -> str:
@@ -246,6 +253,17 @@ class ZaraCodingPlugin(ServicePlugin):
 
     def compile_spec(self, source: str) -> str:
         return json.dumps(compile_spec(self._require_prolog_rlm(), source), sort_keys=True)
+
+    def verify_repository_spec(self, path: str, frozen_spec: str) -> str:
+        if not isinstance(path, str) or not path:
+            raise ValueError("path must be a non-empty string")
+        if not isinstance(frozen_spec, str) or not frozen_spec.strip():
+            raise ValueError("frozen_spec must be a non-empty string")
+        inspector = self._require_inspector()
+        bridge = self._require_prolog_rlm()
+        snapshot = inspector.inspect(Path(path))
+        evidence = build_repository_evidence(snapshot)
+        return json.dumps(verify_repository_spec_pure(bridge, frozen_spec, evidence), sort_keys=True)
 
     def _require_inspector(self) -> RepositoryInspector:
         if self.inspector is None:
