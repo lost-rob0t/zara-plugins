@@ -12,7 +12,7 @@ from .domain import PrologRLMBridge, RepositoryInspector
 from .repository_evidence import build_repository_evidence
 from .spec_compile import catalog_spec, compile_spec
 from .spec_verify import verify_repository_spec as verify_repository_spec_pure
-from .worktree import add_detached_worktree, lock_worktree, unlock_worktree
+from .worktree import add_detached_locked_worktree, add_detached_worktree, lock_worktree, unlock_worktree
 
 
 PLUGIN_VERSION = "0.1.0"
@@ -125,6 +125,12 @@ class ZaraCodingPlugin(ServicePlugin):
                 func=self.git_worktree_add_detached,
                 name="coding.git.worktree.add-detached",
                 description="Create one detached linked worktree at an exact commit inside configured repository boundaries.",
+                metadata=APPROVAL_METADATA,
+            ),
+            StructuredTool.from_function(
+                func=self.git_worktree_add_detached_locked,
+                name="coding.git.worktree.add-detached-locked",
+                description="Create one detached linked worktree at an exact commit and immediately coordination-lock it with a bounded reason.",
                 metadata=APPROVAL_METADATA,
             ),
             StructuredTool.from_function(
@@ -258,6 +264,21 @@ class ZaraCodingPlugin(ServicePlugin):
             raise ValueError("expected_head must be a non-empty string")
         return json.dumps(
             add_detached_worktree(inspector, Path(path), Path(target), expected_head),
+            sort_keys=True,
+        )
+
+    def git_worktree_add_detached_locked(self, path: str, target: str, expected_head: str, reason: str) -> str:
+        inspector = self._require_inspector()
+        if not isinstance(path, str) or not path:
+            raise ValueError("path must be a non-empty string")
+        if not isinstance(target, str) or not target:
+            raise ValueError("target must be a non-empty string")
+        if not isinstance(expected_head, str) or not expected_head:
+            raise ValueError("expected_head must be a non-empty string")
+        if not isinstance(reason, str) or not reason:
+            raise ValueError("reason must be a non-empty string")
+        return json.dumps(
+            add_detached_locked_worktree(inspector, Path(path), Path(target), expected_head, reason),
             sort_keys=True,
         )
 

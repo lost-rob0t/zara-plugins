@@ -70,6 +70,7 @@ class CodingPluginTests(unittest.TestCase):
                 "coding.git.commit",
                 "coding.git.worktree.list",
                 "coding.git.worktree.add-detached",
+                "coding.git.worktree.add-detached-locked",
                 "coding.git.worktree.lock",
                 "coding.git.worktree.unlock",
                 "coding.spec.catalog",
@@ -84,6 +85,7 @@ class CodingPluginTests(unittest.TestCase):
             "coding.git.branch.delete",
             "coding.git.commit",
             "coding.git.worktree.add-detached",
+            "coding.git.worktree.add-detached-locked",
             "coding.git.worktree.lock",
             "coding.git.worktree.unlock",
         }
@@ -122,6 +124,8 @@ class CodingPluginTests(unittest.TestCase):
             plugin.git_worktrees("/")
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.git_worktree_add_detached("/", "/tmp/task", "a" * 40)
+        with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
+            plugin.git_worktree_add_detached_locked("/", "/tmp/task", "a" * 40, "coding-task:17")
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.git_worktree_lock("/", "/tmp/task", "a" * 40, "coding-task:17")
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
