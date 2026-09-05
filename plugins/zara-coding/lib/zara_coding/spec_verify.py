@@ -121,6 +121,10 @@ def _repository_payload(evidence: Mapping[str, object]) -> dict[str, object]:
         raise CodingError("repository evidence dirty state does not match snapshot")
     if not isinstance(root, str) or not root:
         raise CodingError("repository evidence contains invalid snapshot values")
+    if "\x00" in root:
+        raise CodingError("repository evidence repository root must not contain NUL")
+    if not PurePosixPath(root).is_absolute():
+        raise CodingError("repository evidence repository root must be absolute")
     if (
         not isinstance(head, str)
         or len(head) not in (40, 64)
