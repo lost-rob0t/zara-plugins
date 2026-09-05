@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from pathlib import PurePosixPath
 
 
 def build_repository_evidence(
@@ -29,6 +30,8 @@ def build_repository_evidence(
         raise ValueError("repository changed path evidence exceeds 100 entries")
     if any(not isinstance(path, str) or not path or "\x00" in path for path in changed_paths):
         raise ValueError("repository changed path evidence must be non-empty text without NUL")
+    if any(PurePosixPath(path).is_absolute() or ".." in PurePosixPath(path).parts for path in changed_paths):
+        raise ValueError("repository changed path evidence must stay repository-relative")
     if dirty is not bool(changed_paths):
         raise ValueError("repository snapshot dirty state contradicts changed paths")
     if not isinstance(worktrees, Sequence) or isinstance(worktrees, (str, bytes)):

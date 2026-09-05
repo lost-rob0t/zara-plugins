@@ -47,6 +47,18 @@ class RepositoryChangedPathAssertionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "changed path evidence must be non-empty text"):
             build_repository_evidence(snapshot)
 
+    def test_repository_evidence_rejects_changed_paths_outside_repository_identity(self):
+        base = {
+            "root": "/srv/demo",
+            "head": "a" * 40,
+            "branch": "main",
+            "dirty": True,
+        }
+        for path in ("/etc/passwd", "../other-repo/file.txt", "lib/../../other-repo/file.txt"):
+            with self.subTest(path=path):
+                with self.assertRaisesRegex(ValueError, "changed path evidence must stay repository-relative"):
+                    build_repository_evidence({**base, "changed_paths": [path]})
+
     def test_repository_evidence_rejects_dirty_changed_path_contradictions(self):
         base = {
             "root": "/srv/demo",
