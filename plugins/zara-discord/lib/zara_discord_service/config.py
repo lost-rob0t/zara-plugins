@@ -63,6 +63,10 @@ class PolicyStore:
         with self._lock:
             return self._policies.get(int(guild_id), GuildPolicy())
 
+    def requires_message_content(self) -> bool:
+        with self._lock:
+            return any(policy.random_mode for policy in self._policies.values())
+
     def is_allowed(
         self,
         *,
