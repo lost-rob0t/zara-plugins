@@ -76,6 +76,7 @@ class VoiceServiceTests(unittest.TestCase):
         self.assertEqual(result["format"], "wav")
         self.assertEqual(result["sample_rate_hz"], 24000)
         self.assertEqual(result["duration_seconds"], 0.4)
+        self.assertNotIn("audio", result)
         self.assertEqual(self.backend.calls[0]["style"], "calm")
 
     def test_unsupported_emotion_is_rejected_before_backend_call(self):
@@ -121,6 +122,7 @@ class VoiceServiceTests(unittest.TestCase):
         artifact = self.voice.synthesize("hello", profile="mara")
         playback = self.voice.play(artifact["artifact_id"])
         self.assertEqual(playback["playback_id"], "play-1")
+        self.assertEqual(self.player.played[0]["audio"], b"RIFFfake")
         result = self.voice.cancel(playback_id="play-1")
         self.assertTrue(result["cancelled"])
         self.assertEqual(self.player.cancelled, ["play-1"])
