@@ -87,8 +87,9 @@ def _repository_payload(evidence: Mapping[str, object]) -> dict[str, object]:
         raise CodingError("repository evidence must be current observed repository evidence")
 
     snapshot = evidence.get("snapshot")
+    state_ref = evidence.get("state_ref")
     values = evidence.get("values")
-    if not isinstance(snapshot, Mapping) or not isinstance(values, Mapping):
+    if not isinstance(snapshot, Mapping) or not isinstance(state_ref, Mapping) or not isinstance(values, Mapping):
         raise CodingError("repository evidence is missing snapshot values")
     head_value = values.get("repository_head")
     branch_value = values.get("repository_branch")
@@ -110,6 +111,8 @@ def _repository_payload(evidence: Mapping[str, object]) -> dict[str, object]:
     head = snapshot.get("head")
     branch = branch_value.get("branch")
     dirty = clean_value.get("dirty")
+    if state_ref.get("root") != root or state_ref.get("head") != head:
+        raise CodingError("repository evidence state_ref does not match snapshot")
     if head_value.get("root") != root or head_value.get("head") != head:
         raise CodingError("repository evidence head does not match snapshot")
     if branch_value.get("root") != root:
