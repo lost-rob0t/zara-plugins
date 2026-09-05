@@ -3,8 +3,8 @@ import sys
 import types
 import unittest
 from dataclasses import dataclass
-from unittest.mock import Mock, patch
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
@@ -38,7 +38,7 @@ class RepositoryVerifyToolTests(unittest.TestCase):
         tool = tools["coding.spec.verify-repository"]
         self.assertFalse(bool((tool.metadata or {}).get("zara_requires_approval", False)))
 
-    @patch("zara_coding.plugin.verify_repository_spec")
+    @patch("zara_coding.plugin.verify_repository_spec_pure")
     @patch("zara_coding.plugin.build_repository_evidence")
     def test_verify_repository_inspects_current_state_and_uses_pure_verify(self, build_evidence, verify):
         plugin = ZaraCodingPlugin()
