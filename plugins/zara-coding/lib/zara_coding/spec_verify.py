@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from .domain import CodingError, PrologRLMBridge
@@ -93,8 +93,13 @@ def _repository_payload(evidence: Mapping[str, object]) -> dict[str, object]:
     head_value = values.get("repository_head")
     branch_value = values.get("repository_branch")
     clean_value = values.get("repository_clean")
+    worktree_values = values.get("worktree_locked", [])
     if not all(isinstance(value, Mapping) for value in (head_value, branch_value, clean_value)):
         raise CodingError("repository evidence is missing trusted assertion values")
+    if not isinstance(worktree_values, Sequence) or isinstance(worktree_values, (str, bytes)):
+        raise CodingError("repository evidence worktree state must be a bounded sequence")
+    if len(worktree_values) > 100:
+        raise CodingError("repository evidence worktree state exceeds 100 entries")
 
     root = snapshot.get("root")
     head = snapshot.get("head")
@@ -116,4 +121,24 @@ def _repository_payload(evidence: Mapping[str, object]) -> dict[str, object]:
     ):
         raise CodingError("repository evidence contains invalid snapshot values")
 
-    return {"root": root, "head": head, "branch": branch, "dirty": dirty}
+    worktrees = [_worktree_payload(value) for value in worktree_values]
+    return {"root": root, "head": head, "branch": branch, "dirty": dirty, "worktrees": worktrees}
+
+
+def _worktree_payload(value: object) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        raise CodingError("repository evidence worktree entry must be structured")
+    path = value.get("path")
+    head = value.get("head")
+    locked = value.get("locked")
+    if not isinstance(path, str) or not path:
+        raise CodingError("repository evidence worktree path must be non-empty")
+    if (
+        not isinstance(head, str)
+        or len(head) not in (40, 64)
+        or any(char not in "0123456789abcdefABCDEF" for char in head)
+    ):
+        raise CodingError("repository evidence worktree head must be a full Git object ID")
+    if not isinstance(locked, bool):
+        raise CodingError("repository evidence worktree locked state must be boolean")
+    return {"path": path, "head": head, "locked": locked}
