@@ -26,6 +26,8 @@ def build_repository_evidence(
         raise ValueError("repository snapshot head must be a full Git object ID")
     if not isinstance(branch, str) or not branch:
         raise ValueError("repository snapshot branch must be a non-empty string")
+    if any(character in branch for character in ("\x00", "\n", "\r")):
+        raise ValueError("repository snapshot branch must be single-line text")
     if not isinstance(dirty, bool):
         raise ValueError("repository snapshot dirty must be boolean")
     if not isinstance(changed_paths, Sequence) or isinstance(changed_paths, (str, bytes)):
