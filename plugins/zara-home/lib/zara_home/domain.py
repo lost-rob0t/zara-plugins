@@ -23,6 +23,24 @@ class HomeService:
             raise HomeError(f"device not found: {device_id}")
         return self._normalize_device(device)
 
+    def room_state(self, room: str) -> dict[str, Any]:
+        if not isinstance(room, str) or not room.strip():
+            raise HomeError("room is required")
+        normalized_room = room.strip().lower()
+        devices = [
+            device
+            for device in self.inventory()["devices"]
+            if isinstance(device.get("room"), str) and device["room"].lower() == normalized_room
+        ]
+        presence = self._optional_mapping("get_presence", normalized_room)
+        environment = self._optional_mapping("get_environment", normalized_room)
+        return {
+            "room": normalized_room,
+            "presence": presence,
+            "environment": environment,
+            "devices": devices,
+        }
+
     def set_property(self, device_id: str, capability: str, value: Any) -> dict[str, Any]:
         before = self.get_device(device_id)
         spec = before["capabilities"].get(capability)
@@ -57,6 +75,17 @@ class HomeService:
             "provider_evidence": dict(evidence),
             "verified": bool(evidence.get("verified", False)),
         }
+
+    def _optional_mapping(self, method_name: str, room: str) -> dict[str, Any]:
+        callback = getattr(self.provider, method_name, None)
+        if callback is None:
+            return {}
+        value = callback(room)
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise HomeError(f"provider {method_name} returned invalid structured data")
+        return dict(value)
 
     @staticmethod
     def _normalize_device(device: Any) -> dict[str, Any]:
