@@ -122,6 +122,11 @@ def _rollback_created_worktree(
     if record["locked"] is not None:
         raise CodingError("created worktree became locked before rollback")
     inspector._git(root, "worktree", "remove", str(target_path))
+    for remaining in inspector.worktrees(root, limit=100):
+        if remaining["path"] == str(target_path):
+            raise CodingError("created worktree remained registered after rollback")
+    if target_path.exists() or target_path.is_symlink():
+        raise CodingError("created worktree path remained after rollback")
 
 
 def _require_lock_reason(reason: str) -> str:
