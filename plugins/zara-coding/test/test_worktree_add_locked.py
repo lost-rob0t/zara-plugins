@@ -89,14 +89,53 @@ class WorktreeAddLockedTests(unittest.TestCase):
             self.assertLess(add_index, lock_index)
             self.assertTrue(all(call[1]["shell"] is False for call in calls))
 
-    def test_add_locked_reports_lock_failure_without_claiming_success(self):
+    def test_add_locked_rolls_back_clean_created_worktree_when_lock_command_fails(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo = root / "repo"
             repo.mkdir()
             target = root / "task-17"
+            calls = []
 
             def run(argv, **kwargs):
+                calls.append((argv, kwargs))
+                args = tuple(argv[3:])
+                if args == ("rev-parse", "--show-toplevel"):
+                    return subprocess.CompletedProcess(argv, 0, stdout=f"{repo.resolve()}\n", stderr="")
+                if args == ("rev-parse", "--verify", f"{'a' * 40}^{{commit}}"):
+                    return subprocess.CompletedProcess(argv, 0, stdout=f"{'a' * 40}\n", stderr="")
+                if args == ("worktree", "list", "--porcelain", "-z"):
+                    return subprocess.CompletedProcess(
+                        argv,
+                        0,
+                        stdout=(
+                            f"worktree {repo.resolve()}\0HEAD {'b' * 40}\0branch refs/heads/main\0\0"
+                            f"worktree {target.resolve()}\0HEAD {'a' * 40}\0detached\0\0"
+                        ),
+                        stderr="",
+                    )
+                if args == ("worktree", "lock", "--reason", "coding-task:17", str(target.resolve())):
+                    raise subprocess.CalledProcessError(1, argv)
+                return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+            inspector = RepositoryInspector((root,), runner=run)
+            with self.assertRaisesRegex(CodingError, "lock failed"):
+                add_detached_locked_worktree(inspector, repo, target, "a" * 40, "coding-task:17")
+
+            argv_calls = [call[0][3:] for call in calls]
+            self.assertIn(["worktree", "remove", str(target.resolve())], argv_calls)
+            self.assertNotIn(["worktree", "remove", "--force", str(target.resolve())], argv_calls)
+
+    def test_add_locked_reports_lock_failure_without_deleting_changed_identity(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = root / "repo"
+            repo.mkdir()
+            target = root / "task-17"
+            calls = []
+
+            def run(argv, **kwargs):
+                calls.append((argv, kwargs))
                 args = tuple(argv[3:])
                 if args == ("rev-parse", "--show-toplevel"):
                     return subprocess.CompletedProcess(argv, 0, stdout=f"{repo.resolve()}\n", stderr="")
@@ -115,8 +154,12 @@ class WorktreeAddLockedTests(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
             inspector = RepositoryInspector((root,), runner=run)
-            with self.assertRaisesRegex(CodingError, "HEAD changed"):
+            with self.assertRaisesRegex(CodingError, "rollback could not safely remove"):
                 add_detached_locked_worktree(inspector, repo, target, "a" * 40, "coding-task:17")
+
+            argv_calls = [call[0][3:] for call in calls]
+            self.assertNotIn(["worktree", "remove", str(target.resolve())], argv_calls)
+            self.assertNotIn(["worktree", "remove", "--force", str(target.resolve())], argv_calls)
 
     @patch("zara_coding.plugin.shutil.which", return_value="/usr/bin/git")
     @patch("zara_coding.plugin.add_detached_locked_worktree")
