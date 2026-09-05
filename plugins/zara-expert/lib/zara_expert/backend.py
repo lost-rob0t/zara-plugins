@@ -122,11 +122,12 @@ class SwiplBackend:
     def _driver_goal() -> str:
         return (
             "getenv('ZARA_EXPERT_GOAL', Atom),"
-            "atom_number_env('ZARA_EXPERT_LIMIT', Limit),"
+            "getenv('ZARA_EXPERT_LIMIT', LimitAtom),"
+            "atom_number(LimitAtom, Limit),"
             "read_term_from_atom(Atom, Goal, []),"
             "findnsols(Limit, Goal, Goal, Solutions),"
             "maplist(term_string, Solutions, Strings),"
             "getenv('ZARA_EXPERT_EXPLAIN', Explain),"
-            "(Explain='1' -> maplist(zara_expert_trace, Strings, Trace) ; Trace=[]),"
+            "(Explain='1' -> Trace=Strings ; Trace=[]),"
             "json_write_dict(current_output, _{ok:true,results:Strings,trace:Trace})"
-        ).replace("atom_number_env('ZARA_EXPERT_LIMIT', Limit)", "getenv('ZARA_EXPERT_LIMIT', LimitAtom),atom_number(LimitAtom, Limit)").replace("zara_expert_trace", "atom_concat('proved:', )")
+        )
