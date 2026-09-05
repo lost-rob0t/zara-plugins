@@ -101,6 +101,12 @@ class ZaraCodingPlugin(ServicePlugin):
                 metadata=APPROVAL_METADATA,
             ),
             StructuredTool.from_function(
+                func=self.git_branch_delete,
+                name="coding.git.branch.delete",
+                description="Delete one local branch only if it still points at the caller-supplied full object ID and is not checked out.",
+                metadata=APPROVAL_METADATA,
+            ),
+            StructuredTool.from_function(
                 func=self.git_worktrees,
                 name="coding.git.worktree.list",
                 description="Return bounded structured linked-worktree evidence for an allowed repository.",
@@ -175,6 +181,16 @@ class ZaraCodingPlugin(ServicePlugin):
         if not isinstance(name, str) or not name:
             raise ValueError("name must be a non-empty string")
         return json.dumps(inspector.create_branch(Path(path), name), sort_keys=True)
+
+    def git_branch_delete(self, path: str, name: str, expected_head: str) -> str:
+        inspector = self._require_inspector()
+        if not isinstance(path, str) or not path:
+            raise ValueError("path must be a non-empty string")
+        if not isinstance(name, str) or not name:
+            raise ValueError("name must be a non-empty string")
+        if not isinstance(expected_head, str) or not expected_head:
+            raise ValueError("expected_head must be a non-empty string")
+        return json.dumps(inspector.delete_branch(Path(path), name, expected_head), sort_keys=True)
 
     def git_worktrees(self, path: str, limit: int = 50) -> str:
         inspector = self._require_inspector()

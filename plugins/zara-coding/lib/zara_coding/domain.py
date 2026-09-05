@@ -164,6 +164,19 @@ class RepositoryInspector:
         self._git(root, "update-ref", ref, head, "")
         return {"branch": name, "head": head}
 
+    def delete_branch(self, path: Path, name: str, expected_head: str) -> dict[str, str]:
+        if not isinstance(name, str) or not name:
+            raise ValueError("name must be a non-empty string")
+        self._require_full_object_id(expected_head)
+        root = self._repository_root(path)
+        ref = f"refs/heads/{name}"
+        self._git(root, "check-ref-format", ref)
+        for worktree in self.worktrees(root, limit=100):
+            if worktree["branch"] == name:
+                raise CodingError(f"branch is checked out in worktree: {worktree['path']}")
+        self._git(root, "update-ref", "-d", ref, expected_head)
+        return {"branch": name, "deleted_head": expected_head}
+
     def worktrees(self, path: Path, *, limit: int = 50) -> list[dict[str, object]]:
         limit = self._bounded_limit(limit)
         root = self._repository_root(path)
@@ -224,6 +237,15 @@ class RepositoryInspector:
         if not isinstance(value, str):
             raise CodingError("git worktree returned malformed reason field")
         return value or "unspecified"
+
+    @staticmethod
+    def _require_full_object_id(value: str) -> None:
+        if (
+            not isinstance(value, str)
+            or len(value) not in {40, 64}
+            or any(character not in "0123456789abcdefABCDEF" for character in value)
+        ):
+            raise ValueError("expected_head must be a full hexadecimal Git object ID")
 
     @staticmethod
     def _bounded_limit(limit: int) -> int:
