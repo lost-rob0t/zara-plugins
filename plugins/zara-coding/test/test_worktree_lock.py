@@ -119,7 +119,7 @@ class WorktreeLockTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         lock_worktree(inspector, repo, target, "a" * 40, reason)
 
-    def test_unlock_requires_matching_lock_reason_and_exact_head(self):
+    def test_unlock_requires_matching_coordination_reason_and_exact_head(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo = root / "repo"
@@ -140,9 +140,9 @@ class WorktreeLockTests(unittest.TestCase):
                 [call[0][3:] for call in calls],
             )
 
-            wrong_owner, _ = self._inspector(root, repo, target, locked="other-owner")
-            with self.assertRaisesRegex(CodingError, "lock ownership changed"):
-                unlock_worktree(wrong_owner, repo, target, "a" * 40, "coding-task:17")
+            wrong_reason, _ = self._inspector(root, repo, target, locked="other-task")
+            with self.assertRaisesRegex(CodingError, "coordination reason changed"):
+                unlock_worktree(wrong_reason, repo, target, "a" * 40, "coding-task:17")
 
     @patch("zara_coding.plugin.shutil.which", return_value="/usr/bin/git")
     @patch("zara_coding.plugin.unlock_worktree")

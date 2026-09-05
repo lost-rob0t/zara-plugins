@@ -3,9 +3,11 @@
             repository_head_args/1,
             repository_branch_args/1,
             repository_clean_args/1,
+            worktree_locked_args/1,
             repository_head_evaluator/3,
             repository_branch_evaluator/3,
-            repository_clean_evaluator/3
+            repository_clean_evaluator/3,
+            worktree_locked_evaluator/3
           ]).
 
 registry([
@@ -56,6 +58,22 @@ registry([
            latency:pure,
            argument_schema:_{type:dict,required:_{root:text,clean:boolean}},
            description:"require the dirty state for one repository root to match"
+         }),
+    assertion_provider(
+        worktree_locked,
+        1,
+        zara_coding_assertions:worktree_locked_args,
+        zara_coding_assertions:worktree_locked_evaluator,
+        none,
+        _{ verifier:_{id:zara_coding_repository,version:1},
+           collector:_{id:none,version:1},
+           evidence_policy:_{required_evidence:true,
+                             source_classes:[repository],
+                             trust_classes:[trusted,observed],
+                             freshness:current},
+           latency:pure,
+           argument_schema:_{type:dict,required:_{path:text,head:git_object_id}},
+           description:"require one registered worktree at an exact commit to be coordination-locked"
          })
 ]).
 
@@ -82,6 +100,14 @@ repository_clean_args(Args) :-
     nonempty_text(Root),
     get_dict(clean, Args, Clean),
     memberchk(Clean, [true,false]).
+
+worktree_locked_args(Args) :-
+    is_dict(Args),
+    dict_keys(Args, [head,path]),
+    get_dict(path, Args, Path),
+    nonempty_text(Path),
+    get_dict(head, Args, Head),
+    git_object_id(Head).
 
 repository_head_evaluator(Assertion, Observation, Status) :-
     (   get_dict(root, Assertion.args, ExpectedRoot),
@@ -116,6 +142,19 @@ repository_clean_evaluator(Assertion, Observation, Status) :-
         ActualRoot == ExpectedRoot,
         memberchk(Dirty, [true,false]),
         clean_dirty_match(ExpectedClean, Dirty)
+    ->  Status = passed
+    ;   Status = failed
+    ).
+
+worktree_locked_evaluator(Assertion, Observation, Status) :-
+    (   get_dict(path, Assertion.args, ExpectedPath),
+        get_dict(head, Assertion.args, ExpectedHead),
+        is_dict(Observation.value),
+        get_dict(path, Observation.value, ActualPath),
+        get_dict(head, Observation.value, ActualHead),
+        get_dict(locked, Observation.value, true),
+        ActualPath == ExpectedPath,
+        ActualHead == ExpectedHead
     ->  Status = passed
     ;   Status = failed
     ).

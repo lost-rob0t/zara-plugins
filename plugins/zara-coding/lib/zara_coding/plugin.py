@@ -136,7 +136,7 @@ class ZaraCodingPlugin(ServicePlugin):
             StructuredTool.from_function(
                 func=self.git_worktree_lock,
                 name="coding.git.worktree.lock",
-                description="Ownership-lock one detached linked worktree at an exact observed commit with a bounded reason.",
+                description="Coordination-lock one detached linked worktree at an exact observed commit with a bounded reason.",
                 metadata=APPROVAL_METADATA,
             ),
             StructuredTool.from_function(
@@ -329,8 +329,10 @@ class ZaraCodingPlugin(ServicePlugin):
             raise ValueError("frozen_spec must be a non-empty string")
         inspector = self._require_inspector()
         bridge = self._require_prolog_rlm()
-        snapshot = inspector.inspect(Path(path))
-        evidence = build_repository_evidence(snapshot)
+        repository = Path(path)
+        snapshot = inspector.inspect(repository)
+        worktrees = inspector.worktrees(repository, limit=100)
+        evidence = build_repository_evidence(snapshot, worktrees=worktrees)
         return json.dumps(verify_repository_spec_pure(bridge, frozen_spec, evidence), sort_keys=True)
 
     def check_repository_spec(self, path: str, source: str) -> str:

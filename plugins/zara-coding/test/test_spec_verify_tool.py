@@ -51,8 +51,10 @@ class RepositoryVerifyToolTests(unittest.TestCase):
             "dirty": False,
             "changed_paths": [],
         }
+        worktrees = []
         evidence = {"source_class": "repository", "trust_class": "observed", "freshness": "current"}
         plugin.inspector.inspect.return_value = snapshot
+        plugin.inspector.worktrees.return_value = worktrees
         build_evidence.return_value = evidence
         verify.return_value = {"status": "ok", "outcome": "ok(verification_report{status:passed})"}
 
@@ -61,7 +63,8 @@ class RepositoryVerifyToolTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "ok")
         plugin.inspector.inspect.assert_called_once_with(Path("/srv/demo"))
-        build_evidence.assert_called_once_with(snapshot)
+        plugin.inspector.worktrees.assert_called_once_with(Path("/srv/demo"), limit=100)
+        build_evidence.assert_called_once_with(snapshot, worktrees=worktrees)
         verify.assert_called_once_with(plugin.prolog_rlm, frozen, evidence)
 
     def test_verify_repository_requires_both_runtime_dependencies(self):
@@ -86,6 +89,7 @@ class RepositoryVerifyToolTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "frozen_spec"):
             plugin.verify_repository_spec("/srv/demo", "")
         plugin.inspector.inspect.assert_not_called()
+        plugin.inspector.worktrees.assert_not_called()
 
 
 if __name__ == "__main__":
