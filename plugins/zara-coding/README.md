@@ -5,7 +5,8 @@
 ## Current surface
 
 - `coding.status` reports whether repository roots are configured and whether the configured Prolog-RLM checkout passes the public `rlm:rlm_ready/0` + `rlm:rlm_version/1` facade.
-- `coding.repo.inspect` returns structured repository root, HEAD, branch, dirty state, and changed paths for repositories beneath configured roots.
+- `coding.repo.list` discovers Git repositories only at configured roots or their immediate child directories. Results are capped at 100 repositories and discovery scans at most 1,000 child entries; symlink children and deeper recursive traversal are not followed.
+- `coding.repo.status` and `coding.repo.inspect` return the same structured repository root, HEAD, branch, dirty state, and changed paths for repositories beneath configured roots.
 - `coding.git.diff` returns tracked working-tree changes against `HEAD` as bounded structured numstat evidence, including binary-file distinction, without returning arbitrary patch text.
 - `coding.git.log` returns up to 100 commits as structured commit/parent/author/time/subject evidence for an allowed repository.
 - `coding.git.branches` returns up to 100 local branches as structured name/commit/upstream evidence for an allowed repository.
@@ -18,7 +19,7 @@ The catalog intentionally does not fabricate semantic providers. Prolog-RLM's tr
 
 The normalization tool deliberately stops before provider validation, freezing, planning, execution, or verification. It establishes that Zara uses Prolog-RLM's existing SPEC representation rather than creating a second acceptance/task language.
 
-The plugin never shells through a command string. Git and SWI-Prolog probes use argv execution with bounded timeouts. Repository paths are resolved and checked against configured roots before and after Git root discovery. Diff summaries, commit history, and local-branch inventory are bounded before use. Git operations use fixed revisions, formats, and options rather than caller-controlled Git arguments. `coding.git.diff` fails closed if the changed-file count exceeds its configured request bound.
+The plugin never shells through a command string. Git and SWI-Prolog probes use argv execution with bounded timeouts. Repository paths are resolved and checked against configured roots before and after Git root discovery. Repository discovery is deliberately shallow and bounded rather than recursively walking arbitrary project trees. Diff summaries, commit history, and local-branch inventory are bounded before use. Git operations use fixed revisions, formats, and options rather than caller-controlled Git arguments. `coding.git.diff` fails closed if the changed-file count exceeds its configured request bound.
 
 ## Configuration
 

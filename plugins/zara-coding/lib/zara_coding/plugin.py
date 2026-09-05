@@ -64,6 +64,16 @@ class ZaraCodingPlugin(ServicePlugin):
                 description="Report repository-boundary and Prolog-RLM readiness without mutating state.",
             ),
             StructuredTool.from_function(
+                func=self.list_repositories,
+                name="coding.repo.list",
+                description="List bounded immediate Git repository roots under configured repository boundaries.",
+            ),
+            StructuredTool.from_function(
+                func=self.repo_status,
+                name="coding.repo.status",
+                description="Return branch/head/dirty status for one allowed repository.",
+            ),
+            StructuredTool.from_function(
                 func=self.inspect_repo,
                 name="coding.repo.inspect",
                 description="Return structured Git branch/head/dirty evidence for an allowed repository.",
@@ -114,6 +124,13 @@ class ZaraCodingPlugin(ServicePlugin):
         )
         state = "ready" if repository["status"] == "ready" and prolog_rlm["status"] == "ready" else "degraded"
         return json.dumps({"status": state, "repository": repository, "prolog_rlm": prolog_rlm}, sort_keys=True)
+
+    def list_repositories(self, limit: int = 50) -> str:
+        inspector = self._require_inspector()
+        return json.dumps(inspector.list_repositories(limit=limit), sort_keys=True)
+
+    def repo_status(self, path: str) -> str:
+        return self.inspect_repo(path)
 
     def inspect_repo(self, path: str) -> str:
         inspector = self._require_inspector()
