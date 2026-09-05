@@ -59,6 +59,13 @@ repository_value(worktree_locked, Args, _, _, _, _, Worktrees, Value) :-
     ->  Value = Observed
     ;   Value = _{path:ExpectedPath,head:none,locked:false}
     ).
+repository_value(worktree_absent, Args, _, _, _, _, Worktrees, Value) :-
+    get_dict(path, Args, ExpectedPath),
+    (   member(Observed, Worktrees),
+        text_equal(Observed.path, ExpectedPath)
+    ->  Value = _{path:ExpectedPath,present:true}
+    ;   Value = _{path:ExpectedPath,present:false}
+    ).
 
 repository_evidence(Evidence, Root, Head, Branch, Dirty, Worktrees) :-
     dict_keys(Evidence, [branch,dirty,head,root,worktrees]),
