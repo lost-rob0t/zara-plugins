@@ -18,6 +18,17 @@ class ZaraCompatibilityToolMetadataTest(unittest.TestCase):
                 {},
             )
 
+    def test_tool_name_must_be_canonical_without_edge_whitespace(self) -> None:
+        with self.assertRaisesRegex(
+            CompatibilityError,
+            "zara-example.*surrounding whitespace",
+        ):
+            require_tool_names(
+                "zara-example",
+                [SimpleNamespace(name=" coding.status ")],
+                {},
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
