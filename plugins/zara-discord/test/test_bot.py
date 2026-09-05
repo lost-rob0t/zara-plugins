@@ -149,10 +149,10 @@ class BotTests(unittest.TestCase):
         interaction = SimpleNamespace(
             guild_id=10,
             guild=SimpleNamespace(owner_id=20),
+            user=SimpleNamespace(id=20),
             permissions=discord.Permissions.none(),
             response=FakeResponse(),
         )
-        interaction.user = SimpleNamespace(id=20)
 
         self.assertTrue(asyncio.run(self.bot._require_manager(interaction)))
 
