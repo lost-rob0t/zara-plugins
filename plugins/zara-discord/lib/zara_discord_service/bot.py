@@ -17,10 +17,22 @@ from .routing import split_discord_message
 logger = logging.getLogger(__name__)
 
 
-def conversation_id(*, guild_id: int | None, channel_id: int) -> str:
+def conversation_id(*, guild_id: int | None, channel_id: int, user_id: int) -> str:
+    identifiers = {
+        "channel_id": channel_id,
+        "user_id": user_id,
+    }
+    if guild_id is not None:
+        identifiers["guild_id"] = guild_id
+    for name, value in identifiers.items():
+        if type(value) is not int:
+            raise TypeError(f"{name} must be an integer Discord ID")
+        if value < 0:
+            raise ValueError(f"{name} must be a non-negative Discord ID")
+
     if guild_id is None:
-        return f"discord:dm:channel:{channel_id}"
-    return f"discord:guild:{guild_id}:channel:{channel_id}"
+        return f"discord:dm:channel:{channel_id}:user:{user_id}"
+    return f"discord:guild:{guild_id}:channel:{channel_id}:user:{user_id}"
 
 
 def remove_bot_mention(text: str, bot_user_id: int) -> str:
@@ -85,6 +97,7 @@ class ZaraDiscordBot(discord.Client):
                 conversation_id=conversation_id(
                     guild_id=interaction.guild_id,
                     channel_id=interaction.channel_id,
+                    user_id=interaction.user.id,
                 ),
                 on_response=lambda text: self._schedule(
                     loop,
@@ -301,6 +314,7 @@ class ZaraDiscordBot(discord.Client):
             conversation_id=conversation_id(
                 guild_id=guild_id,
                 channel_id=message.channel.id,
+                user_id=message.author.id,
             ),
             on_response=lambda response: self._schedule(
                 loop,

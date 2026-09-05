@@ -170,7 +170,19 @@ class BotTests(unittest.TestCase):
         self.assertIn("pinged you", self.controller.calls[0]["text"])
         self.assertEqual(
             self.controller.calls[0]["conversation_id"],
-            "discord:guild:10:channel:30",
+            "discord:guild:10:channel:30:user:20",
+        )
+
+    def test_two_users_in_one_channel_route_to_distinct_conversations(self):
+        asyncio.run(self.bot.on_message(self._message(mentioned=True, content="<@42> one", user_id=20)))
+        asyncio.run(self.bot.on_message(self._message(mentioned=True, content="<@42> two", user_id=21)))
+
+        self.assertEqual(
+            [call["conversation_id"] for call in self.controller.calls],
+            [
+                "discord:guild:10:channel:30:user:20",
+                "discord:guild:10:channel:30:user:21",
+            ],
         )
 
     def test_random_mode_can_spontaneously_reply_without_a_mention(self):
@@ -220,14 +232,14 @@ class BotTests(unittest.TestCase):
 
         self.assertIn("hello there", prompt)
 
-    def test_conversation_ids_are_stable_per_channel(self):
+    def test_conversation_ids_are_stable_per_channel_and_user(self):
         self.assertEqual(
-            conversation_id(guild_id=10, channel_id=30),
-            "discord:guild:10:channel:30",
+            conversation_id(guild_id=10, channel_id=30, user_id=20),
+            "discord:guild:10:channel:30:user:20",
         )
         self.assertEqual(
-            conversation_id(guild_id=None, channel_id=30),
-            "discord:dm:channel:30",
+            conversation_id(guild_id=None, channel_id=30, user_id=20),
+            "discord:dm:channel:30:user:20",
         )
 
 
