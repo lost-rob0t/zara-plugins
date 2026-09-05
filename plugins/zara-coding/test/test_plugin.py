@@ -38,6 +38,14 @@ class Runtime:
         self.configuration = configuration
 
 
+class FakePrologRLM:
+    def status(self):
+        return {"status": "ready", "version": "test"}
+
+    def normalize_spec(self, source):
+        return {"status": "ok", "outcome": f"ok(normalized({source!r}))"}
+
+
 class CodingPluginTests(unittest.TestCase):
     def test_factory_metadata_matches_registry_contract(self):
         plugin = create_plugin()
@@ -47,7 +55,7 @@ class CodingPluginTests(unittest.TestCase):
 
     def test_read_only_initial_surface_has_no_approval_bypass(self):
         tools = {tool.name: tool for tool in ZaraCodingPlugin().tools()}
-        self.assertEqual(set(tools), {"coding.status", "coding.repo.inspect"})
+        self.assertEqual(set(tools), {"coding.status", "coding.repo.inspect", "coding.spec.normalize"})
         for tool in tools.values():
             self.assertFalse(bool((tool.metadata or {}).get("zara_requires_approval", False)))
 
@@ -60,6 +68,15 @@ class CodingPluginTests(unittest.TestCase):
         self.assertEqual(status["prolog_rlm"], {"status": "unavailable", "reason": "prolog-rlm-checkout-not-configured"})
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.inspect_repo("/")
+        with self.assertRaisesRegex(RuntimeError, "Prolog-RLM"):
+            plugin.normalize_spec("spec([]).")
+
+    def test_spec_normalize_returns_prolog_rlm_outcome_as_structured_json(self):
+        plugin = ZaraCodingPlugin()
+        plugin.prolog_rlm = FakePrologRLM()
+        evidence = json.loads(plugin.normalize_spec("spec([subject(x)])."))
+        self.assertEqual(evidence["status"], "ok")
+        self.assertIn("normalized", evidence["outcome"])
 
     @patch("zara_coding.plugin.shutil.which", return_value=None)
     def test_missing_git_degrades_honestly(self, _which):

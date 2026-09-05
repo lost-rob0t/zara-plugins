@@ -68,6 +68,14 @@ class ZaraCodingPlugin(ServicePlugin):
                 name="coding.repo.inspect",
                 description="Return structured Git branch/head/dirty evidence for an allowed repository.",
             ),
+            StructuredTool.from_function(
+                func=self.normalize_spec,
+                name="coding.spec.normalize",
+                description=(
+                    "Normalize one closed declarative SPEC source through Prolog-RLM and return its "
+                    "canonical outcome without planning or mutation."
+                ),
+            ),
         )
 
     def status(self) -> str:
@@ -90,6 +98,11 @@ class ZaraCodingPlugin(ServicePlugin):
         if not isinstance(path, str) or not path:
             raise ValueError("path must be a non-empty string")
         return json.dumps(self.inspector.inspect(Path(path)), sort_keys=True)
+
+    def normalize_spec(self, source: str) -> str:
+        if self.prolog_rlm is None:
+            raise RuntimeError("zara-coding Prolog-RLM checkout is not configured")
+        return json.dumps(self.prolog_rlm.normalize_spec(source), sort_keys=True)
 
     @staticmethod
     def _section(configuration) -> Mapping[str, object]:
