@@ -29,10 +29,14 @@ def build_repository_evidence(
         raise ValueError("repository changed path evidence must be non-empty text without NUL")
     if dirty is not bool(changed_paths):
         raise ValueError("repository snapshot dirty state contradicts changed paths")
+    if not isinstance(worktrees, Sequence) or isinstance(worktrees, (str, bytes)):
+        raise ValueError("repository worktree evidence must be a bounded sequence")
+    if len(worktrees) > 100:
+        raise ValueError("repository worktree evidence exceeds 100 entries")
+    if any(not isinstance(worktree, Mapping) for worktree in worktrees):
+        raise ValueError("repository worktree evidence entry must be structured")
 
     worktree_values = [_worktree_lock_value(worktree) for worktree in worktrees]
-    if len(worktree_values) > 100:
-        raise ValueError("repository worktree evidence exceeds 100 entries")
     changed_path_values = [{"root": root, "path": path} for path in changed_paths]
 
     state_ref = {"root": root, "head": head}
