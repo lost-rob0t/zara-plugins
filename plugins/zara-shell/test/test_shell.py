@@ -1,5 +1,6 @@
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -59,6 +60,28 @@ class ShellRunnerTests(unittest.TestCase):
         result = ShellRunner(policy).run([sys.executable, "-c", "import time; time.sleep(5)"], cwd=self.root)
         self.assertTrue(result["timed_out"])
         self.assertIsNone(result["exit_code"])
+
+    def test_timeout_terminates_descendant_processes(self):
+        marker = self.root / "escaped-child"
+        child = (
+            "import pathlib,time; "
+            f"time.sleep(0.2); pathlib.Path({str(marker)!r}).write_text('escaped')"
+        )
+        parent = (
+            "import subprocess,sys,time; "
+            f"subprocess.Popen([sys.executable, '-c', {child!r}]); time.sleep(5)"
+        )
+        policy = CommandPolicy(
+            allowed_programs={sys.executable},
+            allowed_roots=(self.root,),
+            max_runtime_seconds=0.05,
+            max_output_bytes=128,
+            max_input_bytes=64,
+        )
+        result = ShellRunner(policy).run([sys.executable, "-c", parent], cwd=self.root)
+        self.assertTrue(result["timed_out"])
+        time.sleep(0.3)
+        self.assertFalse(marker.exists())
 
     def test_output_is_bounded_and_reports_truncation(self):
         policy = CommandPolicy(
