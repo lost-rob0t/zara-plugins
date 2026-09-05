@@ -40,6 +40,16 @@ class RepositoryInspectorTests(unittest.TestCase):
                     f"{'b' * 40}\t{'a' * 40}\tAlice\t2026-09-05T10:00:00-04:00\tsecond\n"
                     f"{'a' * 40}\t\tBob\t2026-09-04T09:00:00-04:00\tfirst\n"
                 ),
+                (
+                    "for-each-ref",
+                    "--count=2",
+                    "--sort=refname",
+                    "--format=%(refname:short)%09%(objectname)%09%(upstream:short)",
+                    "refs/heads/",
+                ): (
+                    f"feature\t{'b' * 40}\torigin/feature\n"
+                    f"main\t{'a' * 40}\torigin/main\n"
+                ),
             }
             return subprocess.CompletedProcess(argv, 0, stdout=outputs.get(tuple(args), ""), stderr="")
 
@@ -75,6 +85,25 @@ class RepositoryInspectorTests(unittest.TestCase):
     def test_log_rejects_unbounded_limits_before_spawning_git(self):
         with self.assertRaisesRegex(ValueError, "between 1 and 100"):
             self.inspector.log(self.repo, limit=101)
+        self.assertEqual(self.calls, [])
+
+    def test_branches_returns_bounded_structured_local_refs(self):
+        branches = self.inspector.branches(self.repo, limit=2)
+        self.assertEqual(
+            branches,
+            [
+                {"name": "feature", "commit": "b" * 40, "upstream": "origin/feature"},
+                {"name": "main", "commit": "a" * 40, "upstream": "origin/main"},
+            ],
+        )
+        argv, kwargs = self.calls[-1]
+        self.assertIn("--count=2", argv)
+        self.assertEqual(argv[-1], "refs/heads/")
+        self.assertFalse(kwargs["shell"])
+
+    def test_branches_rejects_unbounded_limits_before_spawning_git(self):
+        with self.assertRaisesRegex(ValueError, "between 1 and 100"):
+            self.inspector.branches(self.repo, limit=0)
         self.assertEqual(self.calls, [])
 
     def test_rejects_paths_outside_configured_roots(self):
