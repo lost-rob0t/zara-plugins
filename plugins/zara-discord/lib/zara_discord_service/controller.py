@@ -8,6 +8,7 @@ from typing import Callable
 from zara.runtime import events
 from zara.runtime.commands import SubmitTurn
 
+from .inspection import NO_REPLY_SENTINEL
 from .privacy import filter_public_output
 from .routing import ResponseRouter
 
@@ -114,6 +115,7 @@ class ConversationController:
         on_response: Callable[[str], None],
         on_error: Callable[[str], None],
         speaker: str = "User",
+        suppress_exact: frozenset[str] = frozenset({NO_REPLY_SENTINEL}),
     ) -> None:
         submitted_text = self._history.render(conversation_id, speaker, text)
         self._history.append(conversation_id, speaker, text)
@@ -127,6 +129,8 @@ class ConversationController:
             on_error(message)
             return
 
+        suppressed = frozenset(str(item).strip() for item in suppress_exact)
+
         def accepted(completed) -> None:
             try:
                 receipt = completed.result()
@@ -139,6 +143,9 @@ class ConversationController:
                 return
 
             def deliver(outcome: TurnOutcome) -> None:
+                raw = str(outcome.message or "").strip()
+                if outcome.success and raw in suppressed:
+                    return
                 public = filter_public_output(outcome.message)
                 self._history.append(conversation_id, "Zara", public.text)
                 if outcome.success:

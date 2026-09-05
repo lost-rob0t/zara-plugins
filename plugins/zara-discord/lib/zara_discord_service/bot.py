@@ -287,12 +287,16 @@ class ZaraDiscordBot(discord.Client):
         guild_id = message.guild.id if message.guild else None
         mentioned = message.guild is not None and self.user in message.mentions
         spontaneous = False
+        inspection_policy = None
 
         if message.guild is not None and not mentioned:
-            policy = self.policies.policy(message.guild.id)
-            if not policy.random_mode:
+            inspection_policy = self.policies.inspection_policy(
+                message.guild.id,
+                message.channel.id,
+            )
+            if not inspection_policy.enabled:
                 return
-            if random.random() >= policy.random_reply_chance:
+            if random.random() >= inspection_policy.chance:
                 return
             spontaneous = True
 
@@ -317,6 +321,8 @@ class ZaraDiscordBot(discord.Client):
                 display_name=display_name,
                 content=message.content,
                 content_available=bool(self.intents.message_content),
+                trigger_prompt=inspection_policy.trigger_prompt,
+                response_style_prompt=inspection_policy.response_style_prompt,
             )
         else:
             text = remove_bot_mention(message.content, self.user.id)
