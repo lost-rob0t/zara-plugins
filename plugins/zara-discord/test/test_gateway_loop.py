@@ -3,6 +3,7 @@ import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from discord_test_support import install_zara_stubs
 
@@ -29,7 +30,8 @@ class GatewayLoopTests(unittest.TestCase):
 
             async def exercise():
                 current = asyncio.get_running_loop()
-                await bot.setup_hook()
+                with mock.patch.object(bot.tree, "sync", new=mock.AsyncMock()):
+                    await bot.setup_hook()
                 self.assertIs(bot._gateway_loop, current)
 
             asyncio.run(exercise())
