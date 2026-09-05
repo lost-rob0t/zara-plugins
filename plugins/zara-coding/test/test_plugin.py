@@ -70,6 +70,7 @@ class CodingPluginTests(unittest.TestCase):
                 "coding.git.commit",
                 "coding.git.worktree.list",
                 "coding.git.worktree.add-detached",
+                "coding.git.worktree.add-detached-locked",
                 "coding.git.worktree.lock",
                 "coding.git.worktree.unlock",
                 "coding.spec.catalog",
@@ -84,6 +85,7 @@ class CodingPluginTests(unittest.TestCase):
             "coding.git.branch.delete",
             "coding.git.commit",
             "coding.git.worktree.add-detached",
+            "coding.git.worktree.add-detached-locked",
             "coding.git.worktree.lock",
             "coding.git.worktree.unlock",
         }
@@ -123,6 +125,8 @@ class CodingPluginTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.git_worktree_add_detached("/", "/tmp/task", "a" * 40)
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
+            plugin.git_worktree_add_detached_locked("/", "/tmp/task", "a" * 40, "coding-task:17")
+        with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.git_worktree_lock("/", "/tmp/task", "a" * 40, "coding-task:17")
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.git_worktree_unlock("/", "/tmp/task", "a" * 40, "coding-task:17")
@@ -139,10 +143,7 @@ class CodingPluginTests(unittest.TestCase):
 
     @patch("zara_coding.plugin.catalog_spec")
     def test_spec_catalog_returns_fixed_trusted_registry_catalog(self, catalog):
-        catalog.return_value = {
-            "status": "ok",
-            "outcome": "ok(spec_language_catalog{assertions:[repository_head,repository_clean]})",
-        }
+        catalog.return_value = {"status": "ok", "outcome": "ok(spec_language_catalog{assertions:[repository_head,repository_clean]})"}
         plugin = ZaraCodingPlugin()
         plugin.prolog_rlm = FakePrologRLM()
         evidence = json.loads(plugin.spec_catalog())
@@ -159,10 +160,7 @@ class CodingPluginTests(unittest.TestCase):
 
     @patch("zara_coding.plugin.compile_spec")
     def test_spec_compile_returns_frozen_canonical_outcome(self, compile_source):
-        compile_source.return_value = {
-            "status": "ok",
-            "outcome": "ok(frozen_spec{ref:spec_ref{series:zara_coding,version:1}})",
-        }
+        compile_source.return_value = {"status": "ok", "outcome": "ok(frozen_spec{ref:spec_ref{series:zara_coding,version:1}})"}
         plugin = ZaraCodingPlugin()
         plugin.prolog_rlm = FakePrologRLM()
         source = "spec([subject(repository(demo)),require(clean,assertion(repository_clean,_{clean:true}))])."
@@ -185,93 +183,57 @@ class CodingPluginTests(unittest.TestCase):
     @patch("zara_coding.plugin.RepositoryInspector.list_repositories")
     def test_repo_list_returns_bounded_structured_discovery(self, list_repositories, _which):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            repo = root / "repo"
-            repo.mkdir()
+            root = Path(temporary); repo = root / "repo"; repo.mkdir()
             list_repositories.return_value = [{"root": str(repo.resolve())}]
-            plugin = ZaraCodingPlugin()
-            plugin.start(Runtime({"plugins": {"zara-coding": {"allowed_roots": [str(root)]}}}))
+            plugin = ZaraCodingPlugin(); plugin.start(Runtime({"plugins": {"zara-coding": {"allowed_roots": [str(root)]}}}))
             evidence = json.loads(plugin.list_repositories(limit=7))
-            self.assertEqual(evidence, [{"root": str(repo.resolve())}])
-            list_repositories.assert_called_once_with(limit=7)
+            self.assertEqual(evidence, [{"root": str(repo.resolve())}]); list_repositories.assert_called_once_with(limit=7)
 
     @patch("zara_coding.plugin.shutil.which", return_value="/usr/bin/git")
     @patch("zara_coding.plugin.RepositoryInspector.inspect")
     def test_repo_status_and_inspect_share_structured_repo_evidence(self, inspect, _which):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            repo = root / "repo"
-            repo.mkdir()
-            inspect.return_value = {
-                "root": str(repo.resolve()),
-                "head": "b" * 40,
-                "branch": "main",
-                "dirty": False,
-                "changed_paths": [],
-            }
-            plugin = ZaraCodingPlugin()
-            plugin.start(Runtime({"plugins": {"zara-coding": {"allowed_roots": [str(root)]}}}))
-            status = json.loads(plugin.repo_status(str(repo)))
-            evidence = json.loads(plugin.inspect_repo(str(repo)))
-            self.assertEqual(status, evidence)
-            self.assertEqual(status["head"], "b" * 40)
-            self.assertEqual(inspect.call_count, 2)
+            root = Path(temporary); repo = root / "repo"; repo.mkdir()
+            inspect.return_value = {"root": str(repo.resolve()), "head": "b" * 40, "branch": "main", "dirty": False, "changed_paths": []}
+            plugin = ZaraCodingPlugin(); plugin.start(Runtime({"plugins": {"zara-coding": {"allowed_roots": [str(root)]}}}))
+            status = json.loads(plugin.repo_status(str(repo))); evidence = json.loads(plugin.inspect_repo(str(repo)))
+            self.assertEqual(status, evidence); self.assertEqual(status["head"], "b" * 40); self.assertEqual(inspect.call_count, 2)
 
     @patch("zara_coding.plugin.shutil.which", return_value="/usr/bin/git")
     @patch("zara_coding.plugin.RepositoryInspector.diff")
     def test_git_diff_returns_structured_summary_with_explicit_bound(self, diff, _which):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            repo = root / "repo"
-            repo.mkdir()
+            root = Path(temporary); repo = root / "repo"; repo.mkdir()
             diff.return_value = [{"path": "file.py", "additions": 4, "deletions": 2, "binary": False}]
-            plugin = ZaraCodingPlugin()
-            plugin.start(Runtime({"plugins": {"zara-coding": {"allowed_roots": [str(root)]}}}))
-            evidence = json.loads(plugin.git_diff(str(repo), max_files=7))
-            self.assertEqual(evidence[0]["path"], "file.py")
-            diff.assert_called_once_with(repo, max_files=7)
+            plugin = ZaraCodingPlugin(); plugin.start(Runtime({"plugins": {"zara-coding": {"allowed_roots": [str(root)]}}}))
+            evidence = json.loads(plugin.git_diff(str(repo), max_files=7)); self.assertEqual(evidence[0]["path"], "file.py"); diff.assert_called_once_with(repo, max_files=7)
 
     @patch("zara_coding.plugin.shutil.which", return_value="/usr/bin/git")
     @patch("zara_coding.plugin.RepositoryInspector.log")
     def test_git_log_returns_structured_history_with_explicit_bound(self, log, _which):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            repo = root / "repo"
-            repo.mkdir()
+            root = Path(temporary); repo = root / "repo"; repo.mkdir()
             log.return_value = [{"commit": "c" * 40, "parents": [], "subject": "initial"}]
-            plugin = ZaraCodingPlugin()
-            plugin.start(Runtime({"plugins": {"zara-coding": {"allowed_roots": [str(root)]}}}))
-            evidence = json.loads(plugin.git_log(str(repo), limit=7))
-            self.assertEqual(evidence[0]["commit"], "c" * 40)
-            log.assert_called_once_with(repo, limit=7)
+            plugin = ZaraCodingPlugin(); plugin.start(Runtime({"plugins": {"zara-coding": {"allowed_roots": [str(root)]}}}))
+            evidence = json.loads(plugin.git_log(str(repo), limit=7)); self.assertEqual(evidence[0]["commit"], "c" * 40); log.assert_called_once_with(repo, limit=7)
 
     @patch("zara_coding.plugin.shutil.which", return_value="/usr/bin/git")
     @patch("zara_coding.plugin.RepositoryInspector.branches")
     def test_git_branches_returns_structured_local_inventory_with_explicit_bound(self, branches, _which):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            repo = root / "repo"
-            repo.mkdir()
+            root = Path(temporary); repo = root / "repo"; repo.mkdir()
             branches.return_value = [{"name": "main", "commit": "d" * 40, "upstream": "origin/main"}]
-            plugin = ZaraCodingPlugin()
-            plugin.start(Runtime({"plugins": {"zara-coding": {"allowed_roots": [str(root)]}}}))
-            evidence = json.loads(plugin.git_branches(str(repo), limit=9))
-            self.assertEqual(evidence[0]["name"], "main")
-            branches.assert_called_once_with(repo, limit=9)
+            plugin = ZaraCodingPlugin(); plugin.start(Runtime({"plugins": {"zara-coding": {"allowed_roots": [str(root)]}}}))
+            evidence = json.loads(plugin.git_branches(str(repo), limit=9)); self.assertEqual(evidence[0]["name"], "main"); branches.assert_called_once_with(repo, limit=9)
 
     @patch("zara_coding.plugin.shutil.which", return_value="/usr/bin/git")
     @patch("zara_coding.plugin.RepositoryInspector.worktrees")
     def test_git_worktree_list_returns_structured_inventory_with_explicit_bound(self, worktrees, _which):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            repo = root / "repo"
-            repo.mkdir()
+            root = Path(temporary); repo = root / "repo"; repo.mkdir()
             worktrees.return_value = [{"path": str(repo), "head": "e" * 40, "branch": "main", "detached": False}]
-            plugin = ZaraCodingPlugin()
-            plugin.start(Runtime({"plugins": {"zara-coding": {"allowed_roots": [str(root)]}}}))
-            evidence = json.loads(plugin.git_worktrees(str(repo), limit=6))
-            self.assertEqual(evidence[0]["branch"], "main")
-            worktrees.assert_called_once_with(repo, limit=6)
+            plugin = ZaraCodingPlugin(); plugin.start(Runtime({"plugins": {"zara-coding": {"allowed_roots": [str(root)]}}}))
+            evidence = json.loads(plugin.git_worktrees(str(repo), limit=6)); self.assertEqual(evidence[0]["branch"], "main"); worktrees.assert_called_once_with(repo, limit=6)
 
 
 if __name__ == "__main__":
