@@ -13,6 +13,8 @@ Runner = Callable[..., subprocess.CompletedProcess[str]]
 
 
 class RepositoryInspector:
+    MAX_DISCOVERY_ENTRIES = 1000
+
     def __init__(
         self,
         allowed_roots: tuple[Path, ...],
@@ -27,6 +29,37 @@ class RepositoryInspector:
         self._roots = tuple(Path(root).expanduser().resolve() for root in allowed_roots)
         self._executable = executable
         self._runner = runner or subprocess.run
+
+    def list_repositories(self, *, limit: int = 50) -> list[dict[str, str]]:
+        limit = self._bounded_limit(limit)
+        repositories = []
+        scanned = 0
+        for allowed_root in self._roots:
+            if not allowed_root.is_dir():
+                continue
+            candidates = [allowed_root] if self._is_git_root(allowed_root) else []
+            if not candidates:
+                for candidate in sorted(allowed_root.iterdir(), key=lambda path: path.name):
+                    scanned += 1
+                    if scanned > self.MAX_DISCOVERY_ENTRIES:
+                        raise CodingError(
+                            f"repository discovery exceeds scan limit of {self.MAX_DISCOVERY_ENTRIES} entries"
+                        )
+                    if candidate.is_symlink() or not candidate.is_dir():
+                        continue
+                    if self._is_git_root(candidate):
+                        candidates.append(candidate)
+            for candidate in candidates:
+                repositories.append({"root": str(candidate.resolve())})
+                if len(repositories) > limit:
+                    raise CodingError(f"repository discovery exceeds repository limit of {limit}")
+        repositories.sort(key=lambda item: item["root"])
+        return repositories
+
+    @staticmethod
+    def _is_git_root(path: Path) -> bool:
+        marker = path / ".git"
+        return marker.is_dir() or marker.is_file()
 
     def inspect(self, path: Path) -> dict[str, object]:
         root = self._repository_root(path)
