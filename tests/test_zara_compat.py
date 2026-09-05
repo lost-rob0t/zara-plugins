@@ -11,6 +11,7 @@ from scripts.zara_compat import (
     exercise_service_lifecycle,
     fake_dependency_environment,
     load_registry,
+    plugin_paths,
     require_metadata,
     temporary_runtime_environment,
     validate_zara_source,
@@ -58,6 +59,32 @@ class ZaraCompatibilityGateTest(unittest.TestCase):
                 "zara.plugins API source",
             ):
                 validate_zara_source(Path(directory))
+
+    def test_source_and_installed_runtime_paths_are_distinct(self) -> None:
+        entry = {
+            "name": "zara-example",
+            "path": "plugins/zara-example",
+            "entrypoint": "zara-plugin/example.py",
+        }
+        root = Path("/source")
+
+        source_entrypoint, source_library = plugin_paths(root, entry)
+        self.assertEqual(source_entrypoint, Path("/source/plugins/zara-example/zara-plugin/example.py"))
+        self.assertEqual(source_library, Path("/source/plugins/zara-example/lib"))
+
+        runtime_entrypoint, runtime_library = plugin_paths(
+            root,
+            entry,
+            runtime_root=Path("/nix/store/runtime/share/zara/runtime"),
+        )
+        self.assertEqual(
+            runtime_entrypoint,
+            Path("/nix/store/runtime/share/zara/runtime/zara-example/entrypoint.py"),
+        )
+        self.assertEqual(
+            runtime_library,
+            Path("/nix/store/runtime/share/zara/runtime/zara-example/lib"),
+        )
 
     def test_temporary_runtime_environment_confines_all_mutable_xdg_state(self) -> None:
         names = (

@@ -46,6 +46,10 @@
             ++ map (dependency: packages.${dependency}) allPluginDependencies
           );
 
+          installedCompatibilityPython = python.withPackages (packages: [
+            packages.langchain-core
+          ]);
+
           # Exact Zara source contract used by the generated compatibility
           # gate. Updating this revision is an explicit compatibility event.
           zaraSource = pkgs.fetchFromGitHub {
@@ -170,6 +174,21 @@
                 ${compatibilityPython}/bin/python3 \
                   $src/scripts/zara_compat.py \
                   --root $src \
+                  --zara-source ${zaraSource}
+                touch $out
+              '';
+
+            installed-compatibility = pkgs.runCommand "zara-check-installed-plugin-compatibility"
+              {
+                nativeBuildInputs = [ installedCompatibilityPython ];
+                src = self;
+              }
+              ''
+                export HOME=$(mktemp -d)
+                ${installedCompatibilityPython}/bin/python3 \
+                  $src/scripts/zara_compat.py \
+                  --root $src \
+                  --runtime-root ${pluginEnv}/share/zara/runtime \
                   --zara-source ${zaraSource}
                 touch $out
               '';

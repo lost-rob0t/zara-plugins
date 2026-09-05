@@ -64,6 +64,19 @@ def require_metadata(entry: dict[str, Any], actual: Any) -> None:
             )
 
 
+def plugin_paths(
+    root: Path,
+    entry: dict[str, Any],
+    *,
+    runtime_root: Path | None = None,
+) -> tuple[Path, Path]:
+    if runtime_root is not None:
+        plugin_runtime = runtime_root / str(entry["name"])
+        return plugin_runtime / "entrypoint.py", plugin_runtime / "lib"
+    plugin_source = root / str(entry["path"])
+    return plugin_source / str(entry["entrypoint"]), plugin_source / "lib"
+
+
 def _load_runtime_contracts(zara_source: Path):
     sys.path.insert(0, str(zara_source))
     try:
@@ -77,9 +90,14 @@ def _load_runtime_contracts(zara_source: Path):
     return BaseTool, PLUGIN_API_VERSION, PluginMetadata, ServicePlugin, load_plugin_module
 
 
-def _prepare_plugin_imports(root: Path, entries: list[dict[str, Any]]) -> None:
+def _prepare_plugin_imports(
+    root: Path,
+    entries: list[dict[str, Any]],
+    *,
+    runtime_root: Path | None = None,
+) -> None:
     for entry in reversed(entries):
-        library = root / str(entry["path"]) / "lib"
+        _, library = plugin_paths(root, entry, runtime_root=runtime_root)
         if library.is_dir():
             sys.path.insert(0, str(library))
 
@@ -89,11 +107,17 @@ def _qualified_type(value: object) -> str:
     return f"{kind.__module__}.{kind.__qualname__}"
 
 
-def check_registry(root: Path, zara_source: Path) -> list[str]:
+def check_registry(
+    root: Path,
+    zara_source: Path,
+    *,
+    runtime_root: Path | None = None,
+) -> list[str]:
     root = root.resolve()
+    runtime_root = runtime_root.resolve() if runtime_root is not None else None
     zara_source = validate_zara_source(zara_source)
     entries = load_registry(root / "plugins.json")
-    _prepare_plugin_imports(root, entries)
+    _prepare_plugin_imports(root, entries, runtime_root=runtime_root)
     BaseTool, api_version, PluginMetadata, ServicePlugin, load_plugin_module = (
         _load_runtime_contracts(zara_source)
     )
@@ -108,7 +132,10 @@ def check_registry(root: Path, zara_source: Path) -> list[str]:
                         f"{name}: registry API {entry.get('api_version')!r} is incompatible with Zara {api_version!r}"
                     )
                     continue
-                entrypoint = root / str(entry["path"]) / str(entry["entrypoint"])
+                entrypoint, _ = plugin_paths(root, entry, runtime_root=runtime_root)
+                if not entrypoint.is_file():
+                    failures.append(f"{name}: installed entrypoint is missing: {entrypoint}")
+                    continue
                 try:
                     module = load_plugin_module(entrypoint)
                     if entry.get("plugin_type") == "service":
@@ -168,9 +195,18 @@ def main(argv: list[str] | None = None) -> int:
         default=Path(__file__).resolve().parents[1],
     )
     parser.add_argument("--zara-source", type=Path, required=True)
+    parser.add_argument(
+        "--runtime-root",
+        type=Path,
+        help="Load packaged entrypoints from share/zara/runtime instead of the source tree.",
+    )
     arguments = parser.parse_args(argv)
 
-    failures = check_registry(arguments.root, arguments.zara_source)
+    failures = check_registry(
+        arguments.root,
+        arguments.zara_source,
+        runtime_root=arguments.runtime_root,
+    )
     if failures:
         print("Zara plugin compatibility is INVALID:", file=sys.stderr)
         for failure in failures:
@@ -179,7 +215,11 @@ def main(argv: list[str] | None = None) -> int:
 
     entries = load_registry(arguments.root / "plugins.json")
     names = ", ".join(str(entry["name"]) for entry in entries)
-    print(f"Zara plugin compatibility is valid: {len(entries)} plugin(s) [{names}]")
+    location = "installed runtime" if arguments.runtime_root is not None else "source tree"
+    print(
+        f"Zara plugin compatibility is valid from {location}: "
+        f"{len(entries)} plugin(s) [{names}]"
+    )
     return 0
 
 
