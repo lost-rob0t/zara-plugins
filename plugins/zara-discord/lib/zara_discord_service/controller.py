@@ -8,6 +8,7 @@ from typing import Callable
 from zara.runtime import events
 from zara.runtime.commands import SubmitTurn
 
+from .inspection import NO_REPLY_SENTINEL
 from .privacy import filter_public_output
 from .routing import ResponseRouter
 
@@ -114,7 +115,7 @@ class ConversationController:
         on_response: Callable[[str], None],
         on_error: Callable[[str], None],
         speaker: str = "User",
-        suppress_exact: frozenset[str] = frozenset(),
+        suppress_exact: frozenset[str] = frozenset({NO_REPLY_SENTINEL}),
     ) -> None:
         submitted_text = self._history.render(conversation_id, speaker, text)
         self._history.append(conversation_id, speaker, text)
