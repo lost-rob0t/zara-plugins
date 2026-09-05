@@ -28,6 +28,7 @@ class ModerationContextStore:
         ttl_seconds: float = DEFAULT_CONTEXT_TTL_SECONDS,
         max_contexts: int = DEFAULT_MAX_CONTEXTS,
         clock: Callable[[], float] = time.monotonic,
+        token_factory: Callable[[int], str] = secrets.token_urlsafe,
     ) -> None:
         self.ttl_seconds = float(ttl_seconds)
         self.max_contexts = int(max_contexts)
@@ -36,6 +37,7 @@ class ModerationContextStore:
         if self.max_contexts <= 0:
             raise ValueError("max_contexts must be greater than zero")
         self._clock = clock
+        self._token_factory = token_factory
         self._contexts: OrderedDict[str, ModerationContext] = OrderedDict()
         self._lock = threading.RLock()
 
@@ -66,9 +68,9 @@ class ModerationContextStore:
         )
         with self._lock:
             self._purge_expired(now)
-            token = secrets.token_urlsafe(32)
+            token = self._new_token()
             while token in self._contexts:
-                token = secrets.token_urlsafe(32)
+                token = self._new_token()
             self._contexts[token] = context
             while len(self._contexts) > self.max_contexts:
                 self._contexts.popitem(last=False)
@@ -81,6 +83,12 @@ class ModerationContextStore:
     def consume(self, token: str) -> ModerationContext:
         with self._lock:
             return self._resolve_locked(token, consume=True)
+
+    def _new_token(self) -> str:
+        token = str(self._token_factory(32)).strip()
+        if len(token) < 32:
+            raise ValueError("moderation token source returned an invalid token")
+        return token
 
     def _resolve_locked(self, token: str, *, consume: bool) -> ModerationContext:
         value = str(token or "").strip()
