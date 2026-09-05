@@ -18,7 +18,7 @@ class ZaraFilesPlugin(ServicePlugin):
         name="zara-files",
         version=PLUGIN_VERSION,
         api_version="1",
-        description="Root-confined structured local file operations",
+        description="Root-confined structured local file operations with explicit mutations",
     )
 
     def __init__(self) -> None:

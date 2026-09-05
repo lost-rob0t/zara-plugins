@@ -37,7 +37,7 @@ class ZaraStarIntelServerPlugin(ServicePlugin):
         name="zara-starintel-server",
         version=PLUGIN_VERSION,
         api_version="1",
-        description="Use the complete StarIntel Server HTTP API from Zara",
+        description="Use every HTTP API operation allowed by a StarIntel Server credential",
     )
 
     def __init__(self) -> None:

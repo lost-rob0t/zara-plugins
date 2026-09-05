@@ -16,7 +16,7 @@ class ZaraBrowserPlugin(ServicePlugin):
         name="zara-browser",
         version=PLUGIN_VERSION,
         api_version="1",
-        description="Persistent bounded browser-session abstraction",
+        description="Persistent bounded browser-session abstraction with structured actions",
     )
 
     def __init__(self, backend=None) -> None:

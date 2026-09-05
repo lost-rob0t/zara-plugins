@@ -23,7 +23,7 @@ class ZaraMediaPlugin(ServicePlugin):
         name="zara-media",
         version=PLUGIN_VERSION,
         api_version="1",
-        description="Provider-neutral media playback, queue, and catalog control",
+        description="Provider-neutral media playback, queues, player selection, and catalog queries",
     )
 
     def __init__(self, backend=None) -> None:

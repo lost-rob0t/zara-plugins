@@ -9,7 +9,7 @@ PLUGIN_NAME = "zara-local-recall"
 PLUGIN_VERSION = "0.1.0"
 PLUGIN_DESCRIPTION = (
     "Query Local Recall from Zara: cited activity answers, bounded search, "
-    "daemon status, and policy-gated screen-context explanation."
+    "status, and policy-gated screen-context explanation"
 )
 
 

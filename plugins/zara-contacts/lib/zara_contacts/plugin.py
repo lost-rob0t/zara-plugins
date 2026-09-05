@@ -23,7 +23,7 @@ class ZaraContactsPlugin(ServicePlugin):
         name="zara-contacts",
         version=PLUGIN_VERSION,
         api_version="1",
-        description="Normalized contact identity and ambiguity-safe recipient resolution",
+        description="Normalized contact identity, provenance, and ambiguity-safe recipient resolution",
     )
 
     def __init__(self, backend=None) -> None:

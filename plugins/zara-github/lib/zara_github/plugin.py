@@ -19,7 +19,7 @@ class ZaraGitHubPlugin(ServicePlugin):
         name="zara-github",
         version=PLUGIN_VERSION,
         api_version="1",
-        description="Typed GitHub PR, issue, check, review, and merge operations",
+        description="Typed GitHub PR, issue, check, review, and verified merge operations",
     )
 
     def __init__(self) -> None:
