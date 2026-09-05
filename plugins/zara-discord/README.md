@@ -147,6 +147,49 @@ the Discord Developer Portal and restart Zara if body inspection is required.
 Without the privileged intent, Zara receives metadata-only inspection context
 and cannot honestly decide whether a body reports a failed build.
 
+## Scoped moderation
+
+Moderation is off unless the channel inspection override sets
+`moderation_enabled:true`. When enabled, an eligible Discord turn receives a
+short-lived in-memory capability token bound to exactly that guild, channel,
+message, and current message author. The model never supplies arbitrary Discord
+IDs to moderation operations.
+
+Zara registers six ordinary service-plugin tools through the canonical
+`ServicePlugin.tools()` API:
+
+```text
+discord_moderation_inspect
+discord_moderation_delete
+discord_moderation_warn
+discord_moderation_timeout
+discord_moderation_kick
+discord_moderation_ban
+```
+
+Inspection may resolve the token more than once while it remains live. Every
+mutating operation consumes the token before execution, so it cannot be replayed
+for a second mutation. Tokens expire after two minutes, are bounded in memory,
+and are never written to plugin settings or the moderation audit file.
+
+Immediately before an operation, the gateway re-resolves the current Discord
+guild, channel, message, author, and member and verifies they still match the
+capability. Cross-message or cross-guild mismatches fail closed. The guild owner,
+Zara itself, other bots, administrators, and members with manage-guild or
+moderation permissions are protected targets. Discord's own permission and role
+hierarchy remains a second enforcement gate.
+
+Reasons are plain bounded text and timeouts are capped at 28 days. A mutation is
+reported as successful only after the Discord API call returns successfully;
+timeouts and API errors are explicit failures. Successful warn/timeout/kick/ban
+actions may emit a configured mention-safe public acknowledgement. Delete does
+not invent one.
+
+Moderation decisions use the bounded local audit trail under Zara's XDG state
+directory. It records numeric scope IDs, action, outcome, actor, and a sanitized
+reason only. It never records raw message bodies, usernames/display names,
+attachments, capability tokens, bot secrets, or model transcripts.
+
 Direct messages are open while every server is in open mode. Once any server
 uses restricted mode, a direct-message sender must be authorized in at least
 one restricted server, so the server restriction cannot be bypassed through a
