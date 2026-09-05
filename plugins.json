@@ -107,6 +107,20 @@
       "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-emacs", "aggregate": "zara-plugins"}
     },
     {
+      "name": "zara-files",
+      "version": "0.1.0",
+      "api_version": "1",
+      "plugin_type": "service",
+      "description": "Root-confined structured local file operations with explicit mutations",
+      "path": "plugins/zara-files",
+      "entrypoint": "zara-plugin/zara_files_entrypoint.py",
+      "docs": "plugins/zara-files/README.md",
+      "license": "GPL-3.0-or-later",
+      "tags": ["files", "filesystem", "search", "local", "sandbox"],
+      "install": {"nix": "nix build github:lost-rob0t/zara-plugins#zara-files"},
+      "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-files", "aggregate": "zara-plugins"}
+    },
+    {
       "name": "zara-persona",
       "version": "0.1.0",
       "api_version": "1",
