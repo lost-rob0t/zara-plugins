@@ -18,6 +18,10 @@ def build_repository_evidence(
     changed_paths = snapshot.get("changed_paths", ())
     if not isinstance(root, str) or not root:
         raise ValueError("repository snapshot root must be a non-empty string")
+    if "\x00" in root:
+        raise ValueError("repository snapshot root must not contain NUL")
+    if not PurePosixPath(root).is_absolute():
+        raise ValueError("repository snapshot root must be absolute")
     if not isinstance(head, str) or len(head) not in (40, 64) or any(char not in "0123456789abcdefABCDEF" for char in head):
         raise ValueError("repository snapshot head must be a full Git object ID")
     if not isinstance(branch, str) or not branch:
