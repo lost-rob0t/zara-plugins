@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +12,7 @@ from scripts.zara_compat import (
     exercise_service_lifecycle,
     fake_dependency_environment,
     load_registry,
+    plugin_import_environment,
     plugin_paths,
     require_metadata,
     require_tool_names,
@@ -71,6 +73,27 @@ class ZaraCompatibilityGateTest(unittest.TestCase):
             "zara-second.*tool name.*shared.read.*zara-first",
         ):
             require_tool_names("zara-second", [SimpleNamespace(name="shared.read")], seen)
+
+    def test_plugin_import_environment_exposes_only_requested_library(self) -> None:
+        entry = {
+            "name": "zara-example",
+            "path": "plugins/zara-example",
+            "entrypoint": "zara-plugin/example.py",
+        }
+        other = Path("/runtime/zara-other/lib")
+        previous = list(sys.path)
+        sys.path.insert(0, str(other))
+        try:
+            with plugin_import_environment(
+                Path("/source"),
+                entry,
+                runtime_root=Path("/runtime"),
+            ):
+                self.assertEqual(sys.path[0], "/runtime/zara-example/lib")
+                self.assertNotIn(str(other), sys.path[1:])
+            self.assertEqual(sys.path, [str(other), *previous])
+        finally:
+            sys.path[:] = previous
 
     def test_zara_source_must_contain_the_real_plugin_api(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
