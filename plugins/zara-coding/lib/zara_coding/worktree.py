@@ -33,6 +33,21 @@ def add_detached_worktree(
     return {"path": str(target_path), "head": expected_head, "detached": True}
 
 
+def add_detached_locked_worktree(
+    inspector: RepositoryInspector,
+    repository: Path,
+    target: Path,
+    expected_head: str,
+    reason: str,
+) -> dict[str, object]:
+    reason = _require_lock_reason(reason)
+    created = add_detached_worktree(inspector, repository, target, expected_head)
+    locked = lock_worktree(inspector, repository, target, expected_head, reason)
+    if locked["path"] != created["path"] or locked["head"] != created["head"]:
+        raise CodingError("worktree identity changed during add-and-lock transaction")
+    return locked
+
+
 def lock_worktree(
     inspector: RepositoryInspector,
     repository: Path,
