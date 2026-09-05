@@ -12,6 +12,7 @@ def build_repository_evidence(
     head = snapshot.get("head")
     branch = snapshot.get("branch")
     dirty = snapshot.get("dirty")
+    changed_paths = snapshot.get("changed_paths")
     if not isinstance(root, str) or not root:
         raise ValueError("repository snapshot root must be a non-empty string")
     if not isinstance(head, str) or len(head) not in (40, 64) or any(char not in "0123456789abcdefABCDEF" for char in head):
@@ -20,10 +21,17 @@ def build_repository_evidence(
         raise ValueError("repository snapshot branch must be a non-empty string")
     if not isinstance(dirty, bool):
         raise ValueError("repository snapshot dirty must be boolean")
+    if not isinstance(changed_paths, Sequence) or isinstance(changed_paths, (str, bytes)):
+        raise ValueError("repository changed path evidence must be a bounded sequence")
+    if len(changed_paths) > 100:
+        raise ValueError("repository changed path evidence exceeds 100 entries")
+    if any(not isinstance(path, str) or not path or "\x00" in path for path in changed_paths):
+        raise ValueError("repository changed path evidence must be non-empty text without NUL")
 
     worktree_values = [_worktree_lock_value(worktree) for worktree in worktrees]
     if len(worktree_values) > 100:
         raise ValueError("repository worktree evidence exceeds 100 entries")
+    changed_path_values = [{"root": root, "path": path} for path in changed_paths]
 
     state_ref = {"root": root, "head": head}
     return {
@@ -43,6 +51,7 @@ def build_repository_evidence(
             "repository_head": {"root": root, "head": head},
             "repository_branch": {"root": root, "branch": branch},
             "repository_clean": {"root": root, "dirty": dirty},
+            "repository_changed_path": changed_path_values,
             "worktree_locked": worktree_values,
         },
     }
