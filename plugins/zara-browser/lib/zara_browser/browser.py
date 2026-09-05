@@ -189,7 +189,7 @@ class BrowserSession:
         max_input_bytes: int = 8192,
         max_screenshot_bytes: int = 2 * 1024 * 1024,
     ) -> None:
-        if not 256 <= max_text_bytes <= 1024 * 1024:
+        if not 64 <= max_text_bytes <= 1024 * 1024:
             raise BrowserError("max_text_bytes is out of range")
         if not 1 <= max_tabs <= 64:
             raise BrowserError("max_tabs is out of range")
