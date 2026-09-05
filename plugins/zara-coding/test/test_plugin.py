@@ -42,6 +42,9 @@ class FakePrologRLM:
     def status(self):
         return {"status": "ready", "version": "test"}
 
+    def spec_catalog(self):
+        return {"status": "ok", "outcome": "ok(spec_language_catalog{assertions:[]})"}
+
     def normalize_spec(self, source):
         return {"status": "ok", "outcome": f"ok(normalized({source!r}))"}
 
@@ -63,6 +66,7 @@ class CodingPluginTests(unittest.TestCase):
                 "coding.git.diff",
                 "coding.git.log",
                 "coding.git.branches",
+                "coding.spec.catalog",
                 "coding.spec.normalize",
             },
         )
@@ -85,7 +89,16 @@ class CodingPluginTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.git_branches("/")
         with self.assertRaisesRegex(RuntimeError, "Prolog-RLM"):
+            plugin.spec_catalog()
+        with self.assertRaisesRegex(RuntimeError, "Prolog-RLM"):
             plugin.normalize_spec("spec([]).")
+
+    def test_spec_catalog_returns_canonical_prolog_rlm_outcome_as_structured_json(self):
+        plugin = ZaraCodingPlugin()
+        plugin.prolog_rlm = FakePrologRLM()
+        evidence = json.loads(plugin.spec_catalog())
+        self.assertEqual(evidence["status"], "ok")
+        self.assertIn("assertions:[]", evidence["outcome"])
 
     def test_spec_normalize_returns_prolog_rlm_outcome_as_structured_json(self):
         plugin = ZaraCodingPlugin()
