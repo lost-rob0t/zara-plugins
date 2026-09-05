@@ -1,10 +1,32 @@
 import json
 import sys
+import types
 import unittest
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
+
+
+@dataclass(frozen=True)
+class PluginMetadata:
+    name: str
+    version: str = ""
+    api_version: str = "1"
+    description: str = ""
+
+
+class ServicePlugin:
+    pass
+
+
+zara = types.ModuleType("zara")
+zara_plugins = types.ModuleType("zara.plugins")
+zara_plugins.PluginMetadata = PluginMetadata
+zara_plugins.ServicePlugin = ServicePlugin
+sys.modules.setdefault("zara", zara)
+sys.modules.setdefault("zara.plugins", zara_plugins)
 
 from zara_memory.plugin import ZaraMemoryPlugin, create_plugin
 
