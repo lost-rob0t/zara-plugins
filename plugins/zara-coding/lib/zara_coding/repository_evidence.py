@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 
-def build_repository_evidence(snapshot: Mapping[str, object]) -> dict[str, object]:
+def build_repository_evidence(
+    snapshot: Mapping[str, object],
+    *,
+    worktrees: Sequence[Mapping[str, object]] = (),
+) -> dict[str, object]:
     root = snapshot.get("root")
     head = snapshot.get("head")
     branch = snapshot.get("branch")
@@ -16,6 +20,10 @@ def build_repository_evidence(snapshot: Mapping[str, object]) -> dict[str, objec
         raise ValueError("repository snapshot branch must be a non-empty string")
     if not isinstance(dirty, bool):
         raise ValueError("repository snapshot dirty must be boolean")
+
+    worktree_values = [_worktree_lock_value(worktree) for worktree in worktrees]
+    if len(worktree_values) > 100:
+        raise ValueError("repository worktree evidence exceeds 100 entries")
 
     state_ref = {"root": root, "head": head}
     return {
@@ -35,5 +43,19 @@ def build_repository_evidence(snapshot: Mapping[str, object]) -> dict[str, objec
             "repository_head": {"root": root, "head": head},
             "repository_branch": {"root": root, "branch": branch},
             "repository_clean": {"root": root, "dirty": dirty},
+            "worktree_locked": worktree_values,
         },
     }
+
+
+def _worktree_lock_value(worktree: Mapping[str, object]) -> dict[str, object]:
+    path = worktree.get("path")
+    head = worktree.get("head")
+    locked = worktree.get("locked")
+    if not isinstance(path, str) or not path:
+        raise ValueError("worktree evidence path must be a non-empty string")
+    if not isinstance(head, str) or len(head) not in (40, 64) or any(char not in "0123456789abcdefABCDEF" for char in head):
+        raise ValueError("worktree evidence head must be a full Git object ID")
+    if locked is not None and not isinstance(locked, str):
+        raise ValueError("worktree evidence lock state must be text or null")
+    return {"path": path, "head": head, "locked": locked is not None}
