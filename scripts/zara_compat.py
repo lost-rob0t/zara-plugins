@@ -64,6 +64,24 @@ def require_metadata(entry: dict[str, Any], actual: Any) -> None:
             )
 
 
+def require_tool_names(name: str, tools: tuple[Any, ...] | list[Any], seen: dict[str, str]) -> None:
+    local: set[str] = set()
+    for tool in tools:
+        tool_name = str(getattr(tool, "name", ""))
+        if not tool_name:
+            raise CompatibilityError(f"{name}: tool has an empty name")
+        if tool_name in local:
+            raise CompatibilityError(f"{name}: duplicate tool name {tool_name!r}")
+        owner = seen.get(tool_name)
+        if owner is not None:
+            raise CompatibilityError(
+                f"{name}: tool name {tool_name!r} collides with published plugin {owner}"
+            )
+        local.add(tool_name)
+    for tool_name in local:
+        seen[tool_name] = name
+
+
 def plugin_paths(
     root: Path,
     entry: dict[str, Any],
@@ -123,6 +141,7 @@ def check_registry(
     )
 
     failures: list[str] = []
+    seen_tool_names: dict[str, str] = {}
     with tempfile.TemporaryDirectory(prefix="zara-plugin-compat-") as temporary_home:
         with temporary_runtime_environment(Path(temporary_home)):
             for entry in entries:
@@ -162,6 +181,7 @@ def check_registry(
                             raise CompatibilityError(
                                 f"tools() returned non-BaseTool values: {', '.join(invalid)}"
                             )
+                        require_tool_names(name, tools, seen_tool_names)
                         with fake_dependency_environment(name):
                             exercise_service_lifecycle(instance, CompatibilityRuntime(name))
                     else:
@@ -182,6 +202,7 @@ def check_registry(
                                 raise CompatibilityError(
                                     f"register_tools() returned non-BaseTool values: {', '.join(invalid)}"
                                 )
+                            require_tool_names(name, tools, seen_tool_names)
                 except Exception as error:
                     failures.append(f"{name}: {type(error).__name__}: {error}")
     return failures
