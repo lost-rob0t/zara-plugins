@@ -9,16 +9,16 @@ verify_repository(ok(Frozen), Evidence, Outcome) :-
     is_dict(Evidence),
     get_dict(requirements, Frozen, Requirements),
     is_list(Requirements),
-    repository_evidence(Evidence, Root, Head, Branch, Dirty, Worktrees),
-    maplist(repository_observation(Root, Head, Branch, Dirty, Worktrees),
+    repository_evidence(Evidence, Root, Head, Branch, Dirty, ChangedPaths, Worktrees),
+    maplist(repository_observation(Root, Head, Branch, Dirty, ChangedPaths, Worktrees),
             Requirements,
             Observations),
     zara_coding_assertions:registry(Registry),
     rlm_verify:spec_verify(Frozen, Observations, Registry, Outcome).
 
-repository_observation(Root, Head, Branch, Dirty, Worktrees, Requirement, Observation) :-
+repository_observation(Root, Head, Branch, Dirty, ChangedPaths, Worktrees, Requirement, Observation) :-
     Kind = Requirement.assertion.kind,
-    repository_value(Kind, Requirement.assertion.args, Root, Head, Branch, Dirty, Worktrees, Value),
+    repository_value(Kind, Requirement.assertion.args, Root, Head, Branch, Dirty, ChangedPaths, Worktrees, Value),
     Observation = _{
         requirement_id:Requirement.id,
         assertion:Requirement.assertion,
@@ -36,30 +36,40 @@ repository_observation(Root, Head, Branch, Dirty, Worktrees, Requirement, Observ
         state_ref:_{root:Root,head:Head}
     }.
 
-repository_value(repository_head, Args, Root, Head, _, _, _, Value) :-
+repository_value(repository_head, Args, Root, Head, _, _, _, _, Value) :-
     get_dict(root, Args, ExpectedRoot),
     get_dict(head, Args, ExpectedHead),
     observed_text(ExpectedRoot, Root, ValueRoot),
     observed_text(ExpectedHead, Head, ValueHead),
     Value = _{root:ValueRoot,head:ValueHead}.
-repository_value(repository_branch, Args, Root, _, Branch, _, _, Value) :-
+repository_value(repository_branch, Args, Root, _, Branch, _, _, _, Value) :-
     get_dict(root, Args, ExpectedRoot),
     get_dict(branch, Args, ExpectedBranch),
     observed_text(ExpectedRoot, Root, ValueRoot),
     observed_text(ExpectedBranch, Branch, ValueBranch),
     Value = _{root:ValueRoot,branch:ValueBranch}.
-repository_value(repository_clean, Args, Root, _, _, Dirty, _, Value) :-
+repository_value(repository_clean, Args, Root, _, _, Dirty, _, _, Value) :-
     get_dict(root, Args, ExpectedRoot),
     observed_text(ExpectedRoot, Root, ValueRoot),
     Value = _{root:ValueRoot,dirty:Dirty}.
-repository_value(worktree_locked, Args, _, _, _, _, Worktrees, Value) :-
+repository_value(repository_changed_path, Args, Root, _, _, _, ChangedPaths, _, Value) :-
+    get_dict(root, Args, ExpectedRoot),
+    get_dict(path, Args, ExpectedPath),
+    observed_text(ExpectedRoot, Root, ValueRoot),
+    (   member(ObservedPath, ChangedPaths),
+        text_equal(ObservedPath, ExpectedPath)
+    ->  Changed = true
+    ;   Changed = false
+    ),
+    Value = _{root:ValueRoot,path:ExpectedPath,changed:Changed}.
+repository_value(worktree_locked, Args, _, _, _, _, _, Worktrees, Value) :-
     get_dict(path, Args, ExpectedPath),
     (   member(Observed, Worktrees),
         text_equal(Observed.path, ExpectedPath)
     ->  Value = Observed
     ;   Value = _{path:ExpectedPath,head:none,locked:false}
     ).
-repository_value(worktree_absent, Args, _, _, _, _, Worktrees, Value) :-
+repository_value(worktree_absent, Args, _, _, _, _, _, Worktrees, Value) :-
     get_dict(path, Args, ExpectedPath),
     (   member(Observed, Worktrees),
         text_equal(Observed.path, ExpectedPath)
@@ -67,8 +77,8 @@ repository_value(worktree_absent, Args, _, _, _, _, Worktrees, Value) :-
     ;   Value = _{path:ExpectedPath,present:false}
     ).
 
-repository_evidence(Evidence, Root, Head, Branch, Dirty, Worktrees) :-
-    dict_keys(Evidence, [branch,dirty,head,root,worktrees]),
+repository_evidence(Evidence, Root, Head, Branch, Dirty, ChangedPaths, Worktrees) :-
+    dict_keys(Evidence, [branch,changed_paths,dirty,head,root,worktrees]),
     get_dict(root, Evidence, Root),
     nonempty_text(Root),
     get_dict(head, Evidence, Head),
@@ -77,10 +87,15 @@ repository_evidence(Evidence, Root, Head, Branch, Dirty, Worktrees) :-
     nonempty_text(Branch),
     get_dict(dirty, Evidence, Dirty),
     memberchk(Dirty, [true,false]),
+    get_dict(changed_paths, Evidence, ChangedPaths),
+    is_list(ChangedPaths),
+    length(ChangedPaths, ChangedCount),
+    ChangedCount =< 100,
+    maplist(nonempty_text, ChangedPaths),
     get_dict(worktrees, Evidence, Worktrees),
     is_list(Worktrees),
-    length(Worktrees, Count),
-    Count =< 100,
+    length(Worktrees, WorktreeCount),
+    WorktreeCount =< 100,
     maplist(worktree_evidence, Worktrees).
 
 worktree_evidence(Worktree) :-

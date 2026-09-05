@@ -31,6 +31,7 @@ class RepositoryEvidenceTests(unittest.TestCase):
                 "repository_head": {"root": "/srv/demo", "head": "a" * 40},
                 "repository_branch": {"root": "/srv/demo", "branch": "main"},
                 "repository_clean": {"root": "/srv/demo", "dirty": False},
+                "repository_changed_path": [],
                 "worktree_locked": [],
             },
         )

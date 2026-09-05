@@ -93,9 +93,14 @@ def _repository_payload(evidence: Mapping[str, object]) -> dict[str, object]:
     head_value = values.get("repository_head")
     branch_value = values.get("repository_branch")
     clean_value = values.get("repository_clean")
+    changed_path_values = values.get("repository_changed_path", [])
     worktree_values = values.get("worktree_locked", [])
     if not all(isinstance(value, Mapping) for value in (head_value, branch_value, clean_value)):
         raise CodingError("repository evidence is missing trusted assertion values")
+    if not isinstance(changed_path_values, Sequence) or isinstance(changed_path_values, (str, bytes)):
+        raise CodingError("repository evidence changed paths must be a bounded sequence")
+    if len(changed_path_values) > 100:
+        raise CodingError("repository evidence changed paths exceed 100 entries")
     if not isinstance(worktree_values, Sequence) or isinstance(worktree_values, (str, bytes)):
         raise CodingError("repository evidence worktree state must be a bounded sequence")
     if len(worktree_values) > 100:
@@ -121,8 +126,27 @@ def _repository_payload(evidence: Mapping[str, object]) -> dict[str, object]:
     ):
         raise CodingError("repository evidence contains invalid snapshot values")
 
+    changed_paths = [_changed_path_payload(value, root) for value in changed_path_values]
     worktrees = [_worktree_payload(value) for value in worktree_values]
-    return {"root": root, "head": head, "branch": branch, "dirty": dirty, "worktrees": worktrees}
+    return {
+        "root": root,
+        "head": head,
+        "branch": branch,
+        "dirty": dirty,
+        "changed_paths": changed_paths,
+        "worktrees": worktrees,
+    }
+
+
+def _changed_path_payload(value: object, root: str) -> str:
+    if not isinstance(value, Mapping):
+        raise CodingError("repository evidence changed path entry must be structured")
+    if value.get("root") != root:
+        raise CodingError("repository evidence changed path does not match snapshot")
+    path = value.get("path")
+    if not isinstance(path, str) or not path or "\x00" in path:
+        raise CodingError("repository evidence changed path must be non-empty text without NUL")
+    return path
 
 
 def _worktree_payload(value: object) -> dict[str, object]:
