@@ -27,8 +27,21 @@ class FakeProvider:
         if not self.accept_send:
             return {"accepted": False}
         message_id = f"sent-{len(self.sent) + 1}"
-        stored = dict(draft)
-        stored.update({"message_id": message_id, "timestamp": "2026-09-05T08:40:00+00:00", "read": True})
+        conversation_id = draft["conversation_id"] or f"thread-{message_id}"
+        sender = "me@example.test" if self.provider == "gmail" else "@me:example.test"
+        stored = {
+            "provider": self.provider,
+            "account_id": draft["account_id"],
+            "conversation_id": conversation_id,
+            "message_id": message_id,
+            "sender": sender,
+            "recipients": list(draft["recipients"]),
+            "timestamp": "2026-09-05T08:40:00+00:00",
+            "body": draft["body"],
+            "attachments": [],
+            "read": True,
+            "reply_to": draft["reply_to"],
+        }
         self.messages[message_id] = stored
         self.sent.append(message_id)
         return {"accepted": True, "message_id": message_id, "provider": self.provider}
