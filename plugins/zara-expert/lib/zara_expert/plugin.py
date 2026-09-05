@@ -7,6 +7,7 @@ from pathlib import Path
 from langchain_core.tools import StructuredTool
 from zara.plugins import PluginMetadata, ServicePlugin
 
+from .backend import SwiplBackend
 from .domain import ExpertError, ExpertHost
 
 
@@ -14,7 +15,7 @@ PLUGIN_VERSION = "0.1.0"
 
 
 class UnavailableExpertBackend:
-    reason = "swipl-backend-not-configured"
+    reason = "swipl-backend-unavailable"
 
     def run(self, request):
         raise ExpertError(self.reason)
@@ -31,7 +32,9 @@ class ZaraExpertPlugin(ServicePlugin):
     def __init__(self, backend=None, state_root: Path | None = None) -> None:
         data_home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
         root = Path(state_root) if state_root is not None else data_home / "zarathushtra" / "zara-expert"
-        self.backend = backend or UnavailableExpertBackend()
+        if backend is None:
+            backend = SwiplBackend() if SwiplBackend.available() else UnavailableExpertBackend()
+        self.backend = backend
         self.host = ExpertHost(self.backend, state_root=root)
 
     def start(self, runtime) -> None:
@@ -47,7 +50,7 @@ class ZaraExpertPlugin(ServicePlugin):
     def status(self) -> str:
         if isinstance(self.backend, UnavailableExpertBackend):
             return self._json({"status": "unavailable", "reason": self.backend.reason})
-        return self._json({"status": "ready"})
+        return self._json({"status": "ready", "backend": "swipl" if isinstance(self.backend, SwiplBackend) else "custom"})
 
     def query(self, namespace: str, goal: str) -> str:
         return self._json(self.host.query(namespace, goal))
@@ -65,7 +68,7 @@ class ZaraExpertPlugin(ServicePlugin):
 
     def tools(self):
         return (
-            StructuredTool.from_function(func=self.status, name="expert.status", description="Report whether a bounded Prolog backend is configured."),
+            StructuredTool.from_function(func=self.status, name="expert.status", description="Report whether a bounded Prolog backend is available."),
             StructuredTool.from_function(func=self.query, name="expert.query", description="Run one validated bounded query in a registered expert namespace."),
             StructuredTool.from_function(func=self.explain, name="expert.explain", description="Run one validated bounded explanation query and return structured evidence."),
             StructuredTool.from_function(func=self.assert_fact, name="expert.assert_fact", description="Assert one safe ground fact into session or persistent namespace state."),
