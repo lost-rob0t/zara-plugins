@@ -177,6 +177,20 @@
       "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-local-recall", "aggregate": "zara-plugins"}
     },
     {
+      "name": "zara-media",
+      "version": "0.1.0",
+      "api_version": "1",
+      "plugin_type": "service",
+      "description": "Provider-neutral media playback, queues, player selection, and catalog queries",
+      "path": "plugins/zara-media",
+      "entrypoint": "zara-plugin/zara_media_entrypoint.py",
+      "docs": "plugins/zara-media/README.md",
+      "license": "GPL-3.0-or-later",
+      "tags": ["media", "music", "video", "podcasts", "playback", "queue"],
+      "install": {"nix": "nix build github:lost-rob0t/zara-plugins#zara-media"},
+      "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-media", "aggregate": "zara-plugins"}
+    },
+    {
       "name": "zara-starintel-server",
       "version": "0.1.0",
       "api_version": "1",
