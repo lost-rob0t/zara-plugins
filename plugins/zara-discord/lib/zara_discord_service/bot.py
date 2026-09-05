@@ -11,6 +11,7 @@ import discord
 from discord import app_commands
 
 from .config import PolicyStore
+from .inspection import inspection_context
 from .routing import split_discord_message
 
 
@@ -298,7 +299,11 @@ class ZaraDiscordBot(discord.Client):
         if message.guild is None:
             text = message.content.strip()
         elif spontaneous:
-            text = spontaneous_reply_prompt(display_name, message.content)
+            text = inspection_context(
+                display_name=display_name,
+                content=message.content,
+                content_available=bool(self.intents.message_content),
+            )
         else:
             text = remove_bot_mention(message.content, self.user.id)
             if not text:
