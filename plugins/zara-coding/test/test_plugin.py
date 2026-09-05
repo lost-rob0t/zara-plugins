@@ -68,6 +68,7 @@ class CodingPluginTests(unittest.TestCase):
                 "coding.git.diff",
                 "coding.git.log",
                 "coding.git.branches",
+                "coding.git.worktree.list",
                 "coding.spec.catalog",
                 "coding.spec.normalize",
             },
@@ -94,6 +95,8 @@ class CodingPluginTests(unittest.TestCase):
             plugin.git_log("/")
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.git_branches("/")
+        with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
+            plugin.git_worktrees("/")
         with self.assertRaisesRegex(RuntimeError, "Prolog-RLM"):
             plugin.spec_catalog()
         with self.assertRaisesRegex(RuntimeError, "Prolog-RLM"):
@@ -200,6 +203,20 @@ class CodingPluginTests(unittest.TestCase):
             evidence = json.loads(plugin.git_branches(str(repo), limit=9))
             self.assertEqual(evidence[0]["name"], "main")
             branches.assert_called_once_with(repo, limit=9)
+
+    @patch("zara_coding.plugin.shutil.which", return_value="/usr/bin/git")
+    @patch("zara_coding.plugin.RepositoryInspector.worktrees")
+    def test_git_worktree_list_returns_structured_inventory_with_explicit_bound(self, worktrees, _which):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = root / "repo"
+            repo.mkdir()
+            worktrees.return_value = [{"path": str(repo), "head": "e" * 40, "branch": "main", "detached": False}]
+            plugin = ZaraCodingPlugin()
+            plugin.start(Runtime({"plugins": {"zara-coding": {"allowed_roots": [str(root)]}}}))
+            evidence = json.loads(plugin.git_worktrees(str(repo), limit=6))
+            self.assertEqual(evidence[0]["branch"], "main")
+            worktrees.assert_called_once_with(repo, limit=6)
 
 
 if __name__ == "__main__":
