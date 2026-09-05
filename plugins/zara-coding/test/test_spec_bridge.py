@@ -56,6 +56,14 @@ class PrologRLMSpecBridgeTests(unittest.TestCase):
         with self.assertRaisesRegex(CodingError, "non-empty"):
             bridge.normalize_spec("")
 
+    def test_normalize_spec_rejects_oversized_source_before_spawning_prolog(self):
+        bridge = PrologRLMBridge(
+            Path("/srv/prolog-rlm"),
+            runner=lambda *args, **kwargs: self.fail("runner must not be called"),
+        )
+        with self.assertRaisesRegex(CodingError, "65536"):
+            bridge.normalize_spec("x" * (PrologRLMBridge.MAX_SPEC_CHARS + 1))
+
     def test_normalize_spec_runtime_failure_is_not_reported_as_rejection(self):
         def run(argv, **kwargs):
             raise subprocess.TimeoutExpired(argv, 5)
