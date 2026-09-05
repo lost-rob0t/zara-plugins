@@ -41,8 +41,8 @@ Random/inspection mode is the explicit opt-in boundary for ordinary message
 bodies. `/random on` persists that opt-in for the guild. To inspect message
 bodies, enable **Message Content Intent** for the bot in the Discord Developer
 Portal and restart Zara. On startup, the plugin requests Message Content only
-when at least one persisted guild has random mode enabled. If no guild opts in,
-the privileged intent is not requested.
+when at least one persisted guild or channel has inspection enabled. If no
+policy opts in, the privileged intent is not requested.
 
 Until restart, or whenever Discord does not provide the privileged intent,
 inspection turns explicitly include `content_available=false` and instruct Zara
@@ -52,9 +52,10 @@ the message body. When the intent is active, inspection context marks
 requested privileged intent, the gateway fails clearly with Developer Portal
 recovery instructions instead of pretending inspection succeeded.
 
-Disabling random mode removes that guild's opt-in. If every guild has random
-mode disabled, the next Zara restart returns to the non-privileged gateway
-configuration.
+Disabling guild random mode removes that guild default. Channel overrides can
+still independently enable inspection; when every guild default and channel
+override is disabled, the next Zara restart returns to the non-privileged
+gateway configuration.
 
 Restart Zara after installing so its service-plugin host discovers the entry.
 Slash commands are synchronized when the bot connects.
@@ -99,6 +100,7 @@ server owners/administrators are accepted by the runtime guard as well:
 /random on
 /random off
 /random chance percent:<0..100>
+/random channel set enabled:<bool> percent:<0..100> trigger_prompt:<text> response_style_prompt:<text> moderation_enabled:<bool> [channel:<text-channel>]
 ```
 
 In `restricted` mode, only users added with `/zara users add` may talk. If one
@@ -108,13 +110,42 @@ are stored atomically in `settings.json` with mode `0600`.
 
 Random mode is disabled by default. `/random on` enables spontaneous replies
 for the current server with a default 5% chance per eligible non-bot message
-and records the Message Content opt-in described above. When the current
-process did not start with that intent, the command explicitly tells the
-operator to enable the Developer Portal toggle and restart Zara; until then,
-inspection remains metadata-only. `/random chance` changes the probability.
-Access-mode and channel rules still apply, so random mode never bypasses the
-configured policy. Random responses use Discord replies and do not mention the
-author.
+and records the guild-level Message Content opt-in described above. When the
+current process did not start with that intent, the command explicitly tells
+the operator to enable the Developer Portal toggle and restart Zara; until
+then, inspection remains metadata-only. `/random chance` changes the guild
+default probability. Access-mode and channel rules still apply, so inspection
+never bypasses the configured access policy.
+
+`/random channel set` creates a complete per-channel override. With no `channel`
+argument it targets the current channel; with a selected text channel it targets
+that channel instead. The override carries enabled state, probability, trigger
+instructions, response-style instructions, and the moderation flag. A channel
+override wins over guild inspection defaults. If a configured trigger does not
+match, Zara is instructed to return a reserved no-reply sentinel; the plugin
+suppresses that sentinel before Discord output and before conversation history.
+
+### CI/update-channel preset
+
+For a noisy build/update channel, this opt-in preset inspects every available
+message but only speaks when the body clearly reports a failed/red build. It
+explicitly excludes warnings, successful/green builds, and ordinary status
+updates:
+
+```text
+/random channel set \
+  enabled:true \
+  percent:100 \
+  trigger_prompt:"Reply only when this message clearly reports a failed, failing, broken, or red build/test/deploy. Do not reply to warnings, success messages, green/passing builds, queued/running updates, or neutral status messages." \
+  response_style_prompt:"Keep it very short and funny; something in the vibe of: ooops i fucked up again" \
+  moderation_enabled:false
+```
+
+That preset is deliberately not global. Apply it only to channels where you
+want Zara inspecting CI/update traffic, then enable Message Content Intent in
+the Discord Developer Portal and restart Zara if body inspection is required.
+Without the privileged intent, Zara receives metadata-only inspection context
+and cannot honestly decide whether a body reports a failed build.
 
 Direct messages are open while every server is in open mode. Once any server
 uses restricted mode, a direct-message sender must be authorized in at least
