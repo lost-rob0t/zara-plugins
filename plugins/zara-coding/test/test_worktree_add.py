@@ -44,6 +44,7 @@ class WorktreeAddTests(unittest.TestCase):
             repo = root / "repo"
             repo.mkdir()
             target = root / "worktrees" / "task-1"
+            target.parent.mkdir()
             calls = []
 
             def run(argv, **kwargs):
