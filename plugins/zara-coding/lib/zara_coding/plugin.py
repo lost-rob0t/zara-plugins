@@ -74,6 +74,11 @@ class ZaraCodingPlugin(ServicePlugin):
                 description="Return bounded structured commit history for an allowed repository.",
             ),
             StructuredTool.from_function(
+                func=self.git_branches,
+                name="coding.git.branches",
+                description="Return bounded structured local branch refs for an allowed repository.",
+            ),
+            StructuredTool.from_function(
                 func=self.normalize_spec,
                 name="coding.spec.normalize",
                 description=(
@@ -108,6 +113,12 @@ class ZaraCodingPlugin(ServicePlugin):
         if not isinstance(path, str) or not path:
             raise ValueError("path must be a non-empty string")
         return json.dumps(inspector.log(Path(path), limit=limit), sort_keys=True)
+
+    def git_branches(self, path: str, limit: int = 50) -> str:
+        inspector = self._require_inspector()
+        if not isinstance(path, str) or not path:
+            raise ValueError("path must be a non-empty string")
+        return json.dumps(inspector.branches(Path(path), limit=limit), sort_keys=True)
 
     def normalize_spec(self, source: str) -> str:
         if self.prolog_rlm is None:
