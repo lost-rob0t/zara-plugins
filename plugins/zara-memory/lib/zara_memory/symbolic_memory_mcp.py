@@ -93,7 +93,7 @@ class SymbolicMemoryMCP:
                 "arguments": arguments,
                 "_meta": {
                     "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION,
-                    "io.modelcontextprotocol/clientInfo": {"name": "zara-memory", "version": "0.2.0"},
+                    "io.modelcontextprotocol/clientInfo": {"name": "zara-memory", "version": "0.1.0"},
                     "io.modelcontextprotocol/clientCapabilities": {},
                 },
             },
