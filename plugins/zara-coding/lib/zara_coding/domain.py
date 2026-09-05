@@ -13,13 +13,7 @@ Runner = Callable[..., subprocess.CompletedProcess[str]]
 
 
 class RepositoryInspector:
-    def __init__(
-        self,
-        allowed_roots: tuple[Path, ...],
-        *,
-        executable: str = "git",
-        runner: Runner | None = None,
-    ) -> None:
+    def __init__(self, allowed_roots: tuple[Path, ...], *, executable: str = "git", runner: Runner | None = None) -> None:
         if not allowed_roots:
             raise ValueError("allowed_roots must not be empty")
         if not executable:
@@ -36,23 +30,30 @@ class RepositoryInspector:
         changed = set(filter(None, self._git(root, "diff", "--name-only", "HEAD").splitlines()))
         untracked = set(filter(None, self._git(root, "ls-files", "--others", "--exclude-standard").splitlines()))
         changed_paths = sorted(changed | untracked)
-        return {
-            "root": str(root),
-            "head": head,
-            "branch": branch,
-            "dirty": bool(changed_paths),
-            "changed_paths": changed_paths,
-        }
+        return {"root": str(root), "head": head, "branch": branch, "dirty": bool(changed_paths), "changed_paths": changed_paths}
+
+    def diff(self, path: Path, *, max_files: int = 50) -> list[dict[str, object]]:
+        max_files = self._bounded_limit(max_files)
+        root = self._repository_root(path)
+        output = self._git(root, "diff", "--numstat", "--no-renames", "HEAD", "--")
+        entries = []
+        for line in output.splitlines():
+            if not line:
+                continue
+            fields = line.split("\t", 2)
+            if len(fields) != 3:
+                raise CodingError("git diff returned malformed structured output")
+            additions, deletions, changed_path = fields
+            binary = additions == "-" and deletions == "-"
+            entries.append({"path": changed_path, "additions": None if binary else int(additions), "deletions": None if binary else int(deletions), "binary": binary})
+            if len(entries) > max_files:
+                raise CodingError(f"git diff exceeds file limit of {max_files}")
+        return entries
 
     def log(self, path: Path, *, limit: int = 20) -> list[dict[str, object]]:
         limit = self._bounded_limit(limit)
         root = self._repository_root(path)
-        output = self._git(
-            root,
-            "log",
-            f"--max-count={limit}",
-            "--format=%H%x09%P%x09%an%x09%aI%x09%s",
-        )
+        output = self._git(root, "log", f"--max-count={limit}", "--format=%H%x09%P%x09%an%x09%aI%x09%s")
         history = []
         for line in output.splitlines():
             if not line:
@@ -61,28 +62,13 @@ class RepositoryInspector:
             if len(fields) != 5:
                 raise CodingError("git log returned malformed structured output")
             commit, parents, author, authored_at, subject = fields
-            history.append(
-                {
-                    "commit": commit,
-                    "parents": parents.split() if parents else [],
-                    "author": author,
-                    "authored_at": authored_at,
-                    "subject": subject,
-                }
-            )
+            history.append({"commit": commit, "parents": parents.split() if parents else [], "author": author, "authored_at": authored_at, "subject": subject})
         return history
 
     def branches(self, path: Path, *, limit: int = 50) -> list[dict[str, str]]:
         limit = self._bounded_limit(limit)
         root = self._repository_root(path)
-        output = self._git(
-            root,
-            "for-each-ref",
-            f"--count={limit}",
-            "--sort=refname",
-            "--format=%(refname:short)%09%(objectname)%09%(upstream:short)",
-            "refs/heads/",
-        )
+        output = self._git(root, "for-each-ref", f"--count={limit}", "--sort=refname", "--format=%(refname:short)%09%(objectname)%09%(upstream:short)", "refs/heads/")
         branches = []
         for line in output.splitlines():
             if not line:
@@ -115,14 +101,7 @@ class RepositoryInspector:
             raise CodingError("repository path is outside allowed roots")
 
     def _run(self, root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        return self._runner(
-            [self._executable, "-C", str(root), *args],
-            check=check,
-            capture_output=True,
-            text=True,
-            timeout=5,
-            shell=False,
-        )
+        return self._runner([self._executable, "-C", str(root), *args], check=check, capture_output=True, text=True, timeout=5, shell=False)
 
     def _git(self, root: Path, *args: str, repository_error: bool = False) -> str:
         try:
@@ -135,21 +114,10 @@ class RepositoryInspector:
 
 
 class PrologRLMBridge:
-    SPEC_NORMALIZE_GOAL = (
-        "read_string(user_input,_,S),"
-        "rlm_spec_lang:spec_source_normalize(S,O),"
-        "write_canonical(O),nl,halt"
-    )
+    SPEC_NORMALIZE_GOAL = "read_string(user_input,_,S),rlm_spec_lang:spec_source_normalize(S,O),write_canonical(O),nl,halt"
     MAX_SPEC_CHARS = 65536
 
-    def __init__(
-        self,
-        checkout: Path,
-        *,
-        executable: str = "swipl",
-        timeout_seconds: float = 5.0,
-        runner: Runner | None = None,
-    ) -> None:
+    def __init__(self, checkout: Path, *, executable: str = "swipl", timeout_seconds: float = 5.0, runner: Runner | None = None) -> None:
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
         self.checkout = Path(checkout).expanduser()
@@ -162,23 +130,9 @@ class PrologRLMBridge:
         facade = self.checkout / "prolog" / "rlm.pl"
         if self._validate_checkout and not facade.is_file():
             return {"status": "unavailable", "reason": "prolog-rlm-checkout-missing"}
-        argv = [
-            self.executable,
-            "-q",
-            "-s",
-            str(facade),
-            "-g",
-            "rlm:rlm_ready,rlm:rlm_version(V),format('ready\\t~w~n',[V]),halt",
-        ]
+        argv = [self.executable, "-q", "-s", str(facade), "-g", "rlm:rlm_ready,rlm:rlm_version(V),format('ready\\t~w~n',[V]),halt"]
         try:
-            result = self._runner(
-                argv,
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_seconds,
-                shell=False,
-            )
+            result = self._runner(argv, check=True, capture_output=True, text=True, timeout=self.timeout_seconds, shell=False)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
             return {"status": "unavailable", "reason": "prolog-rlm-not-ready"}
         line = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
@@ -195,29 +149,13 @@ class PrologRLMBridge:
         module = self.checkout / "prolog" / "rlm_spec_lang.pl"
         if self._validate_checkout and not module.is_file():
             raise CodingError("Prolog-RLM SPEC language module is unavailable")
-        argv = [
-            self.executable,
-            "-q",
-            "-s",
-            str(module),
-            "-g",
-            self.SPEC_NORMALIZE_GOAL,
-        ]
+        argv = [self.executable, "-q", "-s", str(module), "-g", self.SPEC_NORMALIZE_GOAL]
         try:
-            result = self._runner(
-                argv,
-                input=source,
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_seconds,
-                shell=False,
-            )
+            result = self._runner(argv, input=source, check=True, capture_output=True, text=True, timeout=self.timeout_seconds, shell=False)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as exc:
             raise CodingError("Prolog-RLM SPEC normalization failed") from exc
         lines = [line for line in result.stdout.splitlines() if line.strip()]
         if not lines:
             raise CodingError("Prolog-RLM SPEC normalization returned no outcome")
         outcome = lines[-1].strip()
-        status = "ok" if outcome.startswith("ok(") else "rejected"
-        return {"status": status, "outcome": outcome}
+        return {"status": "ok" if outcome.startswith("ok(") else "rejected", "outcome": outcome}
