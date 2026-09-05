@@ -36,6 +36,9 @@ jobs:
             git diff --check HEAD^..HEAD
           fi
 
+      - name: Run compatibility gate contract tests
+        run: python3 -m unittest discover -s tests -t .
+
       - name: Install Nix
         uses: cachix/install-nix-action@v31
 
