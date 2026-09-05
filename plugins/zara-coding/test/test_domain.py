@@ -59,6 +59,36 @@ class RepositoryInspectorTests(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
+    def test_list_repositories_discovers_only_bounded_immediate_git_roots(self):
+        (self.repo / ".git").mkdir()
+        second = self.root / "second"
+        second.mkdir()
+        (second / ".git").write_text("gitdir: /tmp/worktree\n")
+        nested = self.plain / "nested"
+        nested.mkdir()
+        (nested / ".git").mkdir()
+        repositories = self.inspector.list_repositories(limit=2)
+        self.assertEqual(
+            repositories,
+            [
+                {"root": str(self.repo.resolve())},
+                {"root": str(second.resolve())},
+            ],
+        )
+        self.assertEqual(self.calls, [])
+
+    def test_list_repositories_fails_closed_when_discovery_exceeds_bound(self):
+        (self.repo / ".git").mkdir()
+        second = self.root / "second"
+        second.mkdir()
+        (second / ".git").mkdir()
+        with self.assertRaisesRegex(CodingError, "exceeds repository limit"):
+            self.inspector.list_repositories(limit=1)
+
+    def test_list_repositories_rejects_invalid_bound_without_scanning(self):
+        with self.assertRaisesRegex(ValueError, "between 1 and 100"):
+            self.inspector.list_repositories(limit=0)
+
     def test_snapshot_is_structured_and_preserves_dirty_evidence(self):
         snapshot = self.inspector.inspect(self.repo)
         self.assertEqual(snapshot["root"], str(self.repo.resolve()))
