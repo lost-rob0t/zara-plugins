@@ -158,10 +158,14 @@ class RepositoryInspectorTests(unittest.TestCase):
                 {"name": "main", "commit": "a" * 40, "upstream": "origin/main"},
             ],
         )
-        argv, kwargs = self.calls[-1]
-        self.assertIn("--count=2", argv)
-        self.assertEqual(argv[-1], "refs/heads/")
-        self.assertFalse(kwargs["shell"])
+        branch_calls = [call for call in self.calls if "for-each-ref" in call[0]]
+        self.assertEqual(len(branch_calls), 2)
+        self.assertEqual(
+            {argument for argv, _ in branch_calls for argument in argv if argument.startswith("--count=")},
+            {"--count=2", "--count=3"},
+        )
+        self.assertTrue(all(argv[-1] == "refs/heads/" for argv, _ in branch_calls))
+        self.assertTrue(all(kwargs["shell"] is False for _, kwargs in branch_calls))
 
     def test_branches_rejects_unbounded_limits_before_spawning_git(self):
         with self.assertRaisesRegex(ValueError, "between 1 and 100"):
