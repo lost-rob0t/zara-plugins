@@ -13,6 +13,7 @@ from scripts.zara_compat import (
     load_registry,
     plugin_paths,
     require_metadata,
+    require_tool_names,
     temporary_runtime_environment,
     validate_zara_source,
 )
@@ -51,6 +52,25 @@ class ZaraCompatibilityGateTest(unittest.TestCase):
                 },
                 actual,
             )
+
+    def test_tool_names_must_be_unique_within_plugin(self) -> None:
+        tools = [SimpleNamespace(name="example.read"), SimpleNamespace(name="example.read")]
+
+        with self.assertRaisesRegex(
+            CompatibilityError,
+            "zara-example.*duplicate tool name.*example.read",
+        ):
+            require_tool_names("zara-example", tools, {})
+
+    def test_tool_names_must_be_unique_across_plugins(self) -> None:
+        seen: dict[str, str] = {}
+        require_tool_names("zara-first", [SimpleNamespace(name="shared.read")], seen)
+
+        with self.assertRaisesRegex(
+            CompatibilityError,
+            "zara-second.*tool name.*shared.read.*zara-first",
+        ):
+            require_tool_names("zara-second", [SimpleNamespace(name="shared.read")], seen)
 
     def test_zara_source_must_contain_the_real_plugin_api(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
