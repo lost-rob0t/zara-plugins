@@ -68,6 +68,7 @@ class CodingPluginTests(unittest.TestCase):
                 "coding.git.diff",
                 "coding.git.log",
                 "coding.git.branches",
+                "coding.git.worktrees",
                 "coding.spec.catalog",
                 "coding.spec.normalize",
             },
@@ -94,6 +95,8 @@ class CodingPluginTests(unittest.TestCase):
             plugin.git_log("/")
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.git_branches("/")
+        with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
+            plugin.git_worktrees("/")
         with self.assertRaisesRegex(RuntimeError, "Prolog-RLM"):
             plugin.spec_catalog()
         with self.assertRaisesRegex(RuntimeError, "Prolog-RLM"):
