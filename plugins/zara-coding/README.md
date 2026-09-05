@@ -1,6 +1,6 @@
 # zara-coding
 
-`zara-coding` is the Zara-facing coding harness built on `lost-rob0t/prolog-rlm`. The current slices establish safe repository evidence, runtime preflight, and a closed SPEC-authoring boundary before any Git mutation, worker spawning, or build/test execution is exposed.
+`zara-coding` is the Zara-facing coding harness built on `lost-rob0t/prolog-rlm`. The current slices establish safe repository evidence, runtime preflight, a closed SPEC-authoring boundary, and narrowly approval-gated Git mutation before worker spawning or build/test execution is exposed.
 
 ## Current surface
 
@@ -10,6 +10,7 @@
 - `coding.git.diff` returns tracked working-tree changes against `HEAD` as bounded structured numstat evidence, including binary-file distinction, without returning arbitrary patch text.
 - `coding.git.log` returns up to 100 commits as structured commit/parent/author/time/subject evidence for an allowed repository.
 - `coding.git.branches` returns up to 100 local branches as structured name/commit/upstream evidence for an allowed repository.
+- `coding.git.branch.create` creates exactly one new local branch at the repository's current `HEAD`. It requires Zara's canonical tool approval metadata, validates the full `refs/heads/...` name with Git, and uses compare-and-set `update-ref` semantics with an all-zero old object ID so an existing branch is never moved or overwritten.
 - `coding.git.worktree.list` parses Git's NUL-delimited porcelain worktree inventory into bounded path/HEAD/branch/detached/locked/prunable evidence. Every reported worktree path must remain inside configured repository roots.
 - `coding.spec.catalog` returns Prolog-RLM's canonical closed SPEC structural catalog. The current bridge deliberately supplies an empty assertion registry, so it honestly reports no plugin-owned semantic assertion providers yet.
 - `coding.spec.normalize` sends one bounded declarative SPEC source to Prolog-RLM's canonical `rlm_spec_lang:spec_source_normalize/2` path and returns its canonical outcome.
@@ -20,7 +21,7 @@ The catalog intentionally does not fabricate semantic providers. Prolog-RLM's tr
 
 The normalization tool deliberately stops before provider validation, freezing, planning, execution, or verification. It establishes that Zara uses Prolog-RLM's existing SPEC representation rather than creating a second acceptance/task language.
 
-The plugin never shells through a command string. Git and SWI-Prolog probes use argv execution with bounded timeouts. Repository paths are resolved and checked against configured roots before and after Git root discovery. Repository discovery is deliberately shallow and bounded rather than recursively walking arbitrary project trees. Diff summaries, commit history, branch inventory, and worktree inventory are bounded before use. Git operations use fixed revisions, formats, and options rather than caller-controlled Git arguments. `coding.git.diff` fails closed if the changed-file count exceeds its configured request bound; worktree inventory fails closed on over-limit, malformed, contradictory, unsupported, or out-of-boundary records.
+The plugin never shells through a command string. Git and SWI-Prolog probes use argv execution with bounded timeouts. Repository paths are resolved and checked against configured roots before and after Git root discovery. Repository discovery is deliberately shallow and bounded rather than recursively walking arbitrary project trees. Diff summaries, commit history, branch inventory, and worktree inventory are bounded before use. Git operations use fixed revisions, formats, and options rather than caller-controlled Git arguments. `coding.git.diff` fails closed if the changed-file count exceeds its configured request bound; worktree inventory fails closed on over-limit, malformed, contradictory, unsupported, or out-of-boundary records. Branch creation is the only current mutating tool and is approval-gated, fixed to current `HEAD`, and create-only at the ref layer.
 
 ## Configuration
 
@@ -40,7 +41,7 @@ This is intentionally not a second agent runtime and not a thin GitHub wrapper. 
 
 The next symbolic milestone is trusted provider-backed SPEC validation/freezing and verification evidence. That work must use Prolog-RLM's existing `rlm_assertion`, `rlm_spec`, `rlm_verify`, plan graph, authority, effect, artifact, and agent substrates rather than introducing Zara-owned substitutes.
 
-No arbitrary shell/eval, Git mutation, worktree mutation, build execution, worker spawning, model-installed semantic provider, or model-driven success claim is exposed by the current read-only surface.
+No arbitrary shell/eval, worktree mutation, branch overwrite/move, build execution, worker spawning, model-installed semantic provider, or model-driven success claim is exposed by the current surface.
 
 ## Verification
 
