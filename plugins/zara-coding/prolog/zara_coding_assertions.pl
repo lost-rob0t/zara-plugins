@@ -1,8 +1,10 @@
 :- module(zara_coding_assertions,
           [ registry/1,
             repository_head_args/1,
+            repository_branch_args/1,
             repository_clean_args/1,
             repository_head_evaluator/3,
+            repository_branch_evaluator/3,
             repository_clean_evaluator/3
           ]).
 
@@ -22,6 +24,22 @@ registry([
            latency:pure,
            argument_schema:_{type:dict,required:_{root:text,head:git_object_id}},
            description:"require an exact HEAD commit for one repository root"
+         }),
+    assertion_provider(
+        repository_branch,
+        1,
+        zara_coding_assertions:repository_branch_args,
+        zara_coding_assertions:repository_branch_evaluator,
+        none,
+        _{ verifier:_{id:zara_coding_repository,version:1},
+           collector:_{id:none,version:1},
+           evidence_policy:_{required_evidence:true,
+                             source_classes:[repository],
+                             trust_classes:[trusted,observed],
+                             freshness:current},
+           latency:pure,
+           argument_schema:_{type:dict,required:_{root:text,branch:text}},
+           description:"require the currently checked-out branch for one repository root"
          }),
     assertion_provider(
         repository_clean,
@@ -49,6 +67,14 @@ repository_head_args(Args) :-
     get_dict(head, Args, Head),
     git_object_id(Head).
 
+repository_branch_args(Args) :-
+    is_dict(Args),
+    dict_keys(Args, [branch,root]),
+    get_dict(root, Args, Root),
+    nonempty_text(Root),
+    get_dict(branch, Args, Branch),
+    nonempty_text(Branch).
+
 repository_clean_args(Args) :-
     is_dict(Args),
     dict_keys(Args, [clean,root]),
@@ -65,6 +91,18 @@ repository_head_evaluator(Assertion, Observation, Status) :-
         get_dict(head, Observation.value, ActualHead),
         ActualRoot == ExpectedRoot,
         ActualHead == ExpectedHead
+    ->  Status = passed
+    ;   Status = failed
+    ).
+
+repository_branch_evaluator(Assertion, Observation, Status) :-
+    (   get_dict(root, Assertion.args, ExpectedRoot),
+        get_dict(branch, Assertion.args, ExpectedBranch),
+        is_dict(Observation.value),
+        get_dict(root, Observation.value, ActualRoot),
+        get_dict(branch, Observation.value, ActualBranch),
+        ActualRoot == ExpectedRoot,
+        ActualBranch == ExpectedBranch
     ->  Status = passed
     ;   Status = failed
     ).
