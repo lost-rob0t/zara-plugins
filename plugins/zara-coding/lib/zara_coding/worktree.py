@@ -42,7 +42,16 @@ def add_detached_locked_worktree(
 ) -> dict[str, object]:
     reason = _require_lock_reason(reason)
     created = add_detached_worktree(inspector, repository, target, expected_head)
-    locked = lock_worktree(inspector, repository, target, expected_head, reason)
+    try:
+        locked = lock_worktree(inspector, repository, target, expected_head, reason)
+    except (CodingError, ValueError) as exc:
+        try:
+            _rollback_created_worktree(inspector, repository, target, expected_head)
+        except CodingError as rollback_error:
+            raise CodingError(
+                "worktree lock failed and rollback could not safely remove created worktree"
+            ) from rollback_error
+        raise CodingError("worktree lock failed; created worktree rolled back") from exc
     if locked["path"] != created["path"] or locked["head"] != created["head"]:
         raise CodingError("worktree identity changed during add-and-lock transaction")
     return locked
@@ -98,6 +107,21 @@ def unlock_worktree(
         "detached": True,
         "locked": None,
     }
+
+
+def _rollback_created_worktree(
+    inspector: RepositoryInspector,
+    repository: Path,
+    target: Path,
+    expected_head: str,
+) -> None:
+    root = inspector._repository_root(repository)
+    target_path = _resolve_target(inspector, target)
+    record = _find_worktree(inspector, root, target_path)
+    _require_lockable_detached(root, record, expected_head)
+    if record["locked"] is not None:
+        raise CodingError("created worktree became locked before rollback")
+    inspector._git(root, "worktree", "remove", str(target_path))
 
 
 def _require_lock_reason(reason: str) -> str:
