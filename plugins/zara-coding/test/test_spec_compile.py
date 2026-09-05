@@ -42,7 +42,8 @@ class PrologRLMSpecCompileTests(unittest.TestCase):
     def test_compile_spec_uses_fixed_trusted_registry_and_stdin_source(self):
         source = (
             "spec([subject(repository(demo)),"
-            "require(head,assertion(repository_head,_{head:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}))])."
+            "require(head,assertion(repository_head,_{root:'/srv/demo',"
+            "head:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}))])."
         )
         calls = []
 
@@ -97,13 +98,15 @@ class PrologRLMSpecCompileTests(unittest.TestCase):
         with self.assertRaisesRegex(CodingError, "65536"):
             compile_spec(bridge, "x" * (PrologRLMBridge.MAX_SPEC_CHARS + 1))
 
-    def test_trusted_registry_source_is_static_and_non_dynamic(self):
+    def test_trusted_registry_source_is_static_and_repository_bound(self):
         provider = ROOT / "prolog" / "zara_coding_assertions.pl"
         source = provider.read_text(encoding="utf-8")
         self.assertIn("registry([", source)
         self.assertIn("assertion_provider(", source)
         self.assertIn("repository_head,", source)
         self.assertIn("repository_clean,", source)
+        self.assertIn("root:text", source)
+        self.assertIn("ActualRoot == ExpectedRoot", source)
         self.assertNotIn(":- dynamic", source)
         self.assertNotIn("assertz(", source)
         self.assertNotIn("consult(", source)
