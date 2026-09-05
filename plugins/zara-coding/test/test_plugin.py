@@ -42,9 +42,6 @@ class FakePrologRLM:
     def status(self):
         return {"status": "ready", "version": "test"}
 
-    def spec_catalog(self):
-        return {"status": "ok", "outcome": "ok(spec_language_catalog{assertions:[]})"}
-
     def normalize_spec(self, source):
         return {"status": "ok", "outcome": f"ok(normalized({source!r}))"}
 
@@ -75,6 +72,7 @@ class CodingPluginTests(unittest.TestCase):
                 "coding.git.worktree.add-detached",
                 "coding.spec.catalog",
                 "coding.spec.normalize",
+                "coding.spec.compile",
             },
         )
         mutating = {
@@ -122,13 +120,21 @@ class CodingPluginTests(unittest.TestCase):
             plugin.spec_catalog()
         with self.assertRaisesRegex(RuntimeError, "Prolog-RLM"):
             plugin.normalize_spec("spec([]).")
+        with self.assertRaisesRegex(RuntimeError, "Prolog-RLM"):
+            plugin.compile_spec("spec([]).")
 
-    def test_spec_catalog_returns_canonical_prolog_rlm_outcome_as_structured_json(self):
+    @patch("zara_coding.plugin.catalog_spec")
+    def test_spec_catalog_returns_fixed_trusted_registry_catalog(self, catalog):
+        catalog.return_value = {
+            "status": "ok",
+            "outcome": "ok(spec_language_catalog{assertions:[repository_head,repository_clean]})",
+        }
         plugin = ZaraCodingPlugin()
         plugin.prolog_rlm = FakePrologRLM()
         evidence = json.loads(plugin.spec_catalog())
         self.assertEqual(evidence["status"], "ok")
-        self.assertIn("assertions:[]", evidence["outcome"])
+        self.assertIn("repository_head", evidence["outcome"])
+        catalog.assert_called_once_with(plugin.prolog_rlm)
 
     def test_spec_normalize_returns_prolog_rlm_outcome_as_structured_json(self):
         plugin = ZaraCodingPlugin()
@@ -136,6 +142,20 @@ class CodingPluginTests(unittest.TestCase):
         evidence = json.loads(plugin.normalize_spec("spec([subject(x)])."))
         self.assertEqual(evidence["status"], "ok")
         self.assertIn("normalized", evidence["outcome"])
+
+    @patch("zara_coding.plugin.compile_spec")
+    def test_spec_compile_returns_frozen_canonical_outcome(self, compile_source):
+        compile_source.return_value = {
+            "status": "ok",
+            "outcome": "ok(frozen_spec{ref:spec_ref{series:zara_coding,version:1}})",
+        }
+        plugin = ZaraCodingPlugin()
+        plugin.prolog_rlm = FakePrologRLM()
+        source = "spec([subject(repository(demo)),require(clean,assertion(repository_clean,_{clean:true}))])."
+        evidence = json.loads(plugin.compile_spec(source))
+        self.assertEqual(evidence["status"], "ok")
+        self.assertIn("frozen_spec", evidence["outcome"])
+        compile_source.assert_called_once_with(plugin.prolog_rlm, source)
 
     @patch("zara_coding.plugin.shutil.which", return_value=None)
     def test_missing_git_degrades_honestly(self, _which):
