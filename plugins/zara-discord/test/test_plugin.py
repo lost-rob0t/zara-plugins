@@ -5,6 +5,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from discord_test_support import ServicePlugin, install_zara_stubs
@@ -41,9 +42,11 @@ class FakeRuntime:
 class FakeDiscordClient:
     instances = []
 
-    def __init__(self, controller, policies):
+    def __init__(self, controller, policies, *, message_content=False):
         self.controller = controller
         self.policies = policies
+        self.message_content = bool(message_content)
+        self.intents = SimpleNamespace(message_content=self.message_content)
         self.run_tokens = []
         self.close_requested = False
         self.instances.append(self)
@@ -91,11 +94,34 @@ class PluginTests(unittest.TestCase):
                 ["runtime-events", "gateway"],
             )
             gateway = FakeDiscordClient.instances[-1]
+            self.assertFalse(gateway.message_content)
             runtime.workers[1][1](threading.Event())
             self.assertEqual(gateway.run_tokens, ["test-token"])
 
             plugin.stop()
             self.assertTrue(gateway.close_requested)
+
+    def test_persisted_random_mode_requests_message_content_intent(self):
+        directory = (
+            Path(self.temporary.name)
+            / "zarathushtra"
+            / "plugins"
+            / "zara-discord"
+        )
+        plugin_module.PolicyStore(directory).set_random_mode(10, True)
+        environment = {
+            "XDG_CONFIG_HOME": self.temporary.name,
+            "ZARA_DISCORD_TOKEN": "test-token",
+        }
+        with mock.patch.dict(os.environ, environment, clear=True), mock.patch.object(
+            plugin_module,
+            "DiscordClient",
+            FakeDiscordClient,
+        ):
+            plugin = plugin_module.create_plugin()
+            plugin.start(FakeRuntime())
+
+        self.assertTrue(FakeDiscordClient.instances[-1].message_content)
 
 
 if __name__ == "__main__":
