@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 
+NO_REPLY_SENTINEL = "[[ZARA_DISCORD_NO_REPLY]]"
+
+
 def inspection_context(
     *,
     display_name: str,
@@ -15,6 +18,9 @@ def inspection_context(
     style = response_style_prompt.strip()
     if trigger:
         instructions.append(f"Inspection trigger: {trigger}")
+        instructions.append(
+            f"If the trigger does not match, respond exactly {NO_REPLY_SENTINEL}"
+        )
     if style:
         instructions.append(f"Response style: {style}")
     suffix = " " + " ".join(instructions) if instructions else ""
