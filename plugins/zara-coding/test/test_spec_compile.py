@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
 from zara_coding.domain import CodingError, PrologRLMBridge
+from zara_coding.spec_compile import compile_spec
 
 
 class PrologRLMSpecCompileTests(unittest.TestCase):
@@ -30,7 +31,7 @@ class PrologRLMSpecCompileTests(unittest.TestCase):
             )
 
         bridge = PrologRLMBridge(Path("/srv/prolog-rlm"), runner=run)
-        result = bridge.compile_spec(source)
+        result = compile_spec(bridge, source)
 
         self.assertEqual(result["status"], "ok")
         argv, kwargs = calls[0]
@@ -53,8 +54,9 @@ class PrologRLMSpecCompileTests(unittest.TestCase):
             )
 
         bridge = PrologRLMBridge(Path("/srv/prolog-rlm"), runner=run)
-        result = bridge.compile_spec(
-            "spec([subject(repository(demo)),require(x,assertion(nope,_{}))])."
+        result = compile_spec(
+            bridge,
+            "spec([subject(repository(demo)),require(x,assertion(nope,_{}))]).",
         )
         self.assertEqual(result["status"], "rejected")
         self.assertIn("unknown_assertion_kind", result["outcome"])
@@ -65,14 +67,15 @@ class PrologRLMSpecCompileTests(unittest.TestCase):
             runner=lambda *args, **kwargs: self.fail("runner must not be called"),
         )
         with self.assertRaisesRegex(CodingError, "65536"):
-            bridge.compile_spec("x" * (PrologRLMBridge.MAX_SPEC_CHARS + 1))
+            compile_spec(bridge, "x" * (PrologRLMBridge.MAX_SPEC_CHARS + 1))
 
     def test_trusted_registry_source_is_static_and_non_dynamic(self):
         provider = ROOT / "prolog" / "zara_coding_assertions.pl"
         source = provider.read_text(encoding="utf-8")
         self.assertIn("registry([", source)
-        self.assertIn("assertion_provider(repository_head", source)
-        self.assertIn("assertion_provider(repository_clean", source)
+        self.assertIn("assertion_provider(", source)
+        self.assertIn("repository_head,", source)
+        self.assertIn("repository_clean,", source)
         self.assertNotIn(":- dynamic", source)
         self.assertNotIn("assertz(", source)
         self.assertNotIn("consult(", source)
