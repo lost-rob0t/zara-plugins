@@ -23,6 +23,7 @@ PROTECTED_PERMISSION_NAMES = (
     "ban_members",
     "manage_messages",
 )
+ACKNOWLEDGEMENT_ACTIONS = frozenset({"warn", "timeout", "kick", "ban"})
 
 
 class ModeratedZaraDiscordBot(ZaraDiscordBot):
@@ -218,7 +219,7 @@ class ModeratedZaraDiscordBot(ZaraDiscordBot):
         self._audit(context, action, "attempted", reason or "moderation action requested")
         try:
             if action == "delete":
-                await message.delete(reason=reason or None)
+                await message.delete()
             elif action == "warn":
                 if not reason:
                     raise ValueError("warn requires a non-empty reason")
@@ -245,11 +246,13 @@ class ModeratedZaraDiscordBot(ZaraDiscordBot):
             ) from error
 
         self._audit(context, action, "succeeded", reason or "moderation action succeeded")
-        acknowledgement = self.moderation_acknowledgements.moderation_acknowledgement(
-            context.guild_id,
-            context.channel_id,
-            action,
-        )
+        acknowledgement = ""
+        if action in ACKNOWLEDGEMENT_ACTIONS:
+            acknowledgement = self.moderation_acknowledgements.moderation_acknowledgement(
+                context.guild_id,
+                context.channel_id,
+                action,
+            )
         if acknowledgement:
             await channel.send(
                 acknowledgement,
