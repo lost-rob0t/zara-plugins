@@ -191,7 +191,7 @@ class BotTests(unittest.TestCase):
             asyncio.run(self.bot.on_message(self._message()))
 
         self.assertEqual(len(self.controller.calls), 1)
-        self.assertIn("Spontaneously", self.controller.calls[0]["text"])
+        self.assertIn("content_available=false", self.controller.calls[0]["text"])
         self.assertIn("Mina", self.controller.calls[0]["text"])
 
     def test_random_mode_respects_probability(self):
