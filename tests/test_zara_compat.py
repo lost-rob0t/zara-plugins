@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,8 +8,10 @@ from types import SimpleNamespace
 
 from scripts.zara_compat import (
     CompatibilityError,
+    exercise_service_lifecycle,
     load_registry,
     require_metadata,
+    temporary_runtime_environment,
     validate_zara_source,
 )
 
@@ -54,6 +57,65 @@ class ZaraCompatibilityGateTest(unittest.TestCase):
                 "zara.plugins API source",
             ):
                 validate_zara_source(Path(directory))
+
+    def test_temporary_runtime_environment_confines_all_mutable_xdg_state(self) -> None:
+        names = (
+            "HOME",
+            "XDG_CONFIG_HOME",
+            "XDG_DATA_HOME",
+            "XDG_CACHE_HOME",
+            "XDG_STATE_HOME",
+        )
+        previous = {name: os.environ.get(name) for name in names}
+
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            with temporary_runtime_environment(home):
+                self.assertEqual(os.environ["HOME"], str(home))
+                for name in names[1:]:
+                    path = Path(os.environ[name])
+                    self.assertTrue(path.is_dir())
+                    self.assertTrue(path.is_relative_to(home))
+
+        for name, value in previous.items():
+            self.assertEqual(os.environ.get(name), value)
+
+    def test_service_lifecycle_always_stops_and_shuts_down_runtime(self) -> None:
+        calls: list[str] = []
+
+        class Service:
+            def start(self, runtime) -> None:
+                calls.append("start")
+                self.runtime = runtime
+
+            def stop(self) -> None:
+                calls.append("stop")
+
+        class Runtime:
+            def _shutdown(self) -> None:
+                calls.append("shutdown")
+
+        exercise_service_lifecycle(Service(), Runtime())
+        self.assertEqual(calls, ["start", "stop", "shutdown"])
+
+    def test_service_lifecycle_cleans_up_after_start_failure(self) -> None:
+        calls: list[str] = []
+
+        class Service:
+            def start(self, runtime) -> None:
+                calls.append("start")
+                raise RuntimeError("boom")
+
+            def stop(self) -> None:
+                calls.append("stop")
+
+        class Runtime:
+            def _shutdown(self) -> None:
+                calls.append("shutdown")
+
+        with self.assertRaisesRegex(RuntimeError, "boom"):
+            exercise_service_lifecycle(Service(), Runtime())
+        self.assertEqual(calls, ["start", "stop", "shutdown"])
 
 
 if __name__ == "__main__":
