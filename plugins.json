@@ -36,6 +36,20 @@
       "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-avatar", "aggregate": "zara-plugins"}
     },
     {
+      "name": "zara-desktop",
+      "version": "0.1.0",
+      "api_version": "1",
+      "plugin_type": "service",
+      "description": "Structured Linux desktop control with bounded platform adapters",
+      "path": "plugins/zara-desktop",
+      "entrypoint": "zara-plugin/zara_desktop_entrypoint.py",
+      "docs": "plugins/zara-desktop/README.md",
+      "license": "GPL-3.0-or-later",
+      "tags": ["desktop", "linux", "wayland", "clipboard", "screenshot"],
+      "install": {"nix": "nix build github:lost-rob0t/zara-plugins#zara-desktop"},
+      "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-desktop", "aggregate": "zara-plugins"}
+    },
+    {
       "name": "zara-discord",
       "version": "0.2.0",
       "api_version": "1",
