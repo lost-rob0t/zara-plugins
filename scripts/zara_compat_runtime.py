@@ -32,6 +32,24 @@ def temporary_runtime_environment(home: Path):
                 os.environ[name] = value
 
 
+@contextmanager
+def fake_dependency_environment(plugin_name: str):
+    variables = {}
+    if plugin_name == "zara-discord":
+        variables["ZARA_DISCORD_TOKEN"] = "compatibility-fixture-not-a-secret"
+
+    previous = {name: os.environ.get(name) for name in variables}
+    try:
+        os.environ.update(variables)
+        yield
+    finally:
+        for name, value in previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
 class CompatibilitySubscription:
     def __init__(self) -> None:
         self.closed = False
