@@ -70,12 +70,13 @@ class CodingPluginTests(unittest.TestCase):
                 "coding.git.branches",
                 "coding.git.branch.create",
                 "coding.git.branch.delete",
+                "coding.git.commit",
                 "coding.git.worktree.list",
                 "coding.spec.catalog",
                 "coding.spec.normalize",
             },
         )
-        mutating = {"coding.git.branch.create", "coding.git.branch.delete"}
+        mutating = {"coding.git.branch.create", "coding.git.branch.delete", "coding.git.commit"}
         for name, tool in tools.items():
             self.assertEqual(
                 bool((tool.metadata or {}).get("zara_requires_approval", False)),
@@ -105,6 +106,8 @@ class CodingPluginTests(unittest.TestCase):
             plugin.git_branch_create("/", "feature")
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.git_branch_delete("/", "feature", "a" * 40)
+        with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
+            plugin.git_commit("/", "message", "a" * 40)
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.git_worktrees("/")
         with self.assertRaisesRegex(RuntimeError, "Prolog-RLM"):
