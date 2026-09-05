@@ -70,6 +70,11 @@ def _prepare_plugin_imports(root: Path, entries: list[dict[str, Any]]) -> None:
             sys.path.insert(0, str(library))
 
 
+def _qualified_type(value: object) -> str:
+    kind = type(value)
+    return f"{kind.__module__}.{kind.__qualname__}"
+
+
 def check_registry(root: Path, zara_source: Path) -> list[str]:
     root = root.resolve()
     zara_source = validate_zara_source(zara_source)
@@ -107,7 +112,12 @@ def check_registry(root: Path, zara_source: Path) -> list[str]:
                             )
                         metadata = getattr(instance, "metadata", None)
                         if not isinstance(metadata, PluginMetadata):
-                            raise CompatibilityError("service metadata is not Zara PluginMetadata")
+                            expected = f"{PluginMetadata.__module__}.{PluginMetadata.__qualname__}"
+                            observed = _qualified_type(metadata)
+                            raise CompatibilityError(
+                                "service metadata is not Zara PluginMetadata "
+                                f"(expected {expected}, observed {observed})"
+                            )
                         require_metadata(entry, metadata)
                         tools = tuple(instance.tools())
                         invalid = [type(tool).__name__ for tool in tools if not isinstance(tool, BaseTool)]
