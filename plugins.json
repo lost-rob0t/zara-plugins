@@ -36,6 +36,20 @@
       "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-avatar", "aggregate": "zara-plugins"}
     },
     {
+      "name": "zara-context",
+      "version": "0.1.0",
+      "api_version": "1",
+      "plugin_type": "service",
+      "description": "Short-lived structured active context with provenance and freshness",
+      "path": "plugins/zara-context",
+      "entrypoint": "zara-plugin/zara_context_entrypoint.py",
+      "docs": "plugins/zara-context/README.md",
+      "license": "GPL-3.0-or-later",
+      "tags": ["context", "desktop", "project", "file", "privacy"],
+      "install": {"nix": "nix build github:lost-rob0t/zara-plugins#zara-context"},
+      "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-context", "aggregate": "zara-plugins"}
+    },
+    {
       "name": "zara-desktop",
       "version": "0.1.0",
       "api_version": "1",
