@@ -9,9 +9,12 @@
 - `coding.git.diff` returns tracked working-tree changes against `HEAD` as bounded structured numstat evidence, including binary-file distinction, without returning arbitrary patch text.
 - `coding.git.log` returns up to 100 commits as structured commit/parent/author/time/subject evidence for an allowed repository.
 - `coding.git.branches` returns up to 100 local branches as structured name/commit/upstream evidence for an allowed repository.
+- `coding.spec.catalog` returns Prolog-RLM's canonical closed SPEC structural catalog. The current bridge deliberately supplies an empty assertion registry, so it honestly reports no plugin-owned semantic assertion providers yet.
 - `coding.spec.normalize` sends one bounded declarative SPEC source to Prolog-RLM's canonical `rlm_spec_lang:spec_source_normalize/2` path and returns its canonical outcome.
 
-SPEC source is passed over stdin; it is never interpolated into the SWI-Prolog goal or command argv. The Prolog goal is fixed, source is capped at 65,536 characters, and execution has a bounded timeout. A Prolog-RLM rejection remains a `rejected` outcome with the canonical Prolog evidence rather than being converted into success.
+SPEC catalog and normalization use fixed SWI-Prolog goals against `rlm_spec_lang.pl`. SPEC source is passed over stdin; it is never interpolated into the SWI-Prolog goal or command argv. Source is capped at 65,536 characters and execution has a bounded timeout. A Prolog-RLM rejection remains a `rejected` outcome with canonical Prolog evidence rather than being converted into success.
+
+The catalog intentionally does not fabricate semantic providers. Prolog-RLM's trusted assertion registry owns validator/evaluator/observer authority, and its public registry contract has no model-facing registration mutation. Provider-backed validation/freezing therefore remains a later explicit integration slice rather than silently installing Zara-owned callables.
 
 The normalization tool deliberately stops before provider validation, freezing, planning, execution, or verification. It establishes that Zara uses Prolog-RLM's existing SPEC representation rather than creating a second acceptance/task language.
 
@@ -27,15 +30,15 @@ prolog_rlm_checkout = "~/Documents/Projects/prolog-rlm"
 swipl = "swipl"
 ```
 
-If `allowed_roots` or `prolog_rlm_checkout` is absent, the service still loads and reports a degraded status. It does not claim Prolog-RLM readiness or silently widen repository access. Repository tools fail closed when repository roots are unavailable, and `coding.spec.normalize` fails closed when no Prolog-RLM checkout is configured.
+If `allowed_roots` or `prolog_rlm_checkout` is absent, the service still loads and reports a degraded status. It does not claim Prolog-RLM readiness or silently widen repository access. Repository tools fail closed when repository roots are unavailable, and SPEC tools fail closed when no Prolog-RLM checkout is configured.
 
 ## Architecture direction
 
 This is intentionally not a second agent runtime and not a thin GitHub wrapper. Subsequent slices bind coding intent and verification evidence into Prolog-RLM's canonical `INTENT -> SPEC -> PLAN -> BUILD/EXECUTE -> VERIFY` runtime. GitHub operations stay behind `zara-github`; generic command execution stays behind `zara-shell`; transient desktop/editor context comes from `zara-context` when available.
 
-The next symbolic milestone is provider-backed SPEC validation/freezing and verification evidence. That work must use Prolog-RLM's existing `rlm_spec`, `rlm_verify`, plan graph, authority, effect, artifact, and agent substrates rather than introducing Zara-owned substitutes.
+The next symbolic milestone is trusted provider-backed SPEC validation/freezing and verification evidence. That work must use Prolog-RLM's existing `rlm_assertion`, `rlm_spec`, `rlm_verify`, plan graph, authority, effect, artifact, and agent substrates rather than introducing Zara-owned substitutes.
 
-No arbitrary shell/eval, Git mutation, build execution, worker spawning, or model-driven success claim is exposed by the current read-only surface.
+No arbitrary shell/eval, Git mutation, build execution, worker spawning, model-installed semantic provider, or model-driven success claim is exposed by the current read-only surface.
 
 ## Verification
 
