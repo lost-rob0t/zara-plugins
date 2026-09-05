@@ -3,9 +3,13 @@ from __future__ import annotations
 import logging
 import queue
 
-from .bot import ZaraDiscordBot as DiscordClient
 from .config import PolicyStore, config_directory, load_token
 from .controller import ConversationController
+from .moderation import ModerationContextStore
+from .moderation_acknowledgements import ModerationAcknowledgementStore
+from .moderation_audit import ModerationAudit
+from .moderation_bot import ModeratedZaraDiscordBot as DiscordClient
+from .moderation_tools import build_moderation_tools
 
 
 logger = logging.getLogger(__name__)
@@ -20,17 +24,39 @@ class ZaraDiscordPlugin:
     def __init__(self) -> None:
         self._bot = None
         self._subscription = None
+        self._moderation_contexts = ModerationContextStore()
+
+    def tools(self):
+        return build_moderation_tools(
+            self._moderation_contexts,
+            self._execute_moderation,
+        )
+
+    def _execute_moderation(self, action, context, reason, timeout_seconds):
+        if self._bot is None:
+            raise RuntimeError("Discord moderation is unavailable because the plugin is not started")
+        return self._bot.execute_moderation(
+            action,
+            context,
+            reason,
+            timeout_seconds,
+        )
 
     def start(self, runtime) -> None:
         directory = config_directory()
         token = load_token(directory)
         policies = PolicyStore(directory)
+        acknowledgements = ModerationAcknowledgementStore(directory)
+        audit = ModerationAudit()
         controller = ConversationController(runtime)
         self._subscription = runtime.subscribe(maxsize=128)
         message_content_requested = policies.requires_message_content()
         self._bot = DiscordClient(
             controller,
             policies,
+            self._moderation_contexts,
+            acknowledgements,
+            audit,
             message_content=message_content_requested,
         )
         if not _message_content_enabled(self._bot):
@@ -60,6 +86,7 @@ class ZaraDiscordPlugin:
             self._bot.request_close()
         if self._subscription is not None:
             self._subscription.close()
+        self._bot = None
 
 
 def create_plugin():
@@ -67,7 +94,7 @@ def create_plugin():
 
     metadata = PluginMetadata(
         name="zara-discord",
-        version="0.2.1",
+        version="0.3.0",
         api_version="1",
         description="Talk to Zara through Discord with access controls and random replies.",
     )
