@@ -11,6 +11,11 @@ from .controller import ConversationController
 logger = logging.getLogger(__name__)
 
 
+def _message_content_enabled(client) -> bool:
+    intents = getattr(client, "intents", None)
+    return bool(getattr(intents, "message_content", False))
+
+
 class ZaraDiscordPlugin:
     def __init__(self) -> None:
         self._bot = None
@@ -23,6 +28,11 @@ class ZaraDiscordPlugin:
         controller = ConversationController(runtime)
         self._subscription = runtime.subscribe(maxsize=128)
         self._bot = DiscordClient(controller, policies)
+        if not _message_content_enabled(self._bot):
+            logger.warning(
+                "Discord Message Content intent is disabled; ordinary-message "
+                "inspection is metadata-only and must report content_available=false"
+            )
 
         def consume_events(stop_event) -> None:
             while not stop_event.is_set():
