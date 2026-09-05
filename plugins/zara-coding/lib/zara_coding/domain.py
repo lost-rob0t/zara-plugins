@@ -152,6 +152,67 @@ class RepositoryInspector:
             branches.append({"name": name, "commit": commit, "upstream": upstream})
         return branches
 
+    def worktrees(self, path: Path, *, limit: int = 50) -> list[dict[str, object]]:
+        limit = self._bounded_limit(limit)
+        root = self._repository_root(path)
+        output = self._git(root, "worktree", "list", "--porcelain", "-z")
+        worktrees = []
+        record: dict[str, object] = {}
+        for field in output.split("\0"):
+            if not field:
+                if record:
+                    worktrees.append(self._normalize_worktree_record(record))
+                    if len(worktrees) > limit:
+                        raise CodingError(f"git worktree inventory exceeds worktree limit of {limit}")
+                    record = {}
+                continue
+            key, separator, value = field.partition(" ")
+            if key in {"detached", "bare"} and not separator:
+                record[key] = True
+            elif key in {"worktree", "HEAD", "branch", "locked", "prunable"}:
+                record[key] = value if separator else ""
+            else:
+                raise CodingError(f"git worktree returned unsupported porcelain field: {key}")
+        if record:
+            worktrees.append(self._normalize_worktree_record(record))
+            if len(worktrees) > limit:
+                raise CodingError(f"git worktree inventory exceeds worktree limit of {limit}")
+        return worktrees
+
+    def _normalize_worktree_record(self, record: dict[str, object]) -> dict[str, object]:
+        path_value = record.get("worktree")
+        head = record.get("HEAD")
+        if not isinstance(path_value, str) or not path_value or not isinstance(head, str) or not head:
+            raise CodingError("git worktree returned malformed structured output")
+        worktree_path = Path(path_value).expanduser().resolve()
+        self._require_allowed(worktree_path)
+        branch_value = record.get("branch")
+        if branch_value is not None:
+            if not isinstance(branch_value, str) or not branch_value.startswith("refs/heads/"):
+                raise CodingError("git worktree returned malformed branch ref")
+            branch: str | None = branch_value.removeprefix("refs/heads/")
+        else:
+            branch = None
+        detached = bool(record.get("detached", False))
+        if detached and branch is not None:
+            raise CodingError("git worktree returned contradictory branch state")
+        return {
+            "path": str(worktree_path),
+            "head": head,
+            "branch": branch,
+            "detached": detached,
+            "locked": self._porcelain_reason(record.get("locked")),
+            "prunable": self._porcelain_reason(record.get("prunable")),
+        }
+
+    @staticmethod
+    def _porcelain_reason(value: object) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise CodingError("git worktree returned malformed reason field")
+        return value or "unspecified"
+
     @staticmethod
     def _bounded_limit(limit: int) -> int:
         if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
