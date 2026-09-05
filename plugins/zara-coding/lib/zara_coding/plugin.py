@@ -63,129 +63,31 @@ class ZaraCodingPlugin(ServicePlugin):
 
     def tools(self) -> Sequence[StructuredTool]:
         return (
-            StructuredTool.from_function(
-                func=self.status,
-                name="coding.status",
-                description="Report repository-boundary and Prolog-RLM readiness without mutating state.",
-            ),
-            StructuredTool.from_function(
-                func=self.list_repositories,
-                name="coding.repo.list",
-                description="List bounded immediate Git repository roots under configured repository boundaries.",
-            ),
-            StructuredTool.from_function(
-                func=self.repo_status,
-                name="coding.repo.status",
-                description="Return branch/head/dirty status for one allowed repository.",
-            ),
-            StructuredTool.from_function(
-                func=self.inspect_repo,
-                name="coding.repo.inspect",
-                description="Return structured Git branch/head/dirty evidence for an allowed repository.",
-            ),
-            StructuredTool.from_function(
-                func=self.git_diff,
-                name="coding.git.diff",
-                description="Return bounded structured working-tree diff statistics for an allowed repository.",
-            ),
-            StructuredTool.from_function(
-                func=self.git_log,
-                name="coding.git.log",
-                description="Return bounded structured commit history for an allowed repository.",
-            ),
-            StructuredTool.from_function(
-                func=self.git_branches,
-                name="coding.git.branches",
-                description="Return bounded structured local branch refs for an allowed repository.",
-            ),
-            StructuredTool.from_function(
-                func=self.git_branch_create,
-                name="coding.git.branch.create",
-                description="Create one new local branch at the repository's current HEAD without moving an existing ref.",
-                metadata=APPROVAL_METADATA,
-            ),
-            StructuredTool.from_function(
-                func=self.git_branch_delete,
-                name="coding.git.branch.delete",
-                description="Delete one local branch only if it still points at the caller-supplied full object ID and is not checked out.",
-                metadata=APPROVAL_METADATA,
-            ),
-            StructuredTool.from_function(
-                func=self.git_commit,
-                name="coding.git.commit",
-                description="Commit exactly the current staged index on the attached branch if HEAD still matches the caller-supplied full object ID.",
-                metadata=APPROVAL_METADATA,
-            ),
-            StructuredTool.from_function(
-                func=self.git_worktrees,
-                name="coding.git.worktree.list",
-                description="Return bounded structured linked-worktree evidence for an allowed repository.",
-            ),
-            StructuredTool.from_function(
-                func=self.git_worktree_add_detached,
-                name="coding.git.worktree.add-detached",
-                description="Create one detached linked worktree at an exact commit inside configured repository boundaries.",
-                metadata=APPROVAL_METADATA,
-            ),
-            StructuredTool.from_function(
-                func=self.git_worktree_add_detached_locked,
-                name="coding.git.worktree.add-detached-locked",
-                description="Create one detached linked worktree at an exact commit and immediately coordination-lock it with a bounded reason.",
-                metadata=APPROVAL_METADATA,
-            ),
-            StructuredTool.from_function(
-                func=self.git_worktree_lock,
-                name="coding.git.worktree.lock",
-                description="Ownership-lock one detached linked worktree at an exact observed commit with a bounded reason.",
-                metadata=APPROVAL_METADATA,
-            ),
-            StructuredTool.from_function(
-                func=self.git_worktree_unlock,
-                name="coding.git.worktree.unlock",
-                description="Unlock one detached linked worktree only when exact HEAD and lock reason still match.",
-                metadata=APPROVAL_METADATA,
-            ),
-            StructuredTool.from_function(
-                func=self.spec_catalog,
-                name="coding.spec.catalog",
-                description="Return Prolog-RLM's closed SPEC vocabulary and zara-coding's fixed trusted assertion catalog.",
-            ),
-            StructuredTool.from_function(
-                func=self.normalize_spec,
-                name="coding.spec.normalize",
-                description=(
-                    "Normalize one closed declarative SPEC source through Prolog-RLM and return its "
-                    "canonical outcome without validation, freezing, planning or mutation."
-                ),
-            ),
-            StructuredTool.from_function(
-                func=self.compile_spec,
-                name="coding.spec.compile",
-                description="Validate and freeze one closed SPEC through zara-coding's fixed trusted Prolog-RLM assertion registry.",
-            ),
-            StructuredTool.from_function(
-                func=self.verify_repository_spec,
-                name="coding.spec.verify-repository",
-                description="Reconcile one frozen SPEC against a fresh bounded repository snapshot using Prolog-RLM's pure verifier.",
-            ),
-            StructuredTool.from_function(
-                func=self.check_repository_spec,
-                name="coding.spec.check-repository",
-                description="Compile one declarative SPEC and, only if freezing succeeds, verify it against the current allowed repository state.",
-            ),
+            StructuredTool.from_function(func=self.status, name="coding.status", description="Report repository-boundary and Prolog-RLM readiness without mutating state."),
+            StructuredTool.from_function(func=self.list_repositories, name="coding.repo.list", description="List bounded immediate Git repository roots under configured repository boundaries."),
+            StructuredTool.from_function(func=self.repo_status, name="coding.repo.status", description="Return branch/head/dirty status for one allowed repository."),
+            StructuredTool.from_function(func=self.inspect_repo, name="coding.repo.inspect", description="Return structured Git branch/head/dirty evidence for an allowed repository."),
+            StructuredTool.from_function(func=self.git_diff, name="coding.git.diff", description="Return bounded structured working-tree diff statistics for an allowed repository."),
+            StructuredTool.from_function(func=self.git_log, name="coding.git.log", description="Return bounded structured commit history for an allowed repository."),
+            StructuredTool.from_function(func=self.git_branches, name="coding.git.branches", description="Return bounded structured local branch refs for an allowed repository."),
+            StructuredTool.from_function(func=self.git_branch_create, name="coding.git.branch.create", description="Create one new local branch at the repository's current HEAD without moving an existing ref.", metadata=APPROVAL_METADATA),
+            StructuredTool.from_function(func=self.git_branch_delete, name="coding.git.branch.delete", description="Delete one local branch only if it still points at the caller-supplied full object ID and is not checked out.", metadata=APPROVAL_METADATA),
+            StructuredTool.from_function(func=self.git_commit, name="coding.git.commit", description="Commit exactly the current staged index on the attached branch if HEAD still matches the caller-supplied full object ID.", metadata=APPROVAL_METADATA),
+            StructuredTool.from_function(func=self.git_worktrees, name="coding.git.worktree.list", description="Return bounded structured linked-worktree evidence for an allowed repository."),
+            StructuredTool.from_function(func=self.git_worktree_add_detached, name="coding.git.worktree.add-detached", description="Create one detached linked worktree at an exact commit inside configured repository boundaries.", metadata=APPROVAL_METADATA),
+            StructuredTool.from_function(func=self.git_worktree_add_detached_locked, name="coding.git.worktree.add-detached-locked", description="Create one detached linked worktree at an exact commit and immediately coordination-lock it with a bounded reason.", metadata=APPROVAL_METADATA),
+            StructuredTool.from_function(func=self.git_worktree_lock, name="coding.git.worktree.lock", description="Ownership-lock one detached linked worktree at an exact observed commit with a bounded reason.", metadata=APPROVAL_METADATA),
+            StructuredTool.from_function(func=self.git_worktree_unlock, name="coding.git.worktree.unlock", description="Unlock one detached linked worktree only when exact HEAD and lock reason still match.", metadata=APPROVAL_METADATA),
+            StructuredTool.from_function(func=self.spec_catalog, name="coding.spec.catalog", description="Return Prolog-RLM's closed SPEC vocabulary and zara-coding's fixed trusted assertion catalog."),
+            StructuredTool.from_function(func=self.normalize_spec, name="coding.spec.normalize", description="Normalize one closed declarative SPEC source through Prolog-RLM and return its canonical outcome without validation, freezing, planning or mutation."),
+            StructuredTool.from_function(func=self.compile_spec, name="coding.spec.compile", description="Validate and freeze one closed SPEC through zara-coding's fixed trusted Prolog-RLM assertion registry."),
+            StructuredTool.from_function(func=self.verify_repository_spec, name="coding.spec.verify-repository", description="Reconcile one frozen SPEC against a fresh bounded repository snapshot using Prolog-RLM's pure verifier."),
+            StructuredTool.from_function(func=self.check_repository_spec, name="coding.spec.check-repository", description="Compile one declarative SPEC and, only if freezing succeeds, verify it against the current allowed repository state."),
         )
 
     def status(self) -> str:
-        repository = (
-            {"status": "ready"}
-            if self.inspector is not None
-            else {"status": "unavailable", "reason": self.repository_reason}
-        )
-        prolog_rlm = (
-            self.prolog_rlm.status()
-            if self.prolog_rlm is not None
-            else {"status": "unavailable", "reason": "prolog-rlm-checkout-not-configured"}
-        )
+        repository = ({"status": "ready"} if self.inspector is not None else {"status": "unavailable", "reason": self.repository_reason})
+        prolog_rlm = (self.prolog_rlm.status() if self.prolog_rlm is not None else {"status": "unavailable", "reason": "prolog-rlm-checkout-not-configured"})
         state = "ready" if repository["status"] == "ready" and prolog_rlm["status"] == "ready" else "degraded"
         return json.dumps({"status": state, "repository": repository, "prolog_rlm": prolog_rlm}, sort_keys=True)
 
@@ -262,10 +164,7 @@ class ZaraCodingPlugin(ServicePlugin):
             raise ValueError("target must be a non-empty string")
         if not isinstance(expected_head, str) or not expected_head:
             raise ValueError("expected_head must be a non-empty string")
-        return json.dumps(
-            add_detached_worktree(inspector, Path(path), Path(target), expected_head),
-            sort_keys=True,
-        )
+        return json.dumps(add_detached_worktree(inspector, Path(path), Path(target), expected_head), sort_keys=True)
 
     def git_worktree_add_detached_locked(self, path: str, target: str, expected_head: str, reason: str) -> str:
         inspector = self._require_inspector()
@@ -277,10 +176,7 @@ class ZaraCodingPlugin(ServicePlugin):
             raise ValueError("expected_head must be a non-empty string")
         if not isinstance(reason, str) or not reason:
             raise ValueError("reason must be a non-empty string")
-        return json.dumps(
-            add_detached_locked_worktree(inspector, Path(path), Path(target), expected_head, reason),
-            sort_keys=True,
-        )
+        return json.dumps(add_detached_locked_worktree(inspector, Path(path), Path(target), expected_head, reason), sort_keys=True)
 
     def git_worktree_lock(self, path: str, target: str, expected_head: str, reason: str) -> str:
         inspector = self._require_inspector()
@@ -292,10 +188,7 @@ class ZaraCodingPlugin(ServicePlugin):
             raise ValueError("expected_head must be a non-empty string")
         if not isinstance(reason, str) or not reason:
             raise ValueError("reason must be a non-empty string")
-        return json.dumps(
-            lock_worktree(inspector, Path(path), Path(target), expected_head, reason),
-            sort_keys=True,
-        )
+        return json.dumps(lock_worktree(inspector, Path(path), Path(target), expected_head, reason), sort_keys=True)
 
     def git_worktree_unlock(self, path: str, target: str, expected_head: str, reason: str) -> str:
         inspector = self._require_inspector()
@@ -307,10 +200,7 @@ class ZaraCodingPlugin(ServicePlugin):
             raise ValueError("expected_head must be a non-empty string")
         if not isinstance(reason, str) or not reason:
             raise ValueError("reason must be a non-empty string")
-        return json.dumps(
-            unlock_worktree(inspector, Path(path), Path(target), expected_head, reason),
-            sort_keys=True,
-        )
+        return json.dumps(unlock_worktree(inspector, Path(path), Path(target), expected_head, reason), sort_keys=True)
 
     def spec_catalog(self) -> str:
         return json.dumps(catalog_spec(self._require_prolog_rlm()), sort_keys=True)
@@ -329,8 +219,10 @@ class ZaraCodingPlugin(ServicePlugin):
             raise ValueError("frozen_spec must be a non-empty string")
         inspector = self._require_inspector()
         bridge = self._require_prolog_rlm()
-        snapshot = inspector.inspect(Path(path))
-        evidence = build_repository_evidence(snapshot)
+        repository = Path(path)
+        snapshot = inspector.inspect(repository)
+        worktrees = inspector.worktrees(repository, limit=100)
+        evidence = build_repository_evidence(snapshot, worktrees=worktrees)
         return json.dumps(verify_repository_spec_pure(bridge, frozen_spec, evidence), sort_keys=True)
 
     def check_repository_spec(self, path: str, source: str) -> str:
