@@ -160,6 +160,10 @@ class RepositoryInspector:
 
 
 class PrologRLMBridge:
+    SPEC_CATALOG_GOAL = (
+        "rlm_spec_lang:spec_language_catalog([],O),"
+        "write_canonical(O),nl,halt"
+    )
     SPEC_NORMALIZE_GOAL = (
         "read_string(user_input,_,S),"
         "rlm_spec_lang:spec_source_normalize(S,O),"
@@ -212,37 +216,37 @@ class PrologRLMBridge:
             return {"status": "unavailable", "reason": "prolog-rlm-invalid-readiness-output"}
         return {"status": "ready", "version": line[len(prefix):].strip()}
 
+    def spec_catalog(self) -> dict[str, str]:
+        outcome = self._run_spec_language(self.SPEC_CATALOG_GOAL, operation="catalog")
+        return {"status": "ok" if outcome.startswith("ok(") else "rejected", "outcome": outcome}
+
     def normalize_spec(self, source: str) -> dict[str, str]:
         if not isinstance(source, str) or not source.strip():
             raise CodingError("SPEC source must be a non-empty string")
         if len(source) > self.MAX_SPEC_CHARS:
             raise CodingError(f"SPEC source exceeds {self.MAX_SPEC_CHARS} character limit")
+        outcome = self._run_spec_language(self.SPEC_NORMALIZE_GOAL, operation="normalization", input_text=source)
+        return {"status": "ok" if outcome.startswith("ok(") else "rejected", "outcome": outcome}
+
+    def _run_spec_language(self, goal: str, *, operation: str, input_text: str | None = None) -> str:
         module = self.checkout / "prolog" / "rlm_spec_lang.pl"
         if self._validate_checkout and not module.is_file():
             raise CodingError("Prolog-RLM SPEC language module is unavailable")
-        argv = [
-            self.executable,
-            "-q",
-            "-s",
-            str(module),
-            "-g",
-            self.SPEC_NORMALIZE_GOAL,
-        ]
+        argv = [self.executable, "-q", "-s", str(module), "-g", goal]
+        kwargs = {
+            "check": True,
+            "capture_output": True,
+            "text": True,
+            "timeout": self.timeout_seconds,
+            "shell": False,
+        }
+        if input_text is not None:
+            kwargs["input"] = input_text
         try:
-            result = self._runner(
-                argv,
-                input=source,
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_seconds,
-                shell=False,
-            )
+            result = self._runner(argv, **kwargs)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as exc:
-            raise CodingError("Prolog-RLM SPEC normalization failed") from exc
+            raise CodingError(f"Prolog-RLM SPEC {operation} failed") from exc
         lines = [line for line in result.stdout.splitlines() if line.strip()]
         if not lines:
-            raise CodingError("Prolog-RLM SPEC normalization returned no outcome")
-        outcome = lines[-1].strip()
-        status = "ok" if outcome.startswith("ok(") else "rejected"
-        return {"status": status, "outcome": outcome}
+            raise CodingError(f"Prolog-RLM SPEC {operation} returned no outcome")
+        return lines[-1].strip()
