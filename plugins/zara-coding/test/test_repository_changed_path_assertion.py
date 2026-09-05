@@ -106,6 +106,29 @@ class RepositoryChangedPathAssertionTests(unittest.TestCase):
             verify_repository_spec(bridge, "ok(frozen_spec{requirements:[]})", evidence)
         self.assertEqual(calls, [])
 
+    def test_verify_rejects_tampered_state_ref_before_prolog(self):
+        calls = []
+
+        def run(argv, **kwargs):
+            calls.append((argv, kwargs))
+            return subprocess.CompletedProcess(argv, 0, stdout="ok(verification_report{status:passed})\n", stderr="")
+
+        bridge = PrologRLMBridge(Path("/srv/prolog-rlm"), runner=run)
+        evidence = build_repository_evidence(
+            {
+                "root": "/srv/demo",
+                "head": "a" * 40,
+                "branch": "main",
+                "dirty": False,
+                "changed_paths": [],
+            }
+        )
+        evidence["state_ref"]["head"] = "b" * 40
+
+        with self.assertRaisesRegex(CodingError, "state_ref does not match snapshot"):
+            verify_repository_spec(bridge, "ok(frozen_spec{requirements:[]})", evidence)
+        self.assertEqual(calls, [])
+
     def test_prolog_registry_defines_changed_path_as_pure_observed_verification(self):
         provider = (ROOT / "prolog" / "zara_coding_assertions.pl").read_text(encoding="utf-8")
         adapter = (ROOT / "prolog" / "zara_coding_verify.pl").read_text(encoding="utf-8")
