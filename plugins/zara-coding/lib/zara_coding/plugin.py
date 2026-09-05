@@ -69,6 +69,11 @@ class ZaraCodingPlugin(ServicePlugin):
                 description="Return structured Git branch/head/dirty evidence for an allowed repository.",
             ),
             StructuredTool.from_function(
+                func=self.git_diff,
+                name="coding.git.diff",
+                description="Return bounded structured working-tree diff statistics for an allowed repository.",
+            ),
+            StructuredTool.from_function(
                 func=self.git_log,
                 name="coding.git.log",
                 description="Return bounded structured commit history for an allowed repository.",
@@ -107,6 +112,12 @@ class ZaraCodingPlugin(ServicePlugin):
         if not isinstance(path, str) or not path:
             raise ValueError("path must be a non-empty string")
         return json.dumps(inspector.inspect(Path(path)), sort_keys=True)
+
+    def git_diff(self, path: str, max_files: int = 50) -> str:
+        inspector = self._require_inspector()
+        if not isinstance(path, str) or not path:
+            raise ValueError("path must be a non-empty string")
+        return json.dumps(inspector.diff(Path(path), max_files=max_files), sort_keys=True)
 
     def git_log(self, path: str, limit: int = 20) -> str:
         inspector = self._require_inspector()
