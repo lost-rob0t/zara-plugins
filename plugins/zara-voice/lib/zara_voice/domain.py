@@ -133,7 +133,7 @@ class VoiceService:
         artifact = self._artifacts.get(artifact_id)
         if artifact is None:
             raise VoiceError(f"voice artifact not found: {artifact_id}")
-        result = self.player.play(self._public_artifact(artifact))
+        result = self.player.play(dict(artifact))
         if not isinstance(result, dict) or not isinstance(result.get("playback_id"), str):
             raise VoiceError("audio player returned invalid playback evidence")
         return dict(result)
