@@ -94,6 +94,11 @@ class ZaraCodingPlugin(ServicePlugin):
                 description="Return bounded structured local branch refs for an allowed repository.",
             ),
             StructuredTool.from_function(
+                func=self.git_worktrees,
+                name="coding.git.worktree.list",
+                description="Return bounded structured linked-worktree evidence for an allowed repository.",
+            ),
+            StructuredTool.from_function(
                 func=self.spec_catalog,
                 name="coding.spec.catalog",
                 description=(
@@ -155,6 +160,12 @@ class ZaraCodingPlugin(ServicePlugin):
         if not isinstance(path, str) or not path:
             raise ValueError("path must be a non-empty string")
         return json.dumps(inspector.branches(Path(path), limit=limit), sort_keys=True)
+
+    def git_worktrees(self, path: str, limit: int = 50) -> str:
+        inspector = self._require_inspector()
+        if not isinstance(path, str) or not path:
+            raise ValueError("path must be a non-empty string")
+        return json.dumps(inspector.worktrees(Path(path), limit=limit), sort_keys=True)
 
     def spec_catalog(self) -> str:
         bridge = self._require_prolog_rlm()
