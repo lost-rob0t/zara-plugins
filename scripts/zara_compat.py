@@ -71,6 +71,10 @@ def require_tool_names(name: str, tools: tuple[Any, ...] | list[Any], seen: dict
         tool_name = str(getattr(tool, "name", ""))
         if not tool_name.strip():
             raise CompatibilityError(f"{name}: tool has an empty name")
+        if tool_name != tool_name.strip():
+            raise CompatibilityError(
+                f"{name}: tool name {tool_name!r} has surrounding whitespace"
+            )
         if tool_name in local:
             raise CompatibilityError(f"{name}: duplicate tool name {tool_name!r}")
         owner = seen.get(tool_name)
