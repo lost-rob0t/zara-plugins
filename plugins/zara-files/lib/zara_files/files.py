@@ -43,6 +43,10 @@ class FileDomain:
         self.max_results = int(max_results)
         self.semantic_index = semantic_index
 
+    @property
+    def root_ids(self) -> tuple[str, ...]:
+        return tuple(self._roots)
+
     def _root(self, root_id: str) -> Path:
         if root_id not in self._roots:
             raise FileDomainError("unknown root")
