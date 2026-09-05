@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import tempfile
 from pathlib import Path
@@ -15,12 +14,14 @@ try:
     from .zara_compat_runtime import (
         CompatibilityRuntime,
         exercise_service_lifecycle,
+        fake_dependency_environment,
         temporary_runtime_environment,
     )
 except ImportError:
     from zara_compat_runtime import (
         CompatibilityRuntime,
         exercise_service_lifecycle,
+        fake_dependency_environment,
         temporary_runtime_environment,
     )
 
@@ -134,7 +135,8 @@ def check_registry(root: Path, zara_source: Path) -> list[str]:
                             raise CompatibilityError(
                                 f"tools() returned non-BaseTool values: {', '.join(invalid)}"
                             )
-                        exercise_service_lifecycle(instance, CompatibilityRuntime(name))
+                        with fake_dependency_environment(name):
+                            exercise_service_lifecycle(instance, CompatibilityRuntime(name))
                     else:
                         register_tools = getattr(module, "register_tools", None)
                         register_skills = getattr(module, "register_skills", None)
