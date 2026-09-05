@@ -189,6 +189,20 @@
       "tags": ["starintel", "server", "api", "osint", "documents", "targets"],
       "install": {"nix": "nix build github:lost-rob0t/zara-plugins#zara-starintel-server"},
       "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-starintel-server", "aggregate": "zara-plugins"}
+    },
+    {
+      "name": "zara-sysadmin",
+      "version": "0.1.0",
+      "api_version": "1",
+      "plugin_type": "service",
+      "description": "Typed Linux/NixOS diagnostics with expert rules and verified remediation",
+      "path": "plugins/zara-sysadmin",
+      "entrypoint": "zara-plugin/zara_sysadmin_entrypoint.py",
+      "docs": "plugins/zara-sysadmin/README.md",
+      "license": "GPL-3.0-or-later",
+      "tags": ["sysadmin", "linux", "nixos", "systemd", "diagnostics", "prolog"],
+      "install": {"nix": "nix build github:lost-rob0t/zara-plugins#zara-sysadmin"},
+      "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-sysadmin", "aggregate": "zara-plugins"}
     }
   ]
 }
