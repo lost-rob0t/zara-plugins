@@ -69,8 +69,11 @@ def require_tool_names(name: str, tools: tuple[Any, ...] | list[Any], seen: dict
     local: set[str] = set()
     for tool in tools:
         tool_name = str(getattr(tool, "name", ""))
-        if not tool_name:
+        if not tool_name.strip():
             raise CompatibilityError(f"{name}: tool has an empty name")
+        description = str(getattr(tool, "description", ""))
+        if not description.strip():
+            raise CompatibilityError(f"{name}: tool {tool_name!r} has an empty description")
         if tool_name in local:
             raise CompatibilityError(f"{name}: duplicate tool name {tool_name!r}")
         owner = seen.get(tool_name)
