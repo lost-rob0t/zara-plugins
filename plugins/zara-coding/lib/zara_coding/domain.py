@@ -9,11 +9,24 @@ class CodingError(RuntimeError):
     pass
 
 
+Runner = Callable[..., subprocess.CompletedProcess[str]]
+
+
 class RepositoryInspector:
-    def __init__(self, allowed_roots: tuple[Path, ...]) -> None:
+    def __init__(
+        self,
+        allowed_roots: tuple[Path, ...],
+        *,
+        executable: str = "git",
+        runner: Runner | None = None,
+    ) -> None:
         if not allowed_roots:
             raise ValueError("allowed_roots must not be empty")
+        if not executable:
+            raise ValueError("executable must not be empty")
         self._roots = tuple(Path(root).expanduser().resolve() for root in allowed_roots)
+        self._executable = executable
+        self._runner = runner or subprocess.run
 
     def inspect(self, path: Path) -> dict[str, object]:
         candidate = Path(path).expanduser().resolve()
@@ -24,14 +37,7 @@ class RepositoryInspector:
         root = Path(root_text).resolve()
         self._require_allowed(root)
         head = self._git(root, "rev-parse", "HEAD").strip()
-        branch_result = subprocess.run(
-            ["git", "-C", str(root), "symbolic-ref", "--short", "-q", "HEAD"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=5,
-            shell=False,
-        )
+        branch_result = self._run(root, "symbolic-ref", "--short", "-q", "HEAD", check=False)
         branch = branch_result.stdout.strip() if branch_result.returncode == 0 else "DETACHED"
         changed = set(filter(None, self._git(root, "diff", "--name-only", "HEAD").splitlines()))
         untracked = set(filter(None, self._git(root, "ls-files", "--others", "--exclude-standard").splitlines()))
@@ -48,25 +54,24 @@ class RepositoryInspector:
         if not any(path == root or root in path.parents for root in self._roots):
             raise CodingError("repository path is outside allowed roots")
 
-    @staticmethod
-    def _git(root: Path, *args: str, repository_error: bool = False) -> str:
+    def _run(self, root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        return self._runner(
+            [self._executable, "-C", str(root), *args],
+            check=check,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            shell=False,
+        )
+
+    def _git(self, root: Path, *args: str, repository_error: bool = False) -> str:
         try:
-            result = subprocess.run(
-                ["git", "-C", str(root), *args],
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=5,
-                shell=False,
-            )
+            result = self._run(root, *args)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as exc:
             if repository_error:
                 raise CodingError("path is not a usable Git repository") from exc
             raise CodingError(f"git operation failed: {' '.join(args)}") from exc
         return result.stdout
-
-
-Runner = Callable[..., subprocess.CompletedProcess[str]]
 
 
 class PrologRLMBridge:
