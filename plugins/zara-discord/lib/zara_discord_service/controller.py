@@ -8,6 +8,7 @@ from typing import Callable
 from zara.runtime import events
 from zara.runtime.commands import SubmitTurn
 
+from .privacy import filter_public_output
 from .routing import ResponseRouter
 
 
@@ -138,11 +139,12 @@ class ConversationController:
                 return
 
             def deliver(outcome: TurnOutcome) -> None:
-                self._history.append(conversation_id, "Zara", outcome.message)
+                public = filter_public_output(outcome.message)
+                self._history.append(conversation_id, "Zara", public.text)
                 if outcome.success:
-                    on_response(outcome.message)
+                    on_response(public.text)
                 else:
-                    on_error(outcome.message)
+                    on_error(public.text)
 
             self._router.register(receipt.turn_id, deliver)
 
