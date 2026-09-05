@@ -234,10 +234,17 @@ class ZaraDiscordBot(discord.Client):
                 return
             self.policies.set_random_mode(interaction.guild_id, True)
             chance = self.policies.policy(interaction.guild_id).random_reply_chance * 100
-            await interaction.response.send_message(
-                f"Random replies are **on** ({chance:g}% chance per eligible message).",
-                ephemeral=True,
+            message = (
+                f"Random replies are **on** ({chance:g}% chance per eligible message)."
             )
+            if not self.intents.message_content:
+                message += (
+                    " Restart Zara to request Discord's privileged Message Content "
+                    "intent after enabling Message Content Intent for this bot in the "
+                    "Discord Developer Portal. Until restart, inspection remains "
+                    "metadata-only."
+                )
+            await interaction.response.send_message(message, ephemeral=True)
 
         @random_group.command(name="off", description="Disable spontaneous Zara replies")
         @app_commands.guild_only()
