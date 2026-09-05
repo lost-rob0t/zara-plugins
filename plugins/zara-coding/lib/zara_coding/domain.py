@@ -45,8 +45,7 @@ class RepositoryInspector:
         }
 
     def log(self, path: Path, *, limit: int = 20) -> list[dict[str, object]]:
-        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
-            raise ValueError("limit must be an integer between 1 and 100")
+        limit = self._bounded_limit(limit)
         root = self._repository_root(path)
         output = self._git(
             root,
@@ -72,6 +71,34 @@ class RepositoryInspector:
                 }
             )
         return history
+
+    def branches(self, path: Path, *, limit: int = 50) -> list[dict[str, str]]:
+        limit = self._bounded_limit(limit)
+        root = self._repository_root(path)
+        output = self._git(
+            root,
+            "for-each-ref",
+            f"--count={limit}",
+            "--sort=refname",
+            "--format=%(refname:short)%09%(objectname)%09%(upstream:short)",
+            "refs/heads/",
+        )
+        branches = []
+        for line in output.splitlines():
+            if not line:
+                continue
+            fields = line.split("\t", 2)
+            if len(fields) != 3:
+                raise CodingError("git branch inventory returned malformed structured output")
+            name, commit, upstream = fields
+            branches.append({"name": name, "commit": commit, "upstream": upstream})
+        return branches
+
+    @staticmethod
+    def _bounded_limit(limit: int) -> int:
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
+            raise ValueError("limit must be an integer between 1 and 100")
+        return limit
 
     def _repository_root(self, path: Path) -> Path:
         candidate = Path(path).expanduser().resolve()
