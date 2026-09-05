@@ -8,6 +8,8 @@ def build_repository_evidence(
     *,
     worktrees: Sequence[Mapping[str, object]] = (),
 ) -> dict[str, object]:
+    if not isinstance(snapshot, Mapping):
+        raise ValueError("repository snapshot must be structured")
     root = snapshot.get("root")
     head = snapshot.get("head")
     branch = snapshot.get("branch")
