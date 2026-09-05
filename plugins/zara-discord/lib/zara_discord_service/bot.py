@@ -89,6 +89,11 @@ class ZaraDiscordBot(discord.Client):
             name="random",
             description="Configure Zara's spontaneous replies",
         )
+        random_channel = app_commands.Group(
+            name="channel",
+            description="Configure inspection for one channel",
+            parent=random_group,
+        )
 
         @root.command(name="ask", description="Send a message to Zara")
         async def ask(interaction: discord.Interaction, message: str) -> None:
@@ -271,6 +276,46 @@ class ZaraDiscordBot(discord.Client):
             await interaction.response.send_message(
                 f"Random reply chance is now **{percent:g}%**.",
                 ephemeral=True,
+            )
+
+        @random_channel.command(name="set", description="Set inspection policy for a channel")
+        @app_commands.guild_only()
+        @app_commands.default_permissions(manage_guild=True)
+        async def random_channel_set(
+            interaction: discord.Interaction,
+            enabled: bool,
+            percent: app_commands.Range[float, 0.0, 100.0],
+            trigger_prompt: str = "",
+            response_style_prompt: str = "",
+            moderation_enabled: bool = False,
+            channel: discord.TextChannel | None = None,
+        ) -> None:
+            if not await self._require_manager(interaction):
+                return
+            target_channel_id = channel.id if channel is not None else interaction.channel_id
+            self.policies.set_channel_inspection_policy(
+                interaction.guild_id,
+                target_channel_id,
+                enabled=enabled,
+                chance=percent / 100.0,
+                trigger_prompt=trigger_prompt,
+                response_style_prompt=response_style_prompt,
+                moderation_enabled=moderation_enabled,
+            )
+            message = (
+                f"Inspection policy saved for <#{target_channel_id}>: "
+                f"enabled={str(enabled).lower()}, chance={percent:g}%."
+            )
+            if enabled and not self.intents.message_content:
+                message += (
+                    " Restart Zara after enabling Message Content Intent in the "
+                    "Discord Developer Portal; until restart, inspection remains "
+                    "metadata-only."
+                )
+            await interaction.response.send_message(
+                message,
+                ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none(),
             )
 
         self.tree.add_command(root)
