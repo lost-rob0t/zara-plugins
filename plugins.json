@@ -36,6 +36,20 @@
       "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-avatar", "aggregate": "zara-plugins"}
     },
     {
+      "name": "zara-browser",
+      "version": "0.1.0",
+      "api_version": "1",
+      "plugin_type": "service",
+      "description": "Persistent bounded browser-session abstraction with structured actions",
+      "path": "plugins/zara-browser",
+      "entrypoint": "zara-plugin/zara_browser_entrypoint.py",
+      "docs": "plugins/zara-browser/README.md",
+      "license": "GPL-3.0-or-later",
+      "tags": ["browser", "automation", "tabs", "web", "context"],
+      "install": {"nix": "nix build github:lost-rob0t/zara-plugins#zara-browser"},
+      "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-browser", "aggregate": "zara-plugins"}
+    },
+    {
       "name": "zara-context",
       "version": "0.1.0",
       "api_version": "1",
