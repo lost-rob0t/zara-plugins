@@ -161,7 +161,7 @@ class RepositoryInspector:
         head = self._git(root, "rev-parse", "HEAD").strip()
         if not head:
             raise CodingError("git returned an empty HEAD")
-        self._git(root, "update-ref", ref, head, "0" * 40)
+        self._git(root, "update-ref", ref, head, "")
         return {"branch": name, "head": head}
 
     def worktrees(self, path: Path, *, limit: int = 50) -> list[dict[str, object]]:
