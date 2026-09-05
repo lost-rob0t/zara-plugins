@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
-from zara_coding.domain import PrologRLMBridge
+from zara_coding.domain import CodingError, PrologRLMBridge
 from zara_coding.repository_evidence import build_repository_evidence
 from zara_coding.spec_verify import verify_repository_spec
 
@@ -47,6 +47,17 @@ class RepositoryChangedPathAssertionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "changed path evidence must be non-empty text"):
             build_repository_evidence(snapshot)
 
+    def test_repository_evidence_rejects_dirty_changed_path_contradictions(self):
+        base = {
+            "root": "/srv/demo",
+            "head": "a" * 40,
+            "branch": "main",
+        }
+        with self.assertRaisesRegex(ValueError, "dirty state contradicts changed paths"):
+            build_repository_evidence({**base, "dirty": False, "changed_paths": ["lib/a.py"]})
+        with self.assertRaisesRegex(ValueError, "dirty state contradicts changed paths"):
+            build_repository_evidence({**base, "dirty": True, "changed_paths": []})
+
     def test_verify_payload_contains_only_bounded_changed_path_strings(self):
         calls = []
 
@@ -71,6 +82,29 @@ class RepositoryChangedPathAssertionTests(unittest.TestCase):
         _, evidence_input = kwargs["input"].split(".\n", 1)
         payload = json.loads(evidence_input)
         self.assertEqual(payload["changed_paths"], ["lib/a.py", "test/test_a.py"])
+
+    def test_verify_rejects_tampered_dirty_changed_path_contradiction_before_prolog(self):
+        calls = []
+
+        def run(argv, **kwargs):
+            calls.append((argv, kwargs))
+            return subprocess.CompletedProcess(argv, 0, stdout="ok(verification_report{status:passed})\n", stderr="")
+
+        bridge = PrologRLMBridge(Path("/srv/prolog-rlm"), runner=run)
+        evidence = build_repository_evidence(
+            {
+                "root": "/srv/demo",
+                "head": "a" * 40,
+                "branch": "main",
+                "dirty": True,
+                "changed_paths": ["lib/a.py"],
+            }
+        )
+        evidence["values"]["repository_clean"]["dirty"] = False
+
+        with self.assertRaisesRegex(CodingError, "dirty state contradicts changed paths"):
+            verify_repository_spec(bridge, "ok(frozen_spec{requirements:[]})", evidence)
+        self.assertEqual(calls, [])
 
     def test_prolog_registry_defines_changed_path_as_pure_observed_verification(self):
         provider = (ROOT / "prolog" / "zara_coding_assertions.pl").read_text(encoding="utf-8")
