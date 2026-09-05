@@ -44,6 +44,31 @@ class RepositoryInspector:
             "changed_paths": changed_paths,
         }
 
+    def diff(self, path: Path, *, max_files: int = 50) -> list[dict[str, object]]:
+        max_files = self._bounded_limit(max_files)
+        root = self._repository_root(path)
+        output = self._git(root, "diff", "--numstat", "--no-renames", "HEAD", "--")
+        entries = []
+        for line in output.splitlines():
+            if not line:
+                continue
+            fields = line.split("\t", 2)
+            if len(fields) != 3:
+                raise CodingError("git diff returned malformed structured output")
+            additions, deletions, changed_path = fields
+            binary = additions == "-" and deletions == "-"
+            entries.append(
+                {
+                    "path": changed_path,
+                    "additions": None if binary else int(additions),
+                    "deletions": None if binary else int(deletions),
+                    "binary": binary,
+                }
+            )
+            if len(entries) > max_files:
+                raise CodingError(f"git diff exceeds file limit of {max_files}")
+        return entries
+
     def log(self, path: Path, *, limit: int = 20) -> list[dict[str, object]]:
         limit = self._bounded_limit(limit)
         root = self._repository_root(path)

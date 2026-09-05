@@ -31,6 +31,7 @@ class RepositoryInspectorTests(unittest.TestCase):
                 ("rev-parse", "HEAD"): "a" * 40 + "\n",
                 ("symbolic-ref", "--short", "-q", "HEAD"): "main\n",
                 ("diff", "--name-only", "HEAD"): "tracked.txt\n",
+                ("diff", "--numstat", "--no-renames", "HEAD", "--"): "3\t1\ttracked.txt\n-\t-\tbinary.dat\n",
                 ("ls-files", "--others", "--exclude-standard"): "new.txt\n",
                 (
                     "log",
@@ -67,6 +68,28 @@ class RepositoryInspectorTests(unittest.TestCase):
         self.assertEqual(snapshot["changed_paths"], ["new.txt", "tracked.txt"])
         self.assertTrue(all(call[0][0] == "git" for call in self.calls))
         self.assertTrue(all(call[1]["shell"] is False for call in self.calls))
+
+    def test_diff_returns_bounded_structured_numstat_evidence(self):
+        diff = self.inspector.diff(self.repo, max_files=2)
+        self.assertEqual(
+            diff,
+            [
+                {"path": "tracked.txt", "additions": 3, "deletions": 1, "binary": False},
+                {"path": "binary.dat", "additions": None, "deletions": None, "binary": True},
+            ],
+        )
+        argv, kwargs = self.calls[-1]
+        self.assertEqual(argv[-5:], ["diff", "--numstat", "--no-renames", "HEAD", "--"])
+        self.assertFalse(kwargs["shell"])
+
+    def test_diff_fails_closed_when_changed_file_count_exceeds_bound(self):
+        with self.assertRaisesRegex(CodingError, "exceeds file limit"):
+            self.inspector.diff(self.repo, max_files=1)
+
+    def test_diff_rejects_invalid_bound_before_spawning_git(self):
+        with self.assertRaisesRegex(ValueError, "between 1 and 100"):
+            self.inspector.diff(self.repo, max_files=0)
+        self.assertEqual(self.calls, [])
 
     def test_log_returns_bounded_structured_commit_evidence(self):
         history = self.inspector.log(self.repo, limit=2)
