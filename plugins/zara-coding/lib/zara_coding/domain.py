@@ -154,6 +154,20 @@ class RepositoryInspector:
             "--format=%(refname:short)%09%(objectname)%09%(upstream:short)",
             "refs/heads/",
         )
+        branches = self._parse_branch_inventory(output, limit=limit)
+        probe = self._git(
+            root,
+            "for-each-ref",
+            f"--count={limit + 1}",
+            "--sort=refname",
+            "--format=%(refname:short)%09%(objectname)%09%(upstream:short)",
+            "refs/heads/",
+        )
+        self._parse_branch_inventory(probe, limit=limit)
+        return branches
+
+    @staticmethod
+    def _parse_branch_inventory(output: str, *, limit: int) -> list[dict[str, str]]:
         branches = []
         for line in output.splitlines():
             if not line:
@@ -163,6 +177,8 @@ class RepositoryInspector:
                 raise CodingError("git branch inventory returned malformed structured output")
             name, commit, upstream = fields
             branches.append({"name": name, "commit": commit, "upstream": upstream})
+            if len(branches) > limit:
+                raise CodingError(f"git branch inventory exceeds branch limit of {limit}")
         return branches
 
     def create_branch(self, path: Path, name: str) -> dict[str, str]:
