@@ -74,6 +74,10 @@ def _worktree_lock_value(worktree: Mapping[str, object]) -> dict[str, object]:
     locked = worktree.get("locked")
     if not isinstance(path, str) or not path:
         raise ValueError("worktree evidence path must be a non-empty string")
+    if "\x00" in path:
+        raise ValueError("worktree evidence path must not contain NUL")
+    if not PurePosixPath(path).is_absolute():
+        raise ValueError("worktree evidence path must be absolute")
     if not isinstance(head, str) or len(head) not in (40, 64) or any(char not in "0123456789abcdefABCDEF" for char in head):
         raise ValueError("worktree evidence head must be a full Git object ID")
     if locked is not None and not isinstance(locked, str):
