@@ -12,7 +12,7 @@ def build_repository_evidence(
     head = snapshot.get("head")
     branch = snapshot.get("branch")
     dirty = snapshot.get("dirty")
-    changed_paths = snapshot.get("changed_paths")
+    changed_paths = snapshot.get("changed_paths", ())
     if not isinstance(root, str) or not root:
         raise ValueError("repository snapshot root must be a non-empty string")
     if not isinstance(head, str) or len(head) not in (40, 64) or any(char not in "0123456789abcdefABCDEF" for char in head):
