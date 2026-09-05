@@ -127,6 +127,8 @@ def _repository_payload(evidence: Mapping[str, object]) -> dict[str, object]:
         raise CodingError("repository evidence contains invalid snapshot values")
 
     changed_paths = [_changed_path_payload(value, root) for value in changed_path_values]
+    if dirty is not bool(changed_paths):
+        raise CodingError("repository evidence dirty state contradicts changed paths")
     worktrees = [_worktree_payload(value) for value in worktree_values]
     return {
         "root": root,
