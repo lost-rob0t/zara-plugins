@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
 from zara_coding.domain import CodingError, RepositoryInspector
+from zara_coding.worktree import add_detached_worktree
 
 
 @dataclass(frozen=True)
@@ -57,7 +58,7 @@ class WorktreeAddTests(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, 0, stdout=output, stderr="")
 
             inspector = RepositoryInspector((root,), runner=run)
-            evidence = inspector.add_detached_worktree(repo, target, "a" * 40)
+            evidence = add_detached_worktree(inspector, repo, target, "a" * 40)
 
             self.assertEqual(evidence, {"path": str(target.resolve()), "head": "a" * 40, "detached": True})
             argv_calls = [call[0][3:] for call in calls]
@@ -75,9 +76,9 @@ class WorktreeAddTests(unittest.TestCase):
             inspector = RepositoryInspector((root,), runner=lambda argv, **kwargs: subprocess.CompletedProcess(argv, 0, stdout=f"{repo.resolve()}\n", stderr=""))
 
             with self.assertRaisesRegex(CodingError, "worktree target already exists"):
-                inspector.add_detached_worktree(repo, existing, "a" * 40)
+                add_detached_worktree(inspector, repo, existing, "a" * 40)
             with self.assertRaisesRegex(CodingError, "outside allowed roots"):
-                inspector.add_detached_worktree(repo, root.parent / "outside-task", "a" * 40)
+                add_detached_worktree(inspector, repo, root.parent / "outside-task", "a" * 40)
 
     def test_domain_rejects_non_commit_expected_object(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -96,10 +97,10 @@ class WorktreeAddTests(unittest.TestCase):
 
             inspector = RepositoryInspector((root,), runner=run)
             with self.assertRaisesRegex(CodingError, "expected_head is not a commit"):
-                inspector.add_detached_worktree(repo, target, "a" * 40)
+                add_detached_worktree(inspector, repo, target, "a" * 40)
 
     @patch("zara_coding.plugin.shutil.which", return_value="/usr/bin/git")
-    @patch("zara_coding.plugin.RepositoryInspector.add_detached_worktree")
+    @patch("zara_coding.plugin.add_detached_worktree")
     def test_plugin_worktree_add_requires_canonical_approval(self, add_worktree, _which):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -113,7 +114,7 @@ class WorktreeAddTests(unittest.TestCase):
             self.assertTrue(bool((tools["coding.git.worktree.add-detached"].metadata or {}).get("zara_requires_approval", False)))
             evidence = json.loads(plugin.git_worktree_add_detached(str(repo), str(target), "b" * 40))
             self.assertEqual(evidence["path"], str(target.resolve()))
-            add_worktree.assert_called_once_with(repo, target, "b" * 40)
+            add_worktree.assert_called_once_with(plugin.inspector, repo, target, "b" * 40)
 
 
 if __name__ == "__main__":
