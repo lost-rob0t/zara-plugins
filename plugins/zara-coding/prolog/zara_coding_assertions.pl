@@ -3,11 +3,13 @@
             repository_head_args/1,
             repository_branch_args/1,
             repository_clean_args/1,
+            repository_changed_path_args/1,
             worktree_locked_args/1,
             worktree_absent_args/1,
             repository_head_evaluator/3,
             repository_branch_evaluator/3,
             repository_clean_evaluator/3,
+            repository_changed_path_evaluator/3,
             worktree_locked_evaluator/3,
             worktree_absent_evaluator/3
           ]).
@@ -60,6 +62,22 @@ registry([
            latency:pure,
            argument_schema:_{type:dict,required:_{root:text,clean:boolean}},
            description:"require the dirty state for one repository root to match"
+         }),
+    assertion_provider(
+        repository_changed_path,
+        1,
+        zara_coding_assertions:repository_changed_path_args,
+        zara_coding_assertions:repository_changed_path_evaluator,
+        none,
+        _{ verifier:_{id:zara_coding_repository,version:1},
+           collector:_{id:none,version:1},
+           evidence_policy:_{required_evidence:true,
+                             source_classes:[repository],
+                             trust_classes:[trusted,observed],
+                             freshness:current},
+           latency:pure,
+           argument_schema:_{type:dict,required:_{root:text,path:text}},
+           description:"require one exact repository-relative path to be changed against HEAD"
          }),
     assertion_provider(
         worktree_locked,
@@ -119,6 +137,14 @@ repository_clean_args(Args) :-
     get_dict(clean, Args, Clean),
     memberchk(Clean, [true,false]).
 
+repository_changed_path_args(Args) :-
+    is_dict(Args),
+    dict_keys(Args, [path,root]),
+    get_dict(root, Args, Root),
+    nonempty_text(Root),
+    get_dict(path, Args, Path),
+    nonempty_text(Path).
+
 worktree_locked_args(Args) :-
     is_dict(Args),
     dict_keys(Args, [head,path]),
@@ -166,6 +192,19 @@ repository_clean_evaluator(Assertion, Observation, Status) :-
         ActualRoot == ExpectedRoot,
         memberchk(Dirty, [true,false]),
         clean_dirty_match(ExpectedClean, Dirty)
+    ->  Status = passed
+    ;   Status = failed
+    ).
+
+repository_changed_path_evaluator(Assertion, Observation, Status) :-
+    (   get_dict(root, Assertion.args, ExpectedRoot),
+        get_dict(path, Assertion.args, ExpectedPath),
+        is_dict(Observation.value),
+        get_dict(root, Observation.value, ActualRoot),
+        get_dict(path, Observation.value, ActualPath),
+        get_dict(changed, Observation.value, true),
+        ActualRoot == ExpectedRoot,
+        ActualPath == ExpectedPath
     ->  Status = passed
     ;   Status = failed
     ).
