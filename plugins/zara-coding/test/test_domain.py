@@ -16,35 +16,48 @@ class RepositoryInspectorTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.repo = self.root / "repo"
         self.repo.mkdir()
-        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
-        subprocess.run(["git", "-C", str(self.repo), "config", "user.email", "test@example.invalid"], check=True)
-        subprocess.run(["git", "-C", str(self.repo), "config", "user.name", "Zara Plugin Test"], check=True)
-        (self.repo / "tracked.txt").write_text("base\n")
-        subprocess.run(["git", "-C", str(self.repo), "add", "tracked.txt"], check=True)
-        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "initial"], check=True)
-        self.inspector = RepositoryInspector((self.root,))
+        self.plain = self.root / "plain"
+        self.plain.mkdir()
+        self.calls = []
+
+        def run(argv, **kwargs):
+            self.calls.append((argv, kwargs))
+            cwd = Path(argv[2])
+            args = argv[3:]
+            if cwd == self.plain and args[:2] == ["rev-parse", "--show-toplevel"]:
+                raise subprocess.CalledProcessError(128, argv)
+            outputs = {
+                ("rev-parse", "--show-toplevel"): f"{self.repo.resolve()}\n",
+                ("rev-parse", "HEAD"): "a" * 40 + "\n",
+                ("symbolic-ref", "--short", "-q", "HEAD"): "main\n",
+                ("diff", "--name-only", "HEAD"): "tracked.txt\n",
+                ("ls-files", "--others", "--exclude-standard"): "new.txt\n",
+            }
+            return subprocess.CompletedProcess(argv, 0, stdout=outputs.get(tuple(args), ""), stderr="")
+
+        self.inspector = RepositoryInspector((self.root,), runner=run)
 
     def tearDown(self):
         self.temporary.cleanup()
 
     def test_snapshot_is_structured_and_preserves_dirty_evidence(self):
-        (self.repo / "tracked.txt").write_text("changed\n")
         snapshot = self.inspector.inspect(self.repo)
         self.assertEqual(snapshot["root"], str(self.repo.resolve()))
-        self.assertEqual(len(snapshot["head"]), 40)
-        self.assertIsInstance(snapshot["branch"], str)
+        self.assertEqual(snapshot["head"], "a" * 40)
+        self.assertEqual(snapshot["branch"], "main")
         self.assertTrue(snapshot["dirty"])
-        self.assertIn("tracked.txt", snapshot["changed_paths"])
+        self.assertEqual(snapshot["changed_paths"], ["new.txt", "tracked.txt"])
+        self.assertTrue(all(call[0][0] == "git" for call in self.calls))
+        self.assertTrue(all(call[1]["shell"] is False for call in self.calls))
 
     def test_rejects_paths_outside_configured_roots(self):
         with self.assertRaisesRegex(CodingError, "outside allowed roots"):
             self.inspector.inspect(Path("/"))
+        self.assertEqual(self.calls, [])
 
     def test_rejects_non_repository_directory(self):
-        plain = self.root / "plain"
-        plain.mkdir()
         with self.assertRaisesRegex(CodingError, "Git repository"):
-            self.inspector.inspect(plain)
+            self.inspector.inspect(self.plain)
 
 
 class PrologRLMBridgeTests(unittest.TestCase):
