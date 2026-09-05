@@ -166,6 +166,10 @@ def _worktree_payload(value: object) -> dict[str, object]:
     locked = value.get("locked")
     if not isinstance(path, str) or not path:
         raise CodingError("repository evidence worktree path must be non-empty")
+    if "\x00" in path:
+        raise CodingError("repository evidence worktree path must not contain NUL")
+    if not PurePosixPath(path).is_absolute():
+        raise CodingError("repository evidence worktree path must be absolute")
     if (
         not isinstance(head, str)
         or len(head) not in (40, 64)
