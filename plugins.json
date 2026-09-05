@@ -50,6 +50,20 @@
       "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-browser", "aggregate": "zara-plugins"}
     },
     {
+      "name": "zara-calendar",
+      "version": "0.1.0",
+      "api_version": "1",
+      "plugin_type": "service",
+      "description": "Provider-neutral calendar search, free-busy, conflict reasoning, and verified mutations",
+      "path": "plugins/zara-calendar",
+      "entrypoint": "zara-plugin/zara_calendar_entrypoint.py",
+      "docs": "plugins/zara-calendar/README.md",
+      "license": "GPL-3.0-or-later",
+      "tags": ["calendar", "scheduling", "free-busy", "events", "timezone"],
+      "install": {"nix": "nix build github:lost-rob0t/zara-plugins#zara-calendar"},
+      "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-calendar", "aggregate": "zara-plugins"}
+    },
+    {
       "name": "zara-context",
       "version": "0.1.0",
       "api_version": "1",
