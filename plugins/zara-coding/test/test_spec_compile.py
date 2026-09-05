@@ -7,10 +7,38 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
 from zara_coding.domain import CodingError, PrologRLMBridge
-from zara_coding.spec_compile import compile_spec
+from zara_coding.spec_compile import catalog_spec, compile_spec
 
 
 class PrologRLMSpecCompileTests(unittest.TestCase):
+    def test_catalog_uses_same_fixed_trusted_registry_without_input(self):
+        calls = []
+
+        def run(argv, **kwargs):
+            calls.append((argv, kwargs))
+            return subprocess.CompletedProcess(
+                argv,
+                0,
+                stdout=(
+                    "ok(spec_language_catalog{assertions:["
+                    "assertion_catalog_entry{kind:repository_head},"
+                    "assertion_catalog_entry{kind:repository_clean}]})\n"
+                ),
+                stderr="",
+            )
+
+        bridge = PrologRLMBridge(Path("/srv/prolog-rlm"), runner=run)
+        result = catalog_spec(bridge)
+
+        self.assertEqual(result["status"], "ok")
+        argv, kwargs = calls[0]
+        self.assertNotIn("input", kwargs)
+        self.assertFalse(kwargs["shell"])
+        self.assertIn("zara_coding_assertions.pl", " ".join(argv))
+        goal = argv[argv.index("-g") + 1]
+        self.assertIn("zara_coding_assertions:registry(R)", goal)
+        self.assertIn("spec_language_catalog(R,O)", goal)
+
     def test_compile_spec_uses_fixed_trusted_registry_and_stdin_source(self):
         source = (
             "spec([subject(repository(demo)),"
