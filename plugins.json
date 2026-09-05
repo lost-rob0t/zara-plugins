@@ -64,6 +64,20 @@
       "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-calendar", "aggregate": "zara-plugins"}
     },
     {
+      "name": "zara-contacts",
+      "version": "0.1.0",
+      "api_version": "1",
+      "plugin_type": "service",
+      "description": "Normalized contact identity, provenance, and ambiguity-safe recipient resolution",
+      "path": "plugins/zara-contacts",
+      "entrypoint": "zara-plugin/zara_contacts_entrypoint.py",
+      "docs": "plugins/zara-contacts/README.md",
+      "license": "GPL-3.0-or-later",
+      "tags": ["contacts", "identity", "recipients", "provenance", "resolution"],
+      "install": {"nix": "nix build github:lost-rob0t/zara-plugins#zara-contacts"},
+      "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-contacts", "aggregate": "zara-plugins"}
+    },
+    {
       "name": "zara-context",
       "version": "0.1.0",
       "api_version": "1",
