@@ -7,6 +7,7 @@ import argparse
 import json
 import sys
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -95,6 +96,42 @@ def plugin_paths(
     return plugin_source / str(entry["entrypoint"]), plugin_source / "lib"
 
 
+def _is_plugin_library(path: str, root: Path, runtime_root: Path | None) -> bool:
+    try:
+        candidate = Path(path).resolve()
+    except (OSError, RuntimeError):
+        return False
+    if candidate.name != "lib":
+        return False
+    if runtime_root is not None:
+        return candidate.parent.parent == runtime_root.resolve()
+    return candidate.parent.parent == (root.resolve() / "plugins")
+
+
+@contextmanager
+def plugin_import_environment(
+    root: Path,
+    entry: dict[str, Any],
+    *,
+    runtime_root: Path | None = None,
+):
+    _, library = plugin_paths(root, entry, runtime_root=runtime_root)
+    previous_path = list(sys.path)
+    previous_modules = set(sys.modules)
+    filtered = [
+        path
+        for path in previous_path
+        if not _is_plugin_library(path, root, runtime_root)
+    ]
+    sys.path[:] = [str(library), *filtered]
+    try:
+        yield
+    finally:
+        sys.path[:] = previous_path
+        for module_name in tuple(set(sys.modules) - previous_modules):
+            sys.modules.pop(module_name, None)
+
+
 def _load_runtime_contracts(zara_source: Path):
     sys.path.insert(0, str(zara_source))
     try:
@@ -106,18 +143,6 @@ def _load_runtime_contracts(zara_source: Path):
             f"could not import pinned Zara plugin API: {type(error).__name__}: {error}"
         ) from error
     return BaseTool, PLUGIN_API_VERSION, PluginMetadata, ServicePlugin, load_plugin_module
-
-
-def _prepare_plugin_imports(
-    root: Path,
-    entries: list[dict[str, Any]],
-    *,
-    runtime_root: Path | None = None,
-) -> None:
-    for entry in reversed(entries):
-        _, library = plugin_paths(root, entry, runtime_root=runtime_root)
-        if library.is_dir():
-            sys.path.insert(0, str(library))
 
 
 def _qualified_type(value: object) -> str:
@@ -135,7 +160,6 @@ def check_registry(
     runtime_root = runtime_root.resolve() if runtime_root is not None else None
     zara_source = validate_zara_source(zara_source)
     entries = load_registry(root / "plugins.json")
-    _prepare_plugin_imports(root, entries, runtime_root=runtime_root)
     BaseTool, api_version, PluginMetadata, ServicePlugin, load_plugin_module = (
         _load_runtime_contracts(zara_source)
     )
@@ -156,53 +180,54 @@ def check_registry(
                     failures.append(f"{name}: installed entrypoint is missing: {entrypoint}")
                     continue
                 try:
-                    module = load_plugin_module(entrypoint)
-                    if entry.get("plugin_type") == "service":
-                        factory = getattr(module, "create_plugin", None)
-                        if not callable(factory):
-                            raise CompatibilityError("service entrypoint has no create_plugin()")
-                        instance = factory()
-                        if not isinstance(instance, ServicePlugin):
-                            raise CompatibilityError(
-                                f"create_plugin() returned {type(instance).__name__}, not Zara ServicePlugin"
-                            )
-                        metadata = getattr(instance, "metadata", None)
-                        if not isinstance(metadata, PluginMetadata):
-                            expected = f"{PluginMetadata.__module__}.{PluginMetadata.__qualname__}"
-                            observed = _qualified_type(metadata)
-                            raise CompatibilityError(
-                                "service metadata is not Zara PluginMetadata "
-                                f"(expected {expected}, observed {observed})"
-                            )
-                        require_metadata(entry, metadata)
-                        tools = tuple(instance.tools())
-                        invalid = [type(tool).__name__ for tool in tools if not isinstance(tool, BaseTool)]
-                        if invalid:
-                            raise CompatibilityError(
-                                f"tools() returned non-BaseTool values: {', '.join(invalid)}"
-                            )
-                        require_tool_names(name, tools, seen_tool_names)
-                        with fake_dependency_environment(name):
-                            exercise_service_lifecycle(instance, CompatibilityRuntime(name))
-                    else:
-                        register_tools = getattr(module, "register_tools", None)
-                        register_skills = getattr(module, "register_skills", None)
-                        if not callable(register_tools) and not callable(register_skills):
-                            raise CompatibilityError(
-                                "tool entrypoint defines neither register_tools() nor register_skills()"
-                            )
-                        if callable(register_tools):
-                            tools = tuple(register_tools())
-                            invalid = [
-                                type(tool).__name__
-                                for tool in tools
-                                if not isinstance(tool, BaseTool)
-                            ]
+                    with plugin_import_environment(root, entry, runtime_root=runtime_root):
+                        module = load_plugin_module(entrypoint)
+                        if entry.get("plugin_type") == "service":
+                            factory = getattr(module, "create_plugin", None)
+                            if not callable(factory):
+                                raise CompatibilityError("service entrypoint has no create_plugin()")
+                            instance = factory()
+                            if not isinstance(instance, ServicePlugin):
+                                raise CompatibilityError(
+                                    f"create_plugin() returned {type(instance).__name__}, not Zara ServicePlugin"
+                                )
+                            metadata = getattr(instance, "metadata", None)
+                            if not isinstance(metadata, PluginMetadata):
+                                expected = f"{PluginMetadata.__module__}.{PluginMetadata.__qualname__}"
+                                observed = _qualified_type(metadata)
+                                raise CompatibilityError(
+                                    "service metadata is not Zara PluginMetadata "
+                                    f"(expected {expected}, observed {observed})"
+                                )
+                            require_metadata(entry, metadata)
+                            tools = tuple(instance.tools())
+                            invalid = [type(tool).__name__ for tool in tools if not isinstance(tool, BaseTool)]
                             if invalid:
                                 raise CompatibilityError(
-                                    f"register_tools() returned non-BaseTool values: {', '.join(invalid)}"
+                                    f"tools() returned non-BaseTool values: {', '.join(invalid)}"
                                 )
                             require_tool_names(name, tools, seen_tool_names)
+                            with fake_dependency_environment(name):
+                                exercise_service_lifecycle(instance, CompatibilityRuntime(name))
+                        else:
+                            register_tools = getattr(module, "register_tools", None)
+                            register_skills = getattr(module, "register_skills", None)
+                            if not callable(register_tools) and not callable(register_skills):
+                                raise CompatibilityError(
+                                    "tool entrypoint defines neither register_tools() nor register_skills()"
+                                )
+                            if callable(register_tools):
+                                tools = tuple(register_tools())
+                                invalid = [
+                                    type(tool).__name__
+                                    for tool in tools
+                                    if not isinstance(tool, BaseTool)
+                                ]
+                                if invalid:
+                                    raise CompatibilityError(
+                                        f"register_tools() returned non-BaseTool values: {', '.join(invalid)}"
+                                    )
+                                require_tool_names(name, tools, seen_tool_names)
                 except Exception as error:
                     failures.append(f"{name}: {type(error).__name__}: {error}")
     return failures
