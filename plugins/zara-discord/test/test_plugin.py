@@ -89,7 +89,7 @@ class PluginTests(unittest.TestCase):
 
         self.assertIsInstance(plugin, ServicePlugin)
         self.assertEqual(plugin.metadata.name, "zara-discord")
-        self.assertEqual(plugin.metadata.version, "0.2.1")
+        self.assertEqual(plugin.metadata.version, "0.3.0")
         self.assertEqual(plugin.metadata.api_version, "1")
 
     def test_factory_exposes_only_scoped_moderation_tools(self):
