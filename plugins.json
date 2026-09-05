@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated": "2026-09-02",
+  "updated": "2026-09-05",
   "registry": "https://github.com/lost-rob0t/zara-plugins",
   "registry_raw": "https://raw.githubusercontent.com/lost-rob0t/zara-plugins/main/plugins.json",
   "plugin_search_paths": [
@@ -141,6 +141,33 @@
       "nix": {
         "flake": "github:lost-rob0t/zara-plugins",
         "package": "zara-local-recall",
+        "aggregate": "zara-plugins"
+      }
+    },
+    {
+      "name": "zara-starintel-server",
+      "version": "0.1.0",
+      "api_version": "1",
+      "plugin_type": "service",
+      "description": "Use every HTTP API operation allowed by a StarIntel Server credential",
+      "path": "plugins/zara-starintel-server",
+      "entrypoint": "zara-plugin/zara_starintel_server_entrypoint.py",
+      "docs": "plugins/zara-starintel-server/README.md",
+      "license": "GPL-3.0-or-later",
+      "tags": [
+        "starintel",
+        "server",
+        "api",
+        "osint",
+        "documents",
+        "targets"
+      ],
+      "install": {
+        "nix": "nix build github:lost-rob0t/zara-plugins#zara-starintel-server"
+      },
+      "nix": {
+        "flake": "github:lost-rob0t/zara-plugins",
+        "package": "zara-starintel-server",
         "aggregate": "zara-plugins"
       }
     }

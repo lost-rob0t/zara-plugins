@@ -31,15 +31,29 @@
                 map (dependency: packages.${dependency}) dependencies
               );
 
-          developmentPython = python.withPackages (packages:
-            map
-              (dependency: packages.${dependency})
-              (pkgs.lib.unique (
-                pkgs.lib.concatMap
-                  (entry: entry.python_dependencies or [ ])
-                  plugins
-              ))
+          allPluginDependencies = pkgs.lib.unique (
+            pkgs.lib.concatMap
+              (entry: entry.python_dependencies or [ ])
+              plugins
           );
+
+          developmentPython = python.withPackages (packages:
+            map (dependency: packages.${dependency}) allPluginDependencies
+          );
+
+          compatibilityPython = python.withPackages (packages:
+            [ packages.langchain-core ]
+            ++ map (dependency: packages.${dependency}) allPluginDependencies
+          );
+
+          # Exact Zara source contract used by the generated compatibility
+          # gate. Updating this revision is an explicit compatibility event.
+          zaraSource = pkgs.fetchFromGitHub {
+            owner = "lost-rob0t";
+            repo = "zara";
+            rev = "8e247fd4cb6ffe1f3258bfb4f115a3339208e8c1";
+            hash = "sha256-c+qAYW1IKlhXknLzERFY2maa4GRY6gbGrsXMn9DSQrg=";
+          };
 
           # Export a stable, immutable runtime layout for Home Manager and
           # other declarative consumers:
@@ -142,6 +156,21 @@
               }
               ''
                 ${python}/bin/python3 $src/scripts/validate-registry.py
+                touch $out
+              '';
+
+            compatibility = pkgs.runCommand "zara-check-plugin-compatibility"
+              {
+                nativeBuildInputs = [ compatibilityPython ];
+                src = self;
+              }
+              ''
+                export HOME=$(mktemp -d)
+                export XDG_CONFIG_HOME="$HOME/.config"
+                ${compatibilityPython}/bin/python3 \
+                  $src/scripts/zara_compat.py \
+                  --root $src \
+                  --zara-source ${zaraSource}
                 touch $out
               '';
 

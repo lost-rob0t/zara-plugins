@@ -16,6 +16,7 @@ bundled tool, with Nix, or (once landed in Zara) with a native
 | [zara-avatar](plugins/zara-avatar/) | 0.1.0 | service | Zara-owned 3D avatar presentation (VRM renderer, expression, lip sync) |
 | [zara-discord](plugins/zara-discord/) | 0.2.0 | service | Talk to Zara through Discord with access controls, bare mentions, and spontaneous replies |
 | [zara-persona](plugins/zara-persona/) | 0.1.0 | service | Operator-owned persona context with optional SWI-Prolog |
+| [zara-starintel-server](plugins/zara-starintel-server/) | 0.1.0 | service | Use every HTTP API operation allowed by a StarIntel Server credential |
 
 ## Registry
 
@@ -84,6 +85,7 @@ nix build github:lost-rob0t/zara-plugins#zara-agent-zero # Agent Zero bridge
 nix build github:lost-rob0t/zara-plugins#zara-avatar     # plugin package
 nix build github:lost-rob0t/zara-plugins#zara-discord    # Discord plugin package
 nix build github:lost-rob0t/zara-plugins#zara-persona    # persona context plugin
+nix build github:lost-rob0t/zara-plugins#zara-starintel-server # StarIntel API plugin
 nix build github:lost-rob0t/zara-plugins#zara-plugins    # aggregate of all plugins
 nix run github:lost-rob0t/zara-plugins#zara-avatar -- install
 nix flake check github:lost-rob0t/zara-plugins           # registry + plugin test suites
