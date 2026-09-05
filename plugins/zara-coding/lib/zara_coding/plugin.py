@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -24,11 +25,24 @@ class ZaraCodingPlugin(ServicePlugin):
     def __init__(self) -> None:
         self.inspector: RepositoryInspector | None = None
         self.prolog_rlm: PrologRLMBridge | None = None
+        self.repository_reason = "not-started"
 
     def start(self, runtime) -> None:
         section = self._section(runtime.configuration)
         roots = self._string_list(section.get("allowed_roots", []), "allowed_roots")
-        self.inspector = RepositoryInspector(tuple(Path(root) for root in roots)) if roots else None
+        git_executable = section.get("git", "git")
+        if not isinstance(git_executable, str) or not git_executable:
+            raise ValueError("git must be a non-empty string")
+        if not roots:
+            self.inspector = None
+            self.repository_reason = "allowed-roots-not-configured"
+        elif shutil.which(git_executable) is None:
+            self.inspector = None
+            self.repository_reason = "git-executable-not-found"
+        else:
+            self.inspector = RepositoryInspector(tuple(Path(root) for root in roots), executable=git_executable)
+            self.repository_reason = "ready"
+
         checkout = section.get("prolog_rlm_checkout")
         if checkout is not None and not isinstance(checkout, str):
             raise ValueError("prolog_rlm_checkout must be a string")
@@ -40,6 +54,7 @@ class ZaraCodingPlugin(ServicePlugin):
     def stop(self) -> None:
         self.inspector = None
         self.prolog_rlm = None
+        self.repository_reason = "stopped"
 
     def tools(self) -> Sequence[StructuredTool]:
         return (
@@ -59,7 +74,7 @@ class ZaraCodingPlugin(ServicePlugin):
         repository = (
             {"status": "ready"}
             if self.inspector is not None
-            else {"status": "unavailable", "reason": "allowed-roots-not-configured"}
+            else {"status": "unavailable", "reason": self.repository_reason}
         )
         prolog_rlm = (
             self.prolog_rlm.status()
@@ -71,7 +86,7 @@ class ZaraCodingPlugin(ServicePlugin):
 
     def inspect_repo(self, path: str) -> str:
         if self.inspector is None:
-            raise RuntimeError("zara-coding requires allowed_roots before repository inspection")
+            raise RuntimeError(f"zara-coding repository inspection unavailable: {self.repository_reason}")
         if not isinstance(path, str) or not path:
             raise ValueError("path must be a non-empty string")
         return json.dumps(self.inspector.inspect(Path(path)), sort_keys=True)
