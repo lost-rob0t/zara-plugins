@@ -69,6 +69,16 @@ class ZaraCodingPlugin(ServicePlugin):
                 description="Return structured Git branch/head/dirty evidence for an allowed repository.",
             ),
             StructuredTool.from_function(
+                func=self.git_log,
+                name="coding.git.log",
+                description="Return bounded structured commit history for an allowed repository.",
+            ),
+            StructuredTool.from_function(
+                func=self.git_branches,
+                name="coding.git.branches",
+                description="Return bounded structured local branch refs for an allowed repository.",
+            ),
+            StructuredTool.from_function(
                 func=self.normalize_spec,
                 name="coding.spec.normalize",
                 description=(
@@ -93,16 +103,32 @@ class ZaraCodingPlugin(ServicePlugin):
         return json.dumps({"status": state, "repository": repository, "prolog_rlm": prolog_rlm}, sort_keys=True)
 
     def inspect_repo(self, path: str) -> str:
-        if self.inspector is None:
-            raise RuntimeError(f"zara-coding repository inspection unavailable: {self.repository_reason}")
+        inspector = self._require_inspector()
         if not isinstance(path, str) or not path:
             raise ValueError("path must be a non-empty string")
-        return json.dumps(self.inspector.inspect(Path(path)), sort_keys=True)
+        return json.dumps(inspector.inspect(Path(path)), sort_keys=True)
+
+    def git_log(self, path: str, limit: int = 20) -> str:
+        inspector = self._require_inspector()
+        if not isinstance(path, str) or not path:
+            raise ValueError("path must be a non-empty string")
+        return json.dumps(inspector.log(Path(path), limit=limit), sort_keys=True)
+
+    def git_branches(self, path: str, limit: int = 50) -> str:
+        inspector = self._require_inspector()
+        if not isinstance(path, str) or not path:
+            raise ValueError("path must be a non-empty string")
+        return json.dumps(inspector.branches(Path(path), limit=limit), sort_keys=True)
 
     def normalize_spec(self, source: str) -> str:
         if self.prolog_rlm is None:
             raise RuntimeError("zara-coding Prolog-RLM checkout is not configured")
         return json.dumps(self.prolog_rlm.normalize_spec(source), sort_keys=True)
+
+    def _require_inspector(self) -> RepositoryInspector:
+        if self.inspector is None:
+            raise RuntimeError(f"zara-coding repository inspection unavailable: {self.repository_reason}")
+        return self.inspector
 
     @staticmethod
     def _section(configuration) -> Mapping[str, object]:
