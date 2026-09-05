@@ -7,6 +7,7 @@ from langchain_core.tools import StructuredTool
 from zara.plugins import PluginMetadata, ServicePlugin
 
 from .domain import HomeError, HomeService
+from .rules import HomeRulePlanner
 
 
 PLUGIN_VERSION = "0.1.0"
@@ -30,6 +31,7 @@ class ZaraHomePlugin(ServicePlugin):
     def __init__(self, provider=None) -> None:
         self.provider = provider or UnavailableHomeProvider()
         self.home = HomeService(self.provider)
+        self.planner = HomeRulePlanner(self.home)
 
     def start(self, runtime) -> None:
         return None
@@ -52,6 +54,12 @@ class ZaraHomePlugin(ServicePlugin):
     def get_device(self, device_id: str) -> str:
         return self._json(self.home.get_device(device_id))
 
+    def room_state(self, room: str) -> str:
+        return self._json(self.home.room_state(room))
+
+    def plan(self, intent: str) -> str:
+        return self._json(self.planner.plan(intent))
+
     def set_property(self, device_id: str, capability: str, value: Any) -> str:
         return self._json(self.home.set_property(device_id, capability, value))
 
@@ -63,6 +71,8 @@ class ZaraHomePlugin(ServicePlugin):
             StructuredTool.from_function(func=self.status, name="home.status", description="Report whether a smart-home provider is configured."),
             StructuredTool.from_function(func=self.inventory, name="home.inventory", description="List normalized rooms, devices, capabilities and observed state."),
             StructuredTool.from_function(func=self.get_device, name="home.device.get", description="Read normalized state and capabilities for one device."),
+            StructuredTool.from_function(func=self.room_state, name="home.room.state", description="Read normalized device, presence, and environment state for one room."),
+            StructuredTool.from_function(func=self.plan, name="home.plan", description="Translate a supported high-level home intent into an explained non-mutating fact-driven action plan."),
             StructuredTool.from_function(func=self.set_property, name="home.device.set", description="Set one non-security-sensitive device capability after validating its allowed value/range and verify observed state."),
             StructuredTool.from_function(func=self.activate_scene, name="home.scene.activate", description="Activate one explicitly named scene and preserve provider evidence; provider verification is reported separately."),
         )
