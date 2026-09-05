@@ -87,6 +87,35 @@ def require_tool_names(name: str, tools: tuple[Any, ...] | list[Any], seen: dict
         seen[tool_name] = name
 
 
+def require_legacy_tool_entrypoint(
+    name: str,
+    module: Any,
+    BaseTool: type[Any],
+    seen_tool_names: dict[str, str],
+) -> tuple[Any, ...]:
+    register_tools = getattr(module, "register_tools", None)
+    register_skills = getattr(module, "register_skills", None)
+    if callable(register_tools):
+        entrypoint_name = "register_tools"
+        entrypoint = register_tools
+    elif callable(register_skills):
+        entrypoint_name = "register_skills"
+        entrypoint = register_skills
+    else:
+        raise CompatibilityError(
+            "tool entrypoint defines neither register_tools() nor register_skills()"
+        )
+
+    tools = tuple(entrypoint(None))
+    invalid = [type(tool).__name__ for tool in tools if not isinstance(tool, BaseTool)]
+    if invalid:
+        raise CompatibilityError(
+            f"{name}: {entrypoint_name}() returned non-BaseTool values: {', '.join(invalid)}"
+        )
+    require_tool_names(name, tools, seen_tool_names)
+    return tools
+
+
 def require_search_path_discovery(
     expected: dict[Path, str],
     iter_plugin_files,
@@ -252,24 +281,12 @@ def check_registry(
                             with fake_dependency_environment(name):
                                 exercise_service_lifecycle(instance, CompatibilityRuntime(name))
                         else:
-                            register_tools = getattr(module, "register_tools", None)
-                            register_skills = getattr(module, "register_skills", None)
-                            if not callable(register_tools) and not callable(register_skills):
-                                raise CompatibilityError(
-                                    "tool entrypoint defines neither register_tools() nor register_skills()"
-                                )
-                            if callable(register_tools):
-                                tools = tuple(register_tools())
-                                invalid = [
-                                    type(tool).__name__
-                                    for tool in tools
-                                    if not isinstance(tool, BaseTool)
-                                ]
-                                if invalid:
-                                    raise CompatibilityError(
-                                        f"register_tools() returned non-BaseTool values: {', '.join(invalid)}"
-                                    )
-                                require_tool_names(name, tools, seen_tool_names)
+                            require_legacy_tool_entrypoint(
+                                name,
+                                module,
+                                BaseTool,
+                                seen_tool_names,
+                            )
                 except Exception as error:
                     failures.append(f"{name}: {type(error).__name__}: {error}")
             try:
