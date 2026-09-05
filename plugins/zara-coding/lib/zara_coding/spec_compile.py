@@ -50,8 +50,6 @@ def _run(
     argv = [
         bridge.executable,
         "-q",
-        "-p",
-        f"library={bridge.checkout / 'prolog'}",
         "-s",
         str(spec_language),
         "-s",
