@@ -16,7 +16,7 @@ class ZaraContextPlugin(ServicePlugin):
         name="zara-context",
         version=PLUGIN_VERSION,
         api_version="1",
-        description="Short-lived structured active-context provider",
+        description="Short-lived structured active context with provenance and freshness",
     )
 
     def __init__(self) -> None:

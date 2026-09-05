@@ -19,7 +19,7 @@ class ZaraAgentZeroPlugin(ServicePlugin):
         name="zara-agent-zero",
         version=PLUGIN_VERSION,
         api_version="1",
-        description="Delegate selected Zara work to Agent Zero",
+        description="Delegate selected Zara work to Agent Zero through its native external API",
     )
 
     def __init__(self) -> None:

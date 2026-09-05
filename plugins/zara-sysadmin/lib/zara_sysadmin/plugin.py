@@ -23,7 +23,7 @@ class ZaraSysadminPlugin(ServicePlugin):
         name="zara-sysadmin",
         version=PLUGIN_VERSION,
         api_version="1",
-        description="Typed Linux/NixOS diagnostics and verified remediation",
+        description="Typed Linux/NixOS diagnostics with expert rules and verified remediation",
     )
 
     def __init__(self, backend=None) -> None:

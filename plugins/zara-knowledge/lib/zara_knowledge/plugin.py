@@ -20,7 +20,7 @@ class ZaraKnowledgePlugin(ServicePlugin):
         name="zara-knowledge",
         version=PLUGIN_VERSION,
         api_version="1",
-        description="Provider-neutral sourced knowledge retrieval with Brave Search",
+        description="Provider-neutral sourced knowledge retrieval with a first-class Brave Search adapter",
     )
 
     def __init__(self) -> None:

@@ -96,7 +96,7 @@ def create_plugin():
         name="zara-discord",
         version="0.3.0",
         api_version="1",
-        description="Talk to Zara through Discord with access controls and random replies.",
+        description="Talk to Zara through Discord with access controls and spontaneous random replies",
     )
 
     class ZaraDiscordService(ZaraDiscordPlugin, ServicePlugin):

@@ -56,7 +56,7 @@ def validate_zara_source(path: Path) -> Path:
 
 def require_metadata(entry: dict[str, Any], actual: Any) -> None:
     name = str(entry.get("name", "?"))
-    for field in ("name", "version", "api_version", "plugin_type"):
+    for field in ("name", "version", "api_version", "plugin_type", "description"):
         expected = str(entry.get(field, ""))
         observed = str(getattr(actual, field, ""))
         if observed != expected:

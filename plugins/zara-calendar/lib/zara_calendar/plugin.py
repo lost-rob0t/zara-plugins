@@ -23,7 +23,7 @@ class ZaraCalendarPlugin(ServicePlugin):
         name="zara-calendar",
         version=PLUGIN_VERSION,
         api_version="1",
-        description="Provider-neutral calendar search, free-busy, scheduling, and verified mutations",
+        description="Provider-neutral calendar search, free-busy, conflict reasoning, and verified mutations",
     )
 
     def __init__(self, backend=None) -> None:
