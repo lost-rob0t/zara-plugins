@@ -339,7 +339,14 @@ class ZaraDiscordBot(discord.Client):
         )
 
     def run_gateway(self, token: str, _stop_event: threading.Event) -> None:
-        self.run(token, log_handler=None)
+        try:
+            self.run(token, log_handler=None)
+        except discord.PrivilegedIntentsRequired as error:
+            raise RuntimeError(
+                "Discord rejected the requested Message Content privileged intent; "
+                "enable Message Content Intent for this bot in the Discord Developer "
+                "Portal or disable random inspection and restart Zara"
+            ) from error
 
     def request_close(self) -> None:
         if self._gateway_loop is not None and not self._gateway_loop.is_closed():
