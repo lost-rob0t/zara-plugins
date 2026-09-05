@@ -9,6 +9,7 @@ from langchain_core.tools import StructuredTool
 from zara.plugins import PluginMetadata, ServicePlugin
 
 from .domain import PrologRLMBridge, RepositoryInspector
+from .spec_compile import catalog_spec, compile_spec
 from .worktree import add_detached_worktree
 
 
@@ -127,18 +128,20 @@ class ZaraCodingPlugin(ServicePlugin):
             StructuredTool.from_function(
                 func=self.spec_catalog,
                 name="coding.spec.catalog",
-                description=(
-                    "Return Prolog-RLM's canonical closed SPEC structural vocabulary and the assertion "
-                    "kinds currently admitted by this bridge."
-                ),
+                description="Return Prolog-RLM's closed SPEC vocabulary and zara-coding's fixed trusted assertion catalog.",
             ),
             StructuredTool.from_function(
                 func=self.normalize_spec,
                 name="coding.spec.normalize",
                 description=(
                     "Normalize one closed declarative SPEC source through Prolog-RLM and return its "
-                    "canonical outcome without planning or mutation."
+                    "canonical outcome without validation, freezing, planning or mutation."
                 ),
+            ),
+            StructuredTool.from_function(
+                func=self.compile_spec,
+                name="coding.spec.compile",
+                description="Validate and freeze one closed SPEC through zara-coding's fixed trusted Prolog-RLM assertion registry.",
             ),
         )
 
@@ -235,12 +238,14 @@ class ZaraCodingPlugin(ServicePlugin):
         )
 
     def spec_catalog(self) -> str:
-        bridge = self._require_prolog_rlm()
-        return json.dumps(bridge.spec_catalog(), sort_keys=True)
+        return json.dumps(catalog_spec(self._require_prolog_rlm()), sort_keys=True)
 
     def normalize_spec(self, source: str) -> str:
         bridge = self._require_prolog_rlm()
         return json.dumps(bridge.normalize_spec(source), sort_keys=True)
+
+    def compile_spec(self, source: str) -> str:
+        return json.dumps(compile_spec(self._require_prolog_rlm(), source), sort_keys=True)
 
     def _require_inspector(self) -> RepositoryInspector:
         if self.inspector is None:
