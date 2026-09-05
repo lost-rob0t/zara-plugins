@@ -5,11 +5,25 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+
+try:
+    from .zara_compat_runtime import (
+        CompatibilityRuntime,
+        exercise_service_lifecycle,
+        fake_dependency_environment,
+        temporary_runtime_environment,
+    )
+except ImportError:
+    from zara_compat_runtime import (
+        CompatibilityRuntime,
+        exercise_service_lifecycle,
+        fake_dependency_environment,
+        temporary_runtime_environment,
+    )
 
 
 class CompatibilityError(RuntimeError):
@@ -86,11 +100,7 @@ def check_registry(root: Path, zara_source: Path) -> list[str]:
 
     failures: list[str] = []
     with tempfile.TemporaryDirectory(prefix="zara-plugin-compat-") as temporary_home:
-        previous_home = os.environ.get("HOME")
-        previous_xdg = os.environ.get("XDG_CONFIG_HOME")
-        os.environ["HOME"] = temporary_home
-        os.environ["XDG_CONFIG_HOME"] = str(Path(temporary_home) / ".config")
-        try:
+        with temporary_runtime_environment(Path(temporary_home)):
             for entry in entries:
                 name = str(entry.get("name", "?"))
                 if str(entry.get("api_version", "")) != api_version:
@@ -125,6 +135,8 @@ def check_registry(root: Path, zara_source: Path) -> list[str]:
                             raise CompatibilityError(
                                 f"tools() returned non-BaseTool values: {', '.join(invalid)}"
                             )
+                        with fake_dependency_environment(name):
+                            exercise_service_lifecycle(instance, CompatibilityRuntime(name))
                     else:
                         register_tools = getattr(module, "register_tools", None)
                         register_skills = getattr(module, "register_skills", None)
@@ -145,15 +157,6 @@ def check_registry(root: Path, zara_source: Path) -> list[str]:
                                 )
                 except Exception as error:
                     failures.append(f"{name}: {type(error).__name__}: {error}")
-        finally:
-            if previous_home is None:
-                os.environ.pop("HOME", None)
-            else:
-                os.environ["HOME"] = previous_home
-            if previous_xdg is None:
-                os.environ.pop("XDG_CONFIG_HOME", None)
-            else:
-                os.environ["XDG_CONFIG_HOME"] = previous_xdg
     return failures
 
 
