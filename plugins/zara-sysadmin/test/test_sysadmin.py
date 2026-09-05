@@ -22,15 +22,21 @@ class FakeSystemBackend:
         self.dns = {"resolver_configured": True, "upstream_reachable": False}
         self.generation = 42
         self.verify_restart = True
+        self.accept_service_actions = True
 
     def service_status(self, unit):
         return dict(self.services.get(unit, {"active": False, "result": "not-found", "substate": "dead"}))
 
     def service_action(self, unit, action):
         before = self.service_status(unit)
-        if action == "restart" and unit in self.services and self.verify_restart:
+        if self.accept_service_actions and action == "restart" and unit in self.services and self.verify_restart:
             self.services[unit] = {"active": True, "result": "success", "substate": "running"}
-        return {"accepted": True, "unit": unit, "action": action, "before": before}
+        return {
+            "accepted": self.accept_service_actions,
+            "unit": unit,
+            "action": action,
+            "before": before,
+        }
 
     def journal(self, unit, limit):
         return list(self.journals.get(unit, []))[-limit:]
@@ -96,6 +102,18 @@ class SysadminExpertTest(unittest.TestCase):
         self.assertTrue(failed["accepted"])
         self.assertFalse(failed["verified"])
         self.assertEqual(failed["status"], "verification_failed")
+
+    def test_rejected_mutation_cannot_be_verified_by_coincidental_post_state(self):
+        self.backend.services["demo.service"] = {
+            "active": True,
+            "result": "success",
+            "substate": "running",
+        }
+        self.backend.accept_service_actions = False
+        result = self.expert.service_action("demo.service", "restart")
+        self.assertFalse(result["accepted"])
+        self.assertFalse(result["verified"])
+        self.assertEqual(result["status"], "verification_failed")
 
     def test_mutation_action_and_log_limits_are_allowlisted_and_bounded(self):
         with self.assertRaises(SysadminError):
