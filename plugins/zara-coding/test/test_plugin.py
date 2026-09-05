@@ -74,6 +74,7 @@ class CodingPluginTests(unittest.TestCase):
                 "coding.spec.normalize",
                 "coding.spec.compile",
                 "coding.spec.verify-repository",
+                "coding.spec.check-repository",
             },
         )
         mutating = {
@@ -125,6 +126,8 @@ class CodingPluginTests(unittest.TestCase):
             plugin.compile_spec("spec([]).")
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.verify_repository_spec("/", "ok(frozen_spec{})")
+        with self.assertRaisesRegex(RuntimeError, "Prolog-RLM"):
+            plugin.check_repository_spec("/", "spec([subject(x)]).")
 
     @patch("zara_coding.plugin.catalog_spec")
     def test_spec_catalog_returns_fixed_trusted_registry_catalog(self, catalog):
