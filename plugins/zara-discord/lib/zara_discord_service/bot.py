@@ -62,10 +62,17 @@ def spontaneous_reply_prompt(display_name: str, content: str) -> str:
 
 
 class ZaraDiscordBot(discord.Client):
-    def __init__(self, controller, policies: PolicyStore) -> None:
+    def __init__(
+        self,
+        controller,
+        policies: PolicyStore,
+        *,
+        message_content: bool = False,
+    ) -> None:
         intents = discord.Intents.none()
         intents.guilds = True
         intents.messages = True
+        intents.message_content = bool(message_content)
         super().__init__(intents=intents)
         self.controller = controller
         self.policies = policies
