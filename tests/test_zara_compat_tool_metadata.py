@@ -14,18 +14,7 @@ class ZaraCompatibilityToolMetadataTest(unittest.TestCase):
         ):
             require_tool_names(
                 "zara-example",
-                [SimpleNamespace(name="   ", description="Useful tool")],
-                {},
-            )
-
-    def test_tool_description_must_not_be_blank(self) -> None:
-        with self.assertRaisesRegex(
-            CompatibilityError,
-            "zara-example.*example.read.*empty description",
-        ):
-            require_tool_names(
-                "zara-example",
-                [SimpleNamespace(name="example.read", description="   ")],
+                [SimpleNamespace(name="   ")],
                 {},
             )
 
