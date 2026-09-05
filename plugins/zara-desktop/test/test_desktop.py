@@ -19,9 +19,9 @@ class FakeBackend:
     def capabilities(self):
         return {"launch": True, "windows": True, "workspaces": True, "clipboard": True, "screenshot": False}
 
-    def launch(self, app, args):
-        self.calls.append(("launch", app, list(args)))
-        return {"pid": 42, "app": app}
+    def launch(self, argv):
+        self.calls.append(("launch", list(argv)))
+        return {"pid": 42, "argv0": argv[0]}
 
     def list_windows(self):
         return [{"id": "w1", "title": "Editor", "app": "emacs", "focused": True}]
@@ -59,19 +59,24 @@ class FakeBackend:
 class DesktopControllerTest(unittest.TestCase):
     def setUp(self):
         self.backend = FakeBackend()
-        self.desktop = DesktopController(self.backend, max_text_bytes=16, max_events=4)
+        self.desktop = DesktopController(
+            self.backend,
+            applications={"editor": ["emacsclient", "--create-frame"]},
+            max_text_bytes=16,
+            max_events=4,
+        )
 
     def test_capabilities_are_explicit(self):
         result = self.desktop.status()
         self.assertEqual(result["backend"], "fake")
         self.assertFalse(result["capabilities"]["screenshot"])
 
-    def test_launch_is_typed_not_shell(self):
-        result = self.desktop.launch("emacs", ["--debug-init"])
+    def test_launch_resolves_configured_alias_not_model_command(self):
+        result = self.desktop.launch("editor")
         self.assertEqual(result["observed"]["pid"], 42)
-        self.assertEqual(self.backend.calls[0], ("launch", "emacs", ["--debug-init"]))
-        with self.assertRaises(DesktopError):
-            self.desktop.launch("sh -c touch /tmp/pwned", [])
+        self.assertEqual(self.backend.calls[0], ("launch", ["emacsclient", "--create-frame"]))
+        with self.assertRaisesRegex(DesktopError, "unknown application"):
+            self.desktop.launch("sh")
 
     def test_windows_and_workspaces_return_observed_state(self):
         self.assertTrue(self.desktop.windows()["windows"][0]["focused"])
