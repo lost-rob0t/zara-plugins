@@ -104,6 +104,15 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "between 0 and 1"):
             store.set_random_reply_chance(10, 1.01)
 
+    def test_message_content_is_requested_only_for_explicit_random_mode(self):
+        store = PolicyStore(self.directory)
+
+        self.assertFalse(store.requires_message_content())
+        store.set_random_mode(10, True)
+        self.assertTrue(store.requires_message_content())
+        store.set_random_mode(10, False)
+        self.assertFalse(store.requires_message_content())
+
     def test_old_settings_without_random_fields_load_with_defaults(self):
         self.directory.joinpath("settings.json").write_text(
             json.dumps(

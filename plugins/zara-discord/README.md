@@ -33,20 +33,28 @@ set through Discord: the bot must authenticate before Discord can deliver a
 slash command. Do not commit or paste it into this repository.
 
 Invite the bot with the `bot` and `applications.commands` scopes and grant it
-View Channels, Send Messages, and Read Message History. The plugin does not
-request Discord's privileged Message Content intent. Mentioned messages are
-available normally. Random/inspection-mode turns explicitly include
-`content_available=false` when the privileged intent is unavailable and Zara
-is told that only metadata-level reasoning is valid; it must not claim it
-inspected the body. When content is available, inspection context instead marks
-`content_available=true` and includes the body. The `/zara ask` command is
-available in both servers and DMs.
+View Channels, Send Messages, and Read Message History. Message Content remains
+off by default. Mentioned messages and `/zara ask` work without the privileged
+intent.
 
-Discord's Message Content intent is privileged. Enabling body inspection in a
-future opt-in policy requires both an explicit plugin-side request and the
-corresponding toggle/approval in the Discord Developer Portal. The current
-plugin remains metadata-only for ordinary random/inspection messages instead
-of silently escalating that privilege.
+Random/inspection mode is the explicit opt-in boundary for ordinary message
+bodies. `/random on` persists that opt-in for the guild. To inspect message
+bodies, enable **Message Content Intent** for the bot in the Discord Developer
+Portal and restart Zara. On startup, the plugin requests Message Content only
+when at least one persisted guild has random mode enabled. If no guild opts in,
+the privileged intent is not requested.
+
+Until restart, or whenever Discord does not provide the privileged intent,
+inspection turns explicitly include `content_available=false` and instruct Zara
+that only metadata-level reasoning is valid. The plugin must not claim it read
+the message body. When the intent is active, inspection context marks
+`content_available=true` and includes the available body. If Discord rejects a
+requested privileged intent, the gateway fails clearly with Developer Portal
+recovery instructions instead of pretending inspection succeeded.
+
+Disabling random mode removes that guild's opt-in. If every guild has random
+mode disabled, the next Zara restart returns to the non-privileged gateway
+configuration.
 
 Restart Zara after installing so its service-plugin host discovers the entry.
 Slash commands are synchronized when the bot connects.
@@ -70,8 +78,7 @@ conversations. Oldest entries are evicted first, oversized entries are clipped,
 and separate users/channels never share history. The current message is outside
 the history budget, so a long new request cannot evict itself before
 submission. The history is deliberately process-local and resets when the Zara
-service restarts; it does not scrape arbitrary channel backlog and therefore
-does not require Discord's privileged Message Content intent.
+service restarts; it does not scrape arbitrary channel backlog.
 
 ## Discord setup commands
 
@@ -100,10 +107,14 @@ their threads; `/zara channels clear` returns to all channels. These settings
 are stored atomically in `settings.json` with mode `0600`.
 
 Random mode is disabled by default. `/random on` enables spontaneous replies
-for the current server with a default 5% chance per eligible non-bot message.
-`/random chance` changes that probability. Access-mode and channel rules still
-apply, so random mode never bypasses the configured policy. Random responses
-use Discord replies and do not mention the author.
+for the current server with a default 5% chance per eligible non-bot message
+and records the Message Content opt-in described above. When the current
+process did not start with that intent, the command explicitly tells the
+operator to enable the Developer Portal toggle and restart Zara; until then,
+inspection remains metadata-only. `/random chance` changes the probability.
+Access-mode and channel rules still apply, so random mode never bypasses the
+configured policy. Random responses use Discord replies and do not mention the
+author.
 
 Direct messages are open while every server is in open mode. Once any server
 uses restricted mode, a direct-message sender must be authorized in at least

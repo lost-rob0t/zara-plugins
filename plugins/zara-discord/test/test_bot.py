@@ -73,6 +73,15 @@ class BotTests(unittest.TestCase):
         self.assertTrue(self.bot.intents.messages)
         self.assertFalse(self.bot.intents.message_content)
 
+    def test_explicit_opt_in_requests_message_content_intent(self):
+        bot = ZaraDiscordBot(
+            self.controller,
+            PolicyStore(Path(self.temporary.name)),
+            message_content=True,
+        )
+
+        self.assertTrue(bot.intents.message_content)
+
     def test_registers_talk_setup_and_random_slash_commands(self):
         root = self.bot.tree.get_command("zara")
         random_group = self.bot.tree.get_command("random")

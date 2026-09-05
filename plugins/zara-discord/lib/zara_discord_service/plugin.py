@@ -27,7 +27,12 @@ class ZaraDiscordPlugin:
         policies = PolicyStore(directory)
         controller = ConversationController(runtime)
         self._subscription = runtime.subscribe(maxsize=128)
-        self._bot = DiscordClient(controller, policies)
+        message_content_requested = policies.requires_message_content()
+        self._bot = DiscordClient(
+            controller,
+            policies,
+            message_content=message_content_requested,
+        )
         if not _message_content_enabled(self._bot):
             logger.warning(
                 "Discord Message Content intent is disabled; ordinary-message "

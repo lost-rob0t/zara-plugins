@@ -62,10 +62,17 @@ def spontaneous_reply_prompt(display_name: str, content: str) -> str:
 
 
 class ZaraDiscordBot(discord.Client):
-    def __init__(self, controller, policies: PolicyStore) -> None:
+    def __init__(
+        self,
+        controller,
+        policies: PolicyStore,
+        *,
+        message_content: bool = False,
+    ) -> None:
         intents = discord.Intents.none()
         intents.guilds = True
         intents.messages = True
+        intents.message_content = bool(message_content)
         super().__init__(intents=intents)
         self.controller = controller
         self.policies = policies
@@ -227,10 +234,17 @@ class ZaraDiscordBot(discord.Client):
                 return
             self.policies.set_random_mode(interaction.guild_id, True)
             chance = self.policies.policy(interaction.guild_id).random_reply_chance * 100
-            await interaction.response.send_message(
-                f"Random replies are **on** ({chance:g}% chance per eligible message).",
-                ephemeral=True,
+            message = (
+                f"Random replies are **on** ({chance:g}% chance per eligible message)."
             )
+            if not self.intents.message_content:
+                message += (
+                    " Restart Zara to request Discord's privileged Message Content "
+                    "intent after enabling Message Content Intent for this bot in the "
+                    "Discord Developer Portal. Until restart, inspection remains "
+                    "metadata-only."
+                )
+            await interaction.response.send_message(message, ephemeral=True)
 
         @random_group.command(name="off", description="Disable spontaneous Zara replies")
         @app_commands.guild_only()
@@ -332,7 +346,14 @@ class ZaraDiscordBot(discord.Client):
         )
 
     def run_gateway(self, token: str, _stop_event: threading.Event) -> None:
-        self.run(token, log_handler=None)
+        try:
+            self.run(token, log_handler=None)
+        except discord.PrivilegedIntentsRequired as error:
+            raise RuntimeError(
+                "Discord rejected the requested Message Content privileged intent; "
+                "enable Message Content Intent for this bot in the Discord Developer "
+                "Portal or disable random inspection and restart Zara"
+            ) from error
 
     def request_close(self) -> None:
         if self._gateway_loop is not None and not self._gateway_loop.is_closed():
