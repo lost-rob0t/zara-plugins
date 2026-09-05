@@ -70,7 +70,7 @@ class ContactsDomainTest(unittest.TestCase):
         self.contacts = ContactsDomain(self.backend, max_results=20)
 
     def test_search_preserves_aliases_addresses_handles_and_provenance(self):
-        result = self.contacts.search("Example")
+        result = self.contacts.search("aexample")
         self.assertEqual(len(result), 1)
         contact = result[0]
         self.assertEqual(contact["contact_id"], "p1")
