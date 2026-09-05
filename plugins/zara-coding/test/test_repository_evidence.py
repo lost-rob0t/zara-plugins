@@ -29,6 +29,7 @@ class RepositoryEvidenceTests(unittest.TestCase):
             evidence["values"],
             {
                 "repository_head": {"root": "/srv/demo", "head": "a" * 40},
+                "repository_branch": {"root": "/srv/demo", "branch": "main"},
                 "repository_clean": {"root": "/srv/demo", "dirty": False},
             },
         )
@@ -37,11 +38,13 @@ class RepositoryEvidenceTests(unittest.TestCase):
 
     def test_rejects_incomplete_or_invalid_snapshot(self):
         with self.assertRaisesRegex(ValueError, "root"):
-            build_repository_evidence({"head": "a" * 40, "dirty": False})
+            build_repository_evidence({"head": "a" * 40, "branch": "main", "dirty": False})
         with self.assertRaisesRegex(ValueError, "head"):
-            build_repository_evidence({"root": "/srv/demo", "head": "short", "dirty": False})
+            build_repository_evidence({"root": "/srv/demo", "head": "short", "branch": "main", "dirty": False})
+        with self.assertRaisesRegex(ValueError, "branch"):
+            build_repository_evidence({"root": "/srv/demo", "head": "a" * 40, "dirty": False})
         with self.assertRaisesRegex(ValueError, "dirty"):
-            build_repository_evidence({"root": "/srv/demo", "head": "a" * 40, "dirty": "no"})
+            build_repository_evidence({"root": "/srv/demo", "head": "a" * 40, "branch": "main", "dirty": "no"})
 
 
 if __name__ == "__main__":
