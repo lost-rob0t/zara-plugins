@@ -52,7 +52,7 @@ def create_plugin():
 
     metadata = PluginMetadata(
         name="zara-discord",
-        version="0.2.0",
+        version="0.2.1",
         api_version="1",
         description="Talk to Zara through Discord with access controls and random replies.",
     )
