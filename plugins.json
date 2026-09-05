@@ -71,7 +71,7 @@
       "plugin_type": "service",
       "description": "Typed GitHub PR, issue, check, review, and verified merge operations",
       "path": "plugins/zara-github",
-      "entrypoint": "zara-plugin/zara_github.py",
+      "entrypoint": "zara-plugin/zara_github_entrypoint.py",
       "docs": "plugins/zara-github/README.md",
       "license": "GPL-3.0-or-later",
       "tags": ["github", "pull-requests", "issues", "checks", "reviews"],
