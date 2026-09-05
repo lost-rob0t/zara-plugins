@@ -150,6 +150,11 @@ class ZaraCodingPlugin(ServicePlugin):
                 name="coding.spec.verify-repository",
                 description="Reconcile one frozen SPEC against a fresh bounded repository snapshot using Prolog-RLM's pure verifier.",
             ),
+            StructuredTool.from_function(
+                func=self.check_repository_spec,
+                name="coding.spec.check-repository",
+                description="Compile one declarative SPEC and, only if freezing succeeds, verify it against the current allowed repository state.",
+            ),
         )
 
     def status(self) -> str:
@@ -264,6 +269,18 @@ class ZaraCodingPlugin(ServicePlugin):
         snapshot = inspector.inspect(Path(path))
         evidence = build_repository_evidence(snapshot)
         return json.dumps(verify_repository_spec_pure(bridge, frozen_spec, evidence), sort_keys=True)
+
+    def check_repository_spec(self, path: str, source: str) -> str:
+        if not isinstance(path, str) or not path:
+            raise ValueError("path must be a non-empty string")
+        if not isinstance(source, str) or not source.strip():
+            raise ValueError("source must be a non-empty string")
+        bridge = self._require_prolog_rlm()
+        compiled = compile_spec(bridge, source)
+        if compiled.get("status") != "ok":
+            return json.dumps({"compile": compiled, "verification": None}, sort_keys=True)
+        verification = json.loads(self.verify_repository_spec(path, compiled["outcome"]))
+        return json.dumps({"compile": compiled, "verification": verification}, sort_keys=True)
 
     def _require_inspector(self) -> RepositoryInspector:
         if self.inspector is None:
