@@ -62,6 +62,8 @@ class CodingPluginTests(unittest.TestCase):
             set(tools),
             {
                 "coding.status",
+                "coding.repo.list",
+                "coding.repo.status",
                 "coding.repo.inspect",
                 "coding.git.diff",
                 "coding.git.log",
@@ -80,6 +82,10 @@ class CodingPluginTests(unittest.TestCase):
         self.assertEqual(status["status"], "degraded")
         self.assertEqual(status["repository"], {"status": "unavailable", "reason": "allowed-roots-not-configured"})
         self.assertEqual(status["prolog_rlm"], {"status": "unavailable", "reason": "prolog-rlm-checkout-not-configured"})
+        with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
+            plugin.list_repositories()
+        with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
+            plugin.repo_status("/")
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.inspect_repo("/")
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
@@ -118,8 +124,22 @@ class CodingPluginTests(unittest.TestCase):
                 plugin.inspect_repo(temporary)
 
     @patch("zara_coding.plugin.shutil.which", return_value="/usr/bin/git")
+    @patch("zara_coding.plugin.RepositoryInspector.list_repositories")
+    def test_repo_list_returns_bounded_structured_discovery(self, list_repositories, _which):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = root / "repo"
+            repo.mkdir()
+            list_repositories.return_value = [{"root": str(repo.resolve())}]
+            plugin = ZaraCodingPlugin()
+            plugin.start(Runtime({"plugins": {"zara-coding": {"allowed_roots": [str(root)]}}}))
+            evidence = json.loads(plugin.list_repositories(limit=7))
+            self.assertEqual(evidence, [{"root": str(repo.resolve())}])
+            list_repositories.assert_called_once_with(limit=7)
+
+    @patch("zara_coding.plugin.shutil.which", return_value="/usr/bin/git")
     @patch("zara_coding.plugin.RepositoryInspector.inspect")
-    def test_configured_plugin_returns_structured_repo_evidence(self, inspect, _which):
+    def test_repo_status_and_inspect_share_structured_repo_evidence(self, inspect, _which):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo = root / "repo"
@@ -133,11 +153,11 @@ class CodingPluginTests(unittest.TestCase):
             }
             plugin = ZaraCodingPlugin()
             plugin.start(Runtime({"plugins": {"zara-coding": {"allowed_roots": [str(root)]}}}))
+            status = json.loads(plugin.repo_status(str(repo)))
             evidence = json.loads(plugin.inspect_repo(str(repo)))
-            self.assertEqual(evidence["root"], str(repo.resolve()))
-            self.assertEqual(evidence["head"], "b" * 40)
-            self.assertFalse(evidence["dirty"])
-            inspect.assert_called_once_with(repo)
+            self.assertEqual(status, evidence)
+            self.assertEqual(status["head"], "b" * 40)
+            self.assertEqual(inspect.call_count, 2)
 
     @patch("zara_coding.plugin.shutil.which", return_value="/usr/bin/git")
     @patch("zara_coding.plugin.RepositoryInspector.diff")
