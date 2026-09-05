@@ -29,13 +29,7 @@ class RepositoryInspector:
         self._runner = runner or subprocess.run
 
     def inspect(self, path: Path) -> dict[str, object]:
-        candidate = Path(path).expanduser().resolve()
-        if not candidate.is_dir():
-            raise CodingError("repository path must be an existing directory")
-        self._require_allowed(candidate)
-        root_text = self._git(candidate, "rev-parse", "--show-toplevel", repository_error=True).strip()
-        root = Path(root_text).resolve()
-        self._require_allowed(root)
+        root = self._repository_root(path)
         head = self._git(root, "rev-parse", "HEAD").strip()
         branch_result = self._run(root, "symbolic-ref", "--short", "-q", "HEAD", check=False)
         branch = branch_result.stdout.strip() if branch_result.returncode == 0 else "DETACHED"
@@ -49,6 +43,45 @@ class RepositoryInspector:
             "dirty": bool(changed_paths),
             "changed_paths": changed_paths,
         }
+
+    def log(self, path: Path, *, limit: int = 20) -> list[dict[str, object]]:
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
+            raise ValueError("limit must be an integer between 1 and 100")
+        root = self._repository_root(path)
+        output = self._git(
+            root,
+            "log",
+            f"--max-count={limit}",
+            "--format=%H%x09%P%x09%an%x09%aI%x09%s",
+        )
+        history = []
+        for line in output.splitlines():
+            if not line:
+                continue
+            fields = line.split("\t", 4)
+            if len(fields) != 5:
+                raise CodingError("git log returned malformed structured output")
+            commit, parents, author, authored_at, subject = fields
+            history.append(
+                {
+                    "commit": commit,
+                    "parents": parents.split() if parents else [],
+                    "author": author,
+                    "authored_at": authored_at,
+                    "subject": subject,
+                }
+            )
+        return history
+
+    def _repository_root(self, path: Path) -> Path:
+        candidate = Path(path).expanduser().resolve()
+        if not candidate.is_dir():
+            raise CodingError("repository path must be an existing directory")
+        self._require_allowed(candidate)
+        root_text = self._git(candidate, "rev-parse", "--show-toplevel", repository_error=True).strip()
+        root = Path(root_text).resolve()
+        self._require_allowed(root)
+        return root
 
     def _require_allowed(self, path: Path) -> None:
         if not any(path == root or root in path.parents for root in self._roots):
