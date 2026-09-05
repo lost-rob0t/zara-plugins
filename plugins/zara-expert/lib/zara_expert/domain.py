@@ -13,7 +13,7 @@ class ExpertError(RuntimeError):
 
 _NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 _TERM_RE = re.compile(r"^[a-z][a-zA-Z0-9_]*(?:\([^\n;:.]*\))?$")
-_GROUND_FACT_RE = re.compile(r"^[a-z][a-zA-Z0-9_]*(?:\([^\n;:,.A-Z_]*?(?:,[^\n;:.A-Z_]*)*\))?$")
+_GROUND_FACT_RE = re.compile(r"^[a-z][a-z0-9_]*(?:\([a-z0-9_' -]+(?:,[a-z0-9_' -]+)*\))?$")
 _FORBIDDEN = (
     ":-",
     ";",
