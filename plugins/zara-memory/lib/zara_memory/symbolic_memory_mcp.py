@@ -16,6 +16,7 @@ SUPPORTED_SCOPES = frozenset({"project", "session", "global"})
 SUPPORTED_KINDS = frozenset({"auto", "text", "fact", "episode", "preference", "procedure"})
 SUPPORTED_RETENTION = frozenset({"long_term", "short_term", "session", "durable"})
 PROTOCOL_VERSION = "2026-07-28"
+SAFE_ENV_KEYS = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR")
 
 
 class SymbolicMemoryMCP:
@@ -92,12 +93,12 @@ class SymbolicMemoryMCP:
                 "arguments": arguments,
                 "_meta": {
                     "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION,
-                    "io.modelcontextprotocol/clientInfo": {"name": "zara-memory", "version": "0.1.0"},
+                    "io.modelcontextprotocol/clientInfo": {"name": "zara-memory", "version": "0.2.0"},
                     "io.modelcontextprotocol/clientCapabilities": {},
                 },
             },
         }
-        env = os.environ.copy()
+        env = {key: os.environ[key] for key in SAFE_ENV_KEYS if key in os.environ}
         env.update(
             {
                 "SYMBOLIC_MEMORY_DB": str(self.database),
@@ -109,8 +110,6 @@ class SymbolicMemoryMCP:
         )
         if self.project_remote:
             env["SYMBOLIC_MEMORY_PROJECT_REMOTE"] = self.project_remote
-        else:
-            env.pop("SYMBOLIC_MEMORY_PROJECT_REMOTE", None)
         try:
             completed = self._runner(
                 [self.executable],
