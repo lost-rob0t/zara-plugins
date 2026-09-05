@@ -119,14 +119,15 @@ def _repository_payload(evidence: Mapping[str, object]) -> dict[str, object]:
         raise CodingError("repository evidence branch does not match snapshot")
     if clean_value.get("root") != root:
         raise CodingError("repository evidence dirty state does not match snapshot")
+    if not isinstance(root, str) or not root:
+        raise CodingError("repository evidence contains invalid snapshot values")
     if (
-        not isinstance(root, str)
-        or not root
-        or not isinstance(head, str)
-        or not isinstance(branch, str)
-        or not branch
-        or not isinstance(dirty, bool)
+        not isinstance(head, str)
+        or len(head) not in (40, 64)
+        or any(char not in "0123456789abcdefABCDEF" for char in head)
     ):
+        raise CodingError("repository evidence head must be a full Git object ID")
+    if not isinstance(branch, str) or not branch or not isinstance(dirty, bool):
         raise CodingError("repository evidence contains invalid snapshot values")
 
     changed_paths = [_changed_path_payload(value, root) for value in changed_path_values]
