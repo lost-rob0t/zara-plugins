@@ -9,6 +9,7 @@ from langchain_core.tools import StructuredTool
 from zara.plugins import PluginMetadata, ServicePlugin
 
 from .domain import PrologRLMBridge, RepositoryInspector
+from .worktree import add_detached_worktree
 
 
 PLUGIN_VERSION = "0.1.0"
@@ -118,6 +119,12 @@ class ZaraCodingPlugin(ServicePlugin):
                 description="Return bounded structured linked-worktree evidence for an allowed repository.",
             ),
             StructuredTool.from_function(
+                func=self.git_worktree_add_detached,
+                name="coding.git.worktree.add-detached",
+                description="Create one detached linked worktree at an exact commit inside configured repository boundaries.",
+                metadata=APPROVAL_METADATA,
+            ),
+            StructuredTool.from_function(
                 func=self.spec_catalog,
                 name="coding.spec.catalog",
                 description=(
@@ -213,6 +220,19 @@ class ZaraCodingPlugin(ServicePlugin):
         if not isinstance(path, str) or not path:
             raise ValueError("path must be a non-empty string")
         return json.dumps(inspector.worktrees(Path(path), limit=limit), sort_keys=True)
+
+    def git_worktree_add_detached(self, path: str, target: str, expected_head: str) -> str:
+        inspector = self._require_inspector()
+        if not isinstance(path, str) or not path:
+            raise ValueError("path must be a non-empty string")
+        if not isinstance(target, str) or not target:
+            raise ValueError("target must be a non-empty string")
+        if not isinstance(expected_head, str) or not expected_head:
+            raise ValueError("expected_head must be a non-empty string")
+        return json.dumps(
+            add_detached_worktree(inspector, Path(path), Path(target), expected_head),
+            sort_keys=True,
+        )
 
     def spec_catalog(self) -> str:
         bridge = self._require_prolog_rlm()
