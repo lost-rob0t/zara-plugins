@@ -133,6 +133,8 @@ def _repository_payload(evidence: Mapping[str, object]) -> dict[str, object]:
         raise CodingError("repository evidence head must be a full Git object ID")
     if not isinstance(branch, str) or not branch or not isinstance(dirty, bool):
         raise CodingError("repository evidence contains invalid snapshot values")
+    if any(character in branch for character in ("\x00", "\n", "\r")):
+        raise CodingError("repository evidence branch must be single-line text")
 
     changed_paths = [_changed_path_payload(value, root) for value in changed_path_values]
     if dirty is not bool(changed_paths):
