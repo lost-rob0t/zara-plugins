@@ -178,11 +178,12 @@ class SysadminExpert:
         if not isinstance(result, dict):
             raise SysadminError("service backend returned invalid action evidence")
         after = self.service_status(unit)
+        accepted = bool(result.get("accepted"))
         expected_active = action in {"start", "restart"}
-        verified = bool(after.get("active")) is expected_active
+        verified = accepted and (bool(after.get("active")) is expected_active)
         return {
             "status": "verified" if verified else "verification_failed",
-            "accepted": bool(result.get("accepted")),
+            "accepted": accepted,
             "verified": verified,
             "action": action,
             "unit": unit,
