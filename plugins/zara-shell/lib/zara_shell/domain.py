@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import selectors
 import shutil
+import signal
 import subprocess
 import time
 from dataclasses import dataclass
@@ -62,6 +63,7 @@ class ShellRunner:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             shell=False,
+            start_new_session=True,
         )
         if process.stdin is not None:
             try:
@@ -171,6 +173,8 @@ class ShellRunner:
 
     @staticmethod
     def _kill(process: subprocess.Popen) -> None:
-        if process.poll() is None:
-            process.kill()
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
         process.wait()
