@@ -112,8 +112,13 @@ class RepositoryInspectorTests(unittest.TestCase):
                 {"path": "binary.dat", "additions": None, "deletions": None, "binary": True},
             ],
         )
-        argv, kwargs = self.calls[-1]
-        self.assertEqual(argv[-5:], ["diff", "--numstat", "--no-renames", "HEAD", "--"])
+        diff_calls = [
+            call
+            for call in self.calls
+            if call[0][-5:] == ["diff", "--numstat", "--no-renames", "HEAD", "--"]
+        ]
+        self.assertEqual(len(diff_calls), 1)
+        _, kwargs = diff_calls[0]
         self.assertFalse(kwargs["shell"])
 
     def test_diff_fails_closed_when_changed_file_count_exceeds_bound(self):
