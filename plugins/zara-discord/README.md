@@ -35,9 +35,18 @@ slash command. Do not commit or paste it into this repository.
 Invite the bot with the `bot` and `applications.commands` scopes and grant it
 View Channels, Send Messages, and Read Message History. The plugin does not
 request Discord's privileged Message Content intent. Mentioned messages are
-available normally; random-mode replies can still target an ordinary message,
-but they are intentionally content-independent when Discord withholds its
-message body. The `/zara ask` command is available in both servers and DMs.
+available normally. Random/inspection-mode turns explicitly include
+`content_available=false` when the privileged intent is unavailable and Zara
+is told that only metadata-level reasoning is valid; it must not claim it
+inspected the body. When content is available, inspection context instead marks
+`content_available=true` and includes the body. The `/zara ask` command is
+available in both servers and DMs.
+
+Discord's Message Content intent is privileged. Enabling body inspection in a
+future opt-in policy requires both an explicit plugin-side request and the
+corresponding toggle/approval in the Discord Developer Portal. The current
+plugin remains metadata-only for ordinary random/inspection messages instead
+of silently escalating that privilege.
 
 Restart Zara after installing so its service-plugin host discovers the entry.
 Slash commands are synchronized when the bot connects.
