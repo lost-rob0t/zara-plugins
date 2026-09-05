@@ -38,7 +38,7 @@ class QueueOpener:
         return FakeResponse(self.responses.pop(0))
 
 
-class GitHubClientMergeTest(unittest.TestCase):
+class GitHubClientTest(unittest.TestCase):
     def client(self, responses):
         opener = QueueOpener(responses)
         client = GitHubClient(
@@ -46,6 +46,62 @@ class GitHubClientMergeTest(unittest.TestCase):
             opener=opener,
         )
         return client, opener
+
+    def test_latest_prs_hydrates_current_provider_state(self):
+        client, _ = self.client(
+            [
+                {
+                    "items": [
+                        {
+                            "number": 55,
+                            "title": "Add GitHub provider",
+                            "repository_url": "https://api.github.com/repos/lost-rob0t/zara-plugins",
+                            "html_url": "https://github.com/lost-rob0t/zara-plugins/pull/55",
+                            "updated_at": "2026-09-05T07:22:22Z",
+                        }
+                    ]
+                },
+                {
+                    "number": 55,
+                    "title": "Add GitHub provider",
+                    "draft": False,
+                    "mergeable": True,
+                    "head": {"sha": "abc123"},
+                    "html_url": "https://github.com/lost-rob0t/zara-plugins/pull/55",
+                    "updated_at": "2026-09-05T07:22:22Z",
+                },
+                {
+                    "check_runs": [
+                        {
+                            "name": "CI",
+                            "status": "completed",
+                            "conclusion": "success",
+                            "head_sha": "abc123",
+                        }
+                    ]
+                },
+            ]
+        )
+
+        result = client.latest_prs(limit=1)
+
+        self.assertEqual(
+            result,
+            [
+                {
+                    "provider": "github",
+                    "repository": "lost-rob0t/zara-plugins",
+                    "number": 55,
+                    "title": "Add GitHub provider",
+                    "head_sha": "abc123",
+                    "draft": False,
+                    "mergeable": True,
+                    "checks": {"total": 1, "successful": 1, "pending": 0, "failed": 0},
+                    "updated_at": "2026-09-05T07:22:22Z",
+                    "url": "https://github.com/lost-rob0t/zara-plugins/pull/55",
+                }
+            ],
+        )
 
     def test_merge_rejects_pending_exact_head_checks_before_mutation(self):
         client, opener = self.client(
