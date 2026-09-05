@@ -17,20 +17,9 @@
       "entrypoint": "zara-plugin/zara_agent_zero.py",
       "docs": "plugins/zara-agent-zero/README.md",
       "license": "GPL-3.0-or-later",
-      "tags": [
-        "agent-zero",
-        "bridge",
-        "delegation",
-        "api"
-      ],
-      "install": {
-        "nix": "nix build github:lost-rob0t/zara-plugins#zara-agent-zero"
-      },
-      "nix": {
-        "flake": "github:lost-rob0t/zara-plugins",
-        "package": "zara-agent-zero",
-        "aggregate": "zara-plugins"
-      }
+      "tags": ["agent-zero", "bridge", "delegation", "api"],
+      "install": {"nix": "nix build github:lost-rob0t/zara-plugins#zara-agent-zero"},
+      "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-agent-zero", "aggregate": "zara-plugins"}
     },
     {
       "name": "zara-avatar",
@@ -42,23 +31,9 @@
       "entrypoint": "zara-plugin/zara_avatar.py",
       "docs": "plugins/zara-avatar/README.md",
       "license": "GPL-3.0-or-later",
-      "tags": [
-        "avatar",
-        "presentation",
-        "vrm",
-        "3d",
-        "renderer",
-        "lipsync"
-      ],
-      "install": {
-        "tool": "python3 plugins/zara-avatar/tools/zara-avatar install",
-        "nix": "nix run github:lost-rob0t/zara-plugins#zara-avatar -- install"
-      },
-      "nix": {
-        "flake": "github:lost-rob0t/zara-plugins",
-        "package": "zara-avatar",
-        "aggregate": "zara-plugins"
-      }
+      "tags": ["avatar", "presentation", "vrm", "3d", "renderer", "lipsync"],
+      "install": {"tool": "python3 plugins/zara-avatar/tools/zara-avatar install", "nix": "nix run github:lost-rob0t/zara-plugins#zara-avatar -- install"},
+      "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-avatar", "aggregate": "zara-plugins"}
     },
     {
       "name": "zara-discord",
@@ -70,26 +45,10 @@
       "entrypoint": "zara-plugin/zara_discord.py",
       "docs": "plugins/zara-discord/README.md",
       "license": "GPL-3.0-or-later",
-      "tags": [
-        "discord",
-        "chat",
-        "messaging",
-        "access-control",
-        "random-replies"
-      ],
-      "python_dependencies": [
-        "discordpy",
-        "audioop-lts"
-      ],
-      "install": {
-        "tool": "python3 plugins/zara-discord/tools/zara-discord install",
-        "nix": "nix run github:lost-rob0t/zara-plugins#zara-discord -- install"
-      },
-      "nix": {
-        "flake": "github:lost-rob0t/zara-plugins",
-        "package": "zara-discord",
-        "aggregate": "zara-plugins"
-      }
+      "tags": ["discord", "chat", "messaging", "access-control", "random-replies"],
+      "python_dependencies": ["discordpy", "audioop-lts"],
+      "install": {"tool": "python3 plugins/zara-discord/tools/zara-discord install", "nix": "nix run github:lost-rob0t/zara-plugins#zara-discord -- install"},
+      "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-discord", "aggregate": "zara-plugins"}
     },
     {
       "name": "zara-persona",
@@ -101,20 +60,23 @@
       "entrypoint": "zara-plugin/zara_persona.py",
       "docs": "plugins/zara-persona/README.md",
       "license": "GPL-3.0-or-later",
-      "tags": [
-        "persona",
-        "context",
-        "prolog",
-        "privacy"
-      ],
-      "install": {
-        "nix": "nix build github:lost-rob0t/zara-plugins#zara-persona"
-      },
-      "nix": {
-        "flake": "github:lost-rob0t/zara-plugins",
-        "package": "zara-persona",
-        "aggregate": "zara-plugins"
-      }
+      "tags": ["persona", "context", "prolog", "privacy"],
+      "install": {"nix": "nix build github:lost-rob0t/zara-plugins#zara-persona"},
+      "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-persona", "aggregate": "zara-plugins"}
+    },
+    {
+      "name": "zara-github",
+      "version": "0.1.0",
+      "api_version": "1",
+      "plugin_type": "service",
+      "description": "Typed GitHub PR, issue, check, review, and verified merge operations",
+      "path": "plugins/zara-github",
+      "entrypoint": "zara-plugin/zara_github_entrypoint.py",
+      "docs": "plugins/zara-github/README.md",
+      "license": "GPL-3.0-or-later",
+      "tags": ["github", "pull-requests", "issues", "checks", "reviews"],
+      "install": {"nix": "nix build github:lost-rob0t/zara-plugins#zara-github"},
+      "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-github", "aggregate": "zara-plugins"}
     },
     {
       "name": "zara-local-recall",
@@ -126,23 +88,9 @@
       "entrypoint": "zara-plugin/zara_local_recall.py",
       "docs": "plugins/zara-local-recall/README.md",
       "license": "GPL-3.0-or-later",
-      "tags": [
-        "local-recall",
-        "memory",
-        "activity-recall",
-        "screen-context",
-        "search",
-        "privacy"
-      ],
-      "install": {
-        "tool": "python3 plugins/zara-local-recall/tools/zara-local-recall install",
-        "nix": "nix run github:lost-rob0t/zara-plugins#zara-local-recall -- install"
-      },
-      "nix": {
-        "flake": "github:lost-rob0t/zara-plugins",
-        "package": "zara-local-recall",
-        "aggregate": "zara-plugins"
-      }
+      "tags": ["local-recall", "memory", "activity-recall", "screen-context", "search", "privacy"],
+      "install": {"tool": "python3 plugins/zara-local-recall/tools/zara-local-recall install", "nix": "nix run github:lost-rob0t/zara-plugins#zara-local-recall -- install"},
+      "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-local-recall", "aggregate": "zara-plugins"}
     },
     {
       "name": "zara-starintel-server",
@@ -154,22 +102,9 @@
       "entrypoint": "zara-plugin/zara_starintel_server_entrypoint.py",
       "docs": "plugins/zara-starintel-server/README.md",
       "license": "GPL-3.0-or-later",
-      "tags": [
-        "starintel",
-        "server",
-        "api",
-        "osint",
-        "documents",
-        "targets"
-      ],
-      "install": {
-        "nix": "nix build github:lost-rob0t/zara-plugins#zara-starintel-server"
-      },
-      "nix": {
-        "flake": "github:lost-rob0t/zara-plugins",
-        "package": "zara-starintel-server",
-        "aggregate": "zara-plugins"
-      }
+      "tags": ["starintel", "server", "api", "osint", "documents", "targets"],
+      "install": {"nix": "nix build github:lost-rob0t/zara-plugins#zara-starintel-server"},
+      "nix": {"flake": "github:lost-rob0t/zara-plugins", "package": "zara-starintel-server", "aggregate": "zara-plugins"}
     }
   ]
 }
