@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 from collections.abc import Mapping, Sequence
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from .domain import CodingError, PrologRLMBridge
 
@@ -152,6 +152,9 @@ def _changed_path_payload(value: object, root: str) -> str:
     path = value.get("path")
     if not isinstance(path, str) or not path or "\x00" in path:
         raise CodingError("repository evidence changed path must be non-empty text without NUL")
+    parsed = PurePosixPath(path)
+    if parsed.is_absolute() or ".." in parsed.parts:
+        raise CodingError("repository evidence changed path must stay repository-relative")
     return path
 
 
