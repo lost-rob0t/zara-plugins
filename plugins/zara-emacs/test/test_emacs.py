@@ -48,7 +48,9 @@ class EmacsClientTest(unittest.TestCase):
         self.assertTrue(result["acknowledged"])
         self.assertEqual(result["post_open"], {"request": "dictation", "started": False})
         expression = runner.calls[0][0][-1]
-        self.assertIn("org-roam-dailies-goto-date", expression)
+        self.assertIn("org-roam-dailies--capture", expression)
+        self.assertIn('(org-read-date nil t "2026-09-05")', expression)
+        self.assertNotIn("org-roam-dailies-goto-date", expression)
         self.assertNotIn("start-process-shell-command", expression)
 
     def test_magit_resolves_only_known_project_alias(self):
