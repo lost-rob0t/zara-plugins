@@ -62,9 +62,12 @@ class TimerDomain:
                 item = dict(raw)
                 item_id = item["id"]
                 if item["kind"] == "timer" and item["status"] == "running":
+                    now = self.clock.now()
                     saved_at = self._aware(item["saved_at"], "saved_at")
-                    elapsed = max(0.0, (self.clock.now() - saved_at).total_seconds())
+                    elapsed = max(0.0, (now - saved_at).total_seconds())
                     item["remaining"] = max(0.0, float(item["remaining"]) - elapsed)
+                    item["started_mono"] = self.clock.monotonic()
+                    item["saved_at"] = now.isoformat()
                 self._items[item_id] = item
         except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
             raise TimerError("timer state is invalid or unrecoverable") from error
