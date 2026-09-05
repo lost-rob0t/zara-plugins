@@ -75,6 +75,12 @@ class RepositoryInspector:
 
 
 class PrologRLMBridge:
+    SPEC_NORMALIZE_GOAL = (
+        "read_string(user_input,_,S),"
+        "rlm_spec_lang:spec_source_normalize(S,O),"
+        "write_canonical(O),nl,halt"
+    )
+
     def __init__(
         self,
         checkout: Path,
@@ -119,3 +125,36 @@ class PrologRLMBridge:
         if not line.startswith(prefix) or not line[len(prefix):].strip():
             return {"status": "unavailable", "reason": "prolog-rlm-invalid-readiness-output"}
         return {"status": "ready", "version": line[len(prefix):].strip()}
+
+    def normalize_spec(self, source: str) -> dict[str, str]:
+        if not isinstance(source, str) or not source.strip():
+            raise CodingError("SPEC source must be a non-empty string")
+        module = self.checkout / "prolog" / "rlm_spec_lang.pl"
+        if self._validate_checkout and not module.is_file():
+            raise CodingError("Prolog-RLM SPEC language module is unavailable")
+        argv = [
+            self.executable,
+            "-q",
+            "-s",
+            str(module),
+            "-g",
+            self.SPEC_NORMALIZE_GOAL,
+        ]
+        try:
+            result = self._runner(
+                argv,
+                input=source,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout_seconds,
+                shell=False,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as exc:
+            raise CodingError("Prolog-RLM SPEC normalization failed") from exc
+        lines = [line for line in result.stdout.splitlines() if line.strip()]
+        if not lines:
+            raise CodingError("Prolog-RLM SPEC normalization returned no outcome")
+        outcome = lines[-1].strip()
+        status = "ok" if outcome.startswith("ok(") else "rejected"
+        return {"status": status, "outcome": outcome}
