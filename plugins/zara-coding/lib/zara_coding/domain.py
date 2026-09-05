@@ -152,6 +152,18 @@ class RepositoryInspector:
             branches.append({"name": name, "commit": commit, "upstream": upstream})
         return branches
 
+    def create_branch(self, path: Path, name: str) -> dict[str, str]:
+        if not isinstance(name, str) or not name:
+            raise ValueError("name must be a non-empty string")
+        root = self._repository_root(path)
+        ref = f"refs/heads/{name}"
+        self._git(root, "check-ref-format", ref)
+        head = self._git(root, "rev-parse", "HEAD").strip()
+        if not head:
+            raise CodingError("git returned an empty HEAD")
+        self._git(root, "update-ref", ref, head, "0" * 40)
+        return {"branch": name, "head": head}
+
     def worktrees(self, path: Path, *, limit: int = 50) -> list[dict[str, object]]:
         limit = self._bounded_limit(limit)
         root = self._repository_root(path)
