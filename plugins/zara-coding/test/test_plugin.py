@@ -55,7 +55,10 @@ class CodingPluginTests(unittest.TestCase):
 
     def test_read_only_initial_surface_has_no_approval_bypass(self):
         tools = {tool.name: tool for tool in ZaraCodingPlugin().tools()}
-        self.assertEqual(set(tools), {"coding.status", "coding.repo.inspect", "coding.spec.normalize"})
+        self.assertEqual(
+            set(tools),
+            {"coding.status", "coding.repo.inspect", "coding.git.log", "coding.spec.normalize"},
+        )
         for tool in tools.values():
             self.assertFalse(bool((tool.metadata or {}).get("zara_requires_approval", False)))
 
@@ -68,6 +71,8 @@ class CodingPluginTests(unittest.TestCase):
         self.assertEqual(status["prolog_rlm"], {"status": "unavailable", "reason": "prolog-rlm-checkout-not-configured"})
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.inspect_repo("/")
+        with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
+            plugin.git_log("/")
         with self.assertRaisesRegex(RuntimeError, "Prolog-RLM"):
             plugin.normalize_spec("spec([]).")
 
@@ -109,6 +114,20 @@ class CodingPluginTests(unittest.TestCase):
             self.assertEqual(evidence["head"], "b" * 40)
             self.assertFalse(evidence["dirty"])
             inspect.assert_called_once_with(repo)
+
+    @patch("zara_coding.plugin.shutil.which", return_value="/usr/bin/git")
+    @patch("zara_coding.plugin.RepositoryInspector.log")
+    def test_git_log_returns_structured_history_with_explicit_bound(self, log, _which):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = root / "repo"
+            repo.mkdir()
+            log.return_value = [{"commit": "c" * 40, "parents": [], "subject": "initial"}]
+            plugin = ZaraCodingPlugin()
+            plugin.start(Runtime({"plugins": {"zara-coding": {"allowed_roots": [str(root)]}}}))
+            evidence = json.loads(plugin.git_log(str(repo), limit=7))
+            self.assertEqual(evidence[0]["commit"], "c" * 40)
+            log.assert_called_once_with(repo, limit=7)
 
 
 if __name__ == "__main__":
