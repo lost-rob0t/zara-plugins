@@ -31,9 +31,6 @@
                 map (dependency: packages.${dependency}) dependencies
               );
 
-          testDependenciesFor = entry:
-            map (dependency: pkgs.${dependency}) (entry.test_dependencies or [ ]);
-
           allPluginDependencies = pkgs.lib.unique (
             pkgs.lib.concatMap
               (entry: entry.python_dependencies or [ ])
@@ -214,7 +211,7 @@
               (entry: pkgs.lib.nameValuePair "${entry.name}-tests" (
                 pkgs.runCommand "zara-check-${entry.name}-tests"
                   {
-                    nativeBuildInputs = [ (pythonFor entry) ] ++ testDependenciesFor entry;
+                    nativeBuildInputs = [ (pythonFor entry) ];
                     src = self;
                   }
                   ''
