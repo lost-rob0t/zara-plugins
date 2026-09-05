@@ -11,7 +11,7 @@ from .client import AgentZeroClient
 from .config import AgentZeroConfig
 
 
-PLUGIN_VERSION = "0.1.0"
+PLUGIN_VERSION = "0.1.1"
 
 
 class ZaraAgentZeroPlugin(ServicePlugin):
@@ -38,20 +38,20 @@ class ZaraAgentZeroPlugin(ServicePlugin):
             StructuredTool.from_function(
                 func=self.agent_zero_status,
                 name="agent_zero_status",
-                description="Return Agent Zero connector protocol, version, auth state, and capabilities.",
+                description="Return Agent Zero native API configuration status without exposing the API key.",
             ),
             StructuredTool.from_function(
                 func=self.agent_zero_message,
                 name="agent_zero_message",
                 description=(
-                    "Send one task or message to Agent Zero. Reuse context_id from a prior result "
-                    "to continue the same Agent Zero conversation."
+                    "Send one task or message through Agent Zero's native /api/api_message API. "
+                    "Reuse context_id from a prior result to continue the same conversation."
                 ),
             ),
         )
 
     def agent_zero_status(self) -> str:
-        return json.dumps(self._client.capabilities(), ensure_ascii=False, sort_keys=True)
+        return json.dumps(self._client.status(), ensure_ascii=False, sort_keys=True)
 
     def agent_zero_message(
         self,
@@ -59,12 +59,14 @@ class ZaraAgentZeroPlugin(ServicePlugin):
         context_id: str = "",
         project_name: str = "",
         agent_profile: str = "",
+        lifetime_hours: float = 24.0,
     ) -> str:
         result = self._client.send_message(
             message,
             context_id=context_id,
             project_name=project_name,
             agent_profile=agent_profile,
+            lifetime_hours=lifetime_hours,
         )
         return json.dumps(result, ensure_ascii=False, sort_keys=True)
 

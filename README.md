@@ -12,7 +12,7 @@ bundled tool, with Nix, or (once landed in Zara) with a native
 
 | Plugin | Version | Type | Description |
 | --- | --- | --- | --- |
-| [zara-agent-zero](plugins/zara-agent-zero/) | 0.1.0 | service | Delegate selected Zara work to Agent Zero through the A0 connector |
+| [zara-agent-zero](plugins/zara-agent-zero/) | 0.1.1 | service | Delegate selected Zara work to Agent Zero through its native external API |
 | [zara-avatar](plugins/zara-avatar/) | 0.1.0 | service | Zara-owned 3D avatar presentation (VRM renderer, expression, lip sync) |
 | [zara-discord](plugins/zara-discord/) | 0.2.0 | service | Talk to Zara through Discord with access controls, bare mentions, and spontaneous replies |
 | [zara-persona](plugins/zara-persona/) | 0.1.0 | service | Operator-owned persona context with optional SWI-Prolog |

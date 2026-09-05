@@ -1,4 +1,4 @@
-"""Bounded Agent Zero connector HTTP client."""
+"""Bounded Agent Zero native API HTTP client."""
 
 from __future__ import annotations
 
@@ -29,11 +29,15 @@ class AgentZeroClient:
             raise AgentZeroBridgeError("Agent Zero bridge is disabled")
         if not self.config.base_url:
             raise AgentZeroBridgeError("Agent Zero base_url is not configured")
+        if not self.config.api_key:
+            raise AgentZeroBridgeError("Agent Zero api_key is not configured")
 
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        headers = {"Content-Type": "application/json", "Accept": "application/json"}
-        if self.config.session_cookie:
-            headers["Cookie"] = self.config.session_cookie
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-API-KEY": self.config.api_key,
+        }
         request = urllib.request.Request(
             f"{self.config.base_url}{path}",
             data=body,
@@ -67,11 +71,17 @@ class AgentZeroClient:
             raise AgentZeroBridgeError(f"Agent Zero error: {str(decoded['error'])[:512]}")
         return decoded
 
-    def capabilities(self) -> dict[str, Any]:
-        result = self._post("/api/plugins/_a0_connector/v1/capabilities", {})
-        if result.get("protocol") != "a0-connector.v1":
-            raise AgentZeroBridgeError("Agent Zero connector protocol is incompatible")
-        return result
+    def status(self) -> dict[str, Any]:
+        return {
+            "api": "agent-zero-native",
+            "endpoint": "/api/api_message",
+            "enabled": self.config.enabled,
+            "configured": bool(
+                self.config.enabled and self.config.base_url and self.config.api_key
+            ),
+            "base_url": self.config.base_url,
+            "api_key_configured": bool(self.config.api_key),
+        }
 
     def send_message(
         self,
@@ -80,18 +90,28 @@ class AgentZeroClient:
         context_id: str = "",
         project_name: str = "",
         agent_profile: str = "",
+        lifetime_hours: float = 24.0,
     ) -> dict[str, Any]:
         text = str(message).strip()
         if not text:
             raise AgentZeroBridgeError("message is required")
         if len(text) > self.config.max_message_chars:
             raise AgentZeroBridgeError("message exceeds configured limit")
+        try:
+            lifetime = float(lifetime_hours)
+        except (TypeError, ValueError) as error:
+            raise AgentZeroBridgeError("lifetime_hours must be a positive number") from error
+        if lifetime <= 0:
+            raise AgentZeroBridgeError("lifetime_hours must be a positive number")
 
-        payload: dict[str, Any] = {"message": text}
+        payload: dict[str, Any] = {
+            "message": text,
+            "lifetime_hours": lifetime,
+        }
         if context_id.strip():
             payload["context_id"] = context_id.strip()
         if project_name.strip():
             payload["project_name"] = project_name.strip()
         if agent_profile.strip():
             payload["agent_profile"] = agent_profile.strip()
-        return self._post("/api/plugins/_a0_connector/v1/message_send", payload)
+        return self._post("/api/api_message", payload)

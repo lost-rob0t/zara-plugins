@@ -1,16 +1,18 @@
 # zara-agent-zero
 
-`zara-agent-zero` lets Zara delegate selected work to an existing Agent Zero instance through Agent Zero's bundled `_a0_connector` HTTP API.
+`zara-agent-zero` lets Zara delegate selected work to an existing Agent Zero instance through Agent Zero's native external HTTP API.
 
-It does not start Agent Zero, duplicate Agent Zero's runtime, or create a second bridge protocol. The plugin uses:
+It does not start Agent Zero, duplicate Agent Zero's runtime, or create a second bridge protocol. Message delegation uses the runtime route registered by `helpers.api.register_api_route`:
 
-- `POST /api/plugins/_a0_connector/v1/capabilities`
-- `POST /api/plugins/_a0_connector/v1/message_send`
+- `POST /api/api_message`
+- `X-API-KEY: <Agent Zero API token>`
+
+The native response contains Agent Zero's `context_id` and `response` fields.
 
 ## Zara tools
 
-- `agent_zero_status` — inspect the connector protocol, version, auth state, and advertised capabilities.
-- `agent_zero_message` — send one message/task. The result includes Agent Zero's `context_id`; pass it back on later calls to continue the same Agent Zero conversation. Optional `project_name` and `agent_profile` route through Agent Zero's existing connector semantics.
+- `agent_zero_status` — report whether the native API URL and API key are configured. It does not expose the key or invent a capabilities endpoint.
+- `agent_zero_message` — send one message/task through `/api/api_message`. The result includes Agent Zero's `context_id`; pass it back on later calls to continue the same Agent Zero conversation. Optional `project_name`, `agent_profile`, and `lifetime_hours` map directly to Agent Zero's native request fields.
 
 ## Configuration
 
@@ -18,6 +20,7 @@ It does not start Agent Zero, duplicate Agent Zero's runtime, or create a second
 [plugins.zara-agent-zero]
 enabled = true
 base_url = "http://127.0.0.1:5000"
+api_key = ""
 allow_remote = false
 timeout_seconds = 60
 max_message_chars = 20000
@@ -30,10 +33,14 @@ Runtime environment overrides keep connection secrets outside Git and the Nix st
 
 ```sh
 export ZARA_AGENT_ZERO_URL='http://127.0.0.1:5000'
-export ZARA_AGENT_ZERO_COOKIE='session=...'
+export ZARA_AGENT_ZERO_API_KEY='...'
 ```
 
-`ZARA_AGENT_ZERO_COOKIE` is sent as the HTTP `Cookie` header for Agent Zero instances with login enabled. If Agent Zero reports that auth is not required, no cookie is needed.
+`ZARA_AGENT_ZERO_API_KEY` is sent only as Agent Zero's native `X-API-KEY` request header. The old session-cookie connector path is not used.
+
+## Agent Zero token
+
+Agent Zero exposes the API token under **Settings > External Services**. The current Agent Zero source protects `api/api_message.py` with the API-key middleware; the generic API router maps that built-in handler to `/api/api_message`.
 
 ## Network policy
 
