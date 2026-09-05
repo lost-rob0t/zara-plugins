@@ -15,6 +15,7 @@ Runner = Callable[..., subprocess.CompletedProcess[str]]
 class RepositoryInspector:
     MAX_DISCOVERY_ENTRIES = 1000
     MAX_COMMIT_MESSAGE_CHARS = 4096
+    MAX_CHANGED_PATHS = 100
 
     def __init__(
         self,
@@ -70,6 +71,8 @@ class RepositoryInspector:
         changed = set(filter(None, self._git(root, "diff", "--name-only", "HEAD").splitlines()))
         untracked = set(filter(None, self._git(root, "ls-files", "--others", "--exclude-standard").splitlines()))
         changed_paths = sorted(changed | untracked)
+        if len(changed_paths) > self.MAX_CHANGED_PATHS:
+            raise CodingError(f"repository inspection exceeds changed path limit of {self.MAX_CHANGED_PATHS}")
         return {
             "root": str(root),
             "head": head,
