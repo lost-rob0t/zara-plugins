@@ -152,6 +152,51 @@ class RepositoryInspector:
             branches.append({"name": name, "commit": commit, "upstream": upstream})
         return branches
 
+    def worktrees(self, path: Path, *, limit: int = 50) -> list[dict[str, object]]:
+        limit = self._bounded_limit(limit)
+        root = self._repository_root(path)
+        output = self._git(root, "worktree", "list", "--porcelain", "-z")
+        records = []
+        current: dict[str, object] = {}
+        for field in output.split("\0"):
+            if not field:
+                if current:
+                    records.append(current)
+                    if len(records) > limit:
+                        raise CodingError(f"git worktree inventory exceeds worktree limit of {limit}")
+                    current = {}
+                continue
+            key, separator, value = field.partition(" ")
+            if not separator:
+                if key == "detached":
+                    current["detached"] = True
+                    continue
+                raise CodingError("git worktree returned malformed structured output")
+            if key == "worktree":
+                current["path"] = value
+            elif key == "HEAD":
+                current["head"] = value
+            elif key == "branch":
+                prefix = "refs/heads/"
+                current["branch"] = value[len(prefix):] if value.startswith(prefix) else value
+                current["detached"] = False
+            elif key in {"locked", "prunable"}:
+                current[key] = value or True
+        if current:
+            records.append(current)
+            if len(records) > limit:
+                raise CodingError(f"git worktree inventory exceeds worktree limit of {limit}")
+        normalized = []
+        for record in records:
+            if "path" not in record or "head" not in record:
+                raise CodingError("git worktree returned incomplete structured output")
+            record.setdefault("branch", None)
+            record.setdefault("detached", record["branch"] is None)
+            record.setdefault("locked", None)
+            record.setdefault("prunable", None)
+            normalized.append(record)
+        return normalized
+
     @staticmethod
     def _bounded_limit(limit: int) -> int:
         if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
