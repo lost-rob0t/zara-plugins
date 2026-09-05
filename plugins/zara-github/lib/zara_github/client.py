@@ -63,9 +63,41 @@ class GitHubClient:
     @staticmethod
     def _repo_path(repository: str) -> str:
         parts = repository.split("/")
-        if len(parts) != 2 or not all(part and part.replace("-", "").replace("_", "").replace(".", "").isalnum() for part in parts):
+        if len(parts) != 2 or not all(
+            part
+            and part.replace("-", "").replace("_", "").replace(".", "").isalnum()
+            for part in parts
+        ):
             raise GitHubError("repository must be owner/name")
         return "/".join(urllib.parse.quote(part, safe="") for part in parts)
+
+    @staticmethod
+    def _repository_from_api_url(url: str) -> str:
+        parsed = urllib.parse.urlsplit(str(url))
+        if parsed.scheme != "https" or parsed.hostname != "api.github.com":
+            raise GitHubError("GitHub search returned an invalid repository URL")
+        parts = [part for part in parsed.path.split("/") if part]
+        if len(parts) != 3 or parts[0] != "repos":
+            raise GitHubError("GitHub search returned an invalid repository URL")
+        return f"{parts[1]}/{parts[2]}"
+
+    @staticmethod
+    def _check_summary(runs: list[dict[str, Any]], head_sha: str) -> dict[str, int]:
+        current = [run for run in runs if run.get("head_sha") == head_sha]
+        successful = sum(
+            1
+            for run in current
+            if run.get("status") == "completed"
+            and run.get("conclusion") in SUCCESSFUL_CONCLUSIONS
+        )
+        pending = sum(1 for run in current if run.get("status") != "completed")
+        failed = len(current) - successful - pending
+        return {
+            "total": len(current),
+            "successful": successful,
+            "pending": pending,
+            "failed": failed,
+        }
 
     def repo_get(self, repository: str) -> Any:
         return self._request("GET", f"/repos/{self._repo_path(repository)}")
@@ -74,49 +106,108 @@ class GitHubClient:
         return self._request("GET", f"/repos/{self._repo_path(repository)}/pulls/{int(number)}")
 
     def pr_diff(self, repository: str, number: int) -> Any:
-        return self._request("GET", f"/repos/{self._repo_path(repository)}/pulls/{int(number)}/files?per_page=100")
+        return self._request(
+            "GET", f"/repos/{self._repo_path(repository)}/pulls/{int(number)}/files?per_page=100"
+        )
 
     def pr_checks(self, repository: str, number: int) -> dict[str, Any]:
         pull = self.pr_get(repository, number)
         head_sha = str(pull.get("head", {}).get("sha", ""))
         if not head_sha:
             raise GitHubError("pull request has no current head SHA")
-        checks = self._request("GET", f"/repos/{self._repo_path(repository)}/commits/{urllib.parse.quote(head_sha, safe='')}/check-runs?per_page=100")
-        return {"head_sha": head_sha, "check_runs": list((checks or {}).get("check_runs", []))}
+        checks = self._request(
+            "GET",
+            f"/repos/{self._repo_path(repository)}/commits/{urllib.parse.quote(head_sha, safe='')}/check-runs?per_page=100",
+        )
+        return {
+            "head_sha": head_sha,
+            "check_runs": list((checks or {}).get("check_runs", [])),
+        }
 
     def pr_reviews(self, repository: str, number: int) -> Any:
-        return self._request("GET", f"/repos/{self._repo_path(repository)}/pulls/{int(number)}/reviews?per_page=100")
+        return self._request(
+            "GET", f"/repos/{self._repo_path(repository)}/pulls/{int(number)}/reviews?per_page=100"
+        )
 
     def pr_list(self, repository: str, *, state: str = "open", limit: int | None = None) -> Any:
         count = min(limit or self.config.max_results, self.config.max_results)
         encoded_state = urllib.parse.quote(state, safe="")
-        return self._request("GET", f"/repos/{self._repo_path(repository)}/pulls?state={encoded_state}&sort=updated&direction=desc&per_page={count}")
+        return self._request(
+            "GET",
+            f"/repos/{self._repo_path(repository)}/pulls?state={encoded_state}&sort=updated&direction=desc&per_page={count}",
+        )
 
-    def latest_prs(self, *, limit: int | None = None) -> Any:
+    def latest_prs(self, *, limit: int | None = None) -> list[dict[str, Any]]:
         if not self.config.owner:
             raise GitHubError("owner must be configured for latest PRs")
         count = min(limit or self.config.max_results, self.config.max_results)
-        owner = urllib.parse.quote(self.config.owner, safe="")
         query = urllib.parse.quote(f"is:pr author:{self.config.owner}", safe="")
-        return self._request("GET", f"/search/issues?q={query}&sort=updated&order=desc&per_page={count}")
+        search = self._request(
+            "GET", f"/search/issues?q={query}&sort=updated&order=desc&per_page={count}"
+        )
+        results: list[dict[str, Any]] = []
+        for item in list((search or {}).get("items", []))[:count]:
+            repository = self._repository_from_api_url(str(item.get("repository_url", "")))
+            number = int(item["number"])
+            pull = self.pr_get(repository, number)
+            head_sha = str(pull.get("head", {}).get("sha", ""))
+            if not head_sha:
+                raise GitHubError(f"{repository}#{number} has no current head SHA")
+            checks = self._request(
+                "GET",
+                f"/repos/{self._repo_path(repository)}/commits/{urllib.parse.quote(head_sha, safe='')}/check-runs?per_page=100",
+            )
+            runs = list((checks or {}).get("check_runs", []))
+            results.append(
+                {
+                    "provider": "github",
+                    "repository": repository,
+                    "number": number,
+                    "title": str(pull.get("title", item.get("title", ""))),
+                    "head_sha": head_sha,
+                    "draft": bool(pull.get("draft", False)),
+                    "mergeable": pull.get("mergeable"),
+                    "checks": self._check_summary(runs, head_sha),
+                    "updated_at": pull.get("updated_at", item.get("updated_at")),
+                    "url": pull.get("html_url", item.get("html_url")),
+                }
+            )
+        return results
 
     def issue_list(self, repository: str, *, state: str = "open", limit: int | None = None) -> Any:
         count = min(limit or self.config.max_results, self.config.max_results)
         encoded_state = urllib.parse.quote(state, safe="")
-        return self._request("GET", f"/repos/{self._repo_path(repository)}/issues?state={encoded_state}&per_page={count}")
+        return self._request(
+            "GET", f"/repos/{self._repo_path(repository)}/issues?state={encoded_state}&per_page={count}"
+        )
 
     def issue_get(self, repository: str, number: int) -> Any:
         return self._request("GET", f"/repos/{self._repo_path(repository)}/issues/{int(number)}")
 
     def commit_status(self, repository: str, sha: str) -> Any:
-        return self._request("GET", f"/repos/{self._repo_path(repository)}/commits/{urllib.parse.quote(sha, safe='')}/status")
+        return self._request(
+            "GET",
+            f"/repos/{self._repo_path(repository)}/commits/{urllib.parse.quote(sha, safe='')}/status",
+        )
 
     def issue_create(self, repository: str, title: str, body: str = "") -> Any:
         if not title.strip() or len(title) > 256 or len(body) > 65536:
             raise GitHubError("issue title/body is invalid or too large")
-        return self._request("POST", f"/repos/{self._repo_path(repository)}/issues", body={"title": title, "body": body})
+        return self._request(
+            "POST",
+            f"/repos/{self._repo_path(repository)}/issues",
+            body={"title": title, "body": body},
+        )
 
-    def issue_update(self, repository: str, number: int, *, title: str = "", body: str = "", state: str = "") -> Any:
+    def issue_update(
+        self,
+        repository: str,
+        number: int,
+        *,
+        title: str = "",
+        body: str = "",
+        state: str = "",
+    ) -> Any:
         payload: dict[str, Any] = {}
         if title:
             if len(title) > 256:
@@ -132,14 +223,24 @@ class GitHubClient:
             payload["state"] = state
         if not payload:
             raise GitHubError("issue update requires at least one field")
-        return self._request("PATCH", f"/repos/{self._repo_path(repository)}/issues/{int(number)}", body=payload)
+        return self._request(
+            "PATCH",
+            f"/repos/{self._repo_path(repository)}/issues/{int(number)}",
+            body=payload,
+        )
 
     def pr_comment(self, repository: str, number: int, body: str) -> Any:
         if not body.strip() or len(body) > 65536:
             raise GitHubError("comment body is invalid or too large")
-        return self._request("POST", f"/repos/{self._repo_path(repository)}/issues/{int(number)}/comments", body={"body": body})
+        return self._request(
+            "POST",
+            f"/repos/{self._repo_path(repository)}/issues/{int(number)}/comments",
+            body={"body": body},
+        )
 
-    def merge_pull_request(self, repository: str, number: int, *, method: str = "squash") -> dict[str, Any]:
+    def merge_pull_request(
+        self, repository: str, number: int, *, method: str = "squash"
+    ) -> dict[str, Any]:
         if method not in {"merge", "squash", "rebase"}:
             raise GitHubError("merge method must be merge, squash, or rebase")
         pull = self.pr_get(repository, number)
@@ -150,15 +251,34 @@ class GitHubClient:
         head_sha = str(pull.get("head", {}).get("sha", ""))
         if not head_sha:
             raise GitHubError("pull request has no current head SHA")
-        checks = self._request("GET", f"/repos/{self._repo_path(repository)}/commits/{urllib.parse.quote(head_sha, safe='')}/check-runs?per_page=100")
+        checks = self._request(
+            "GET",
+            f"/repos/{self._repo_path(repository)}/commits/{urllib.parse.quote(head_sha, safe='')}/check-runs?per_page=100",
+        )
         runs = list((checks or {}).get("check_runs", []))
-        if not runs or any(run.get("head_sha") != head_sha or run.get("status") != "completed" or run.get("conclusion") not in SUCCESSFUL_CONCLUSIONS for run in runs):
+        if not runs or any(
+            run.get("head_sha") != head_sha
+            or run.get("status") != "completed"
+            or run.get("conclusion") not in SUCCESSFUL_CONCLUSIONS
+            for run in runs
+        ):
             raise GitHubError("current-head checks are not conclusively successful")
         reviews = self.pr_reviews(repository, number)
-        if any(str(review.get("state", "")).upper() == "CHANGES_REQUESTED" for review in (reviews or [])):
+        if any(
+            str(review.get("state", "")).upper() == "CHANGES_REQUESTED"
+            for review in (reviews or [])
+        ):
             raise GitHubError("pull request has a blocking review")
-        acknowledgement = self._request("PUT", f"/repos/{self._repo_path(repository)}/pulls/{int(number)}/merge", body={"sha": head_sha, "merge_method": method})
-        if not isinstance(acknowledgement, dict) or acknowledgement.get("merged") is not True or not acknowledgement.get("sha"):
+        acknowledgement = self._request(
+            "PUT",
+            f"/repos/{self._repo_path(repository)}/pulls/{int(number)}/merge",
+            body={"sha": head_sha, "merge_method": method},
+        )
+        if (
+            not isinstance(acknowledgement, dict)
+            or acknowledgement.get("merged") is not True
+            or not acknowledgement.get("sha")
+        ):
             raise GitHubError("GitHub did not acknowledge a successful merge")
         observed = self.pr_get(repository, number)
         observed_head = str(observed.get("head", {}).get("sha", ""))
@@ -169,4 +289,10 @@ class GitHubClient:
         merge_sha = str(acknowledgement.get("sha"))
         if str(observed.get("merge_commit_sha", "")) != merge_sha:
             raise GitHubError("post-merge verification observed a different merge commit")
-        return {"merged": True, "repository": repository, "number": int(number), "head_sha": head_sha, "merge_commit_sha": merge_sha}
+        return {
+            "merged": True,
+            "repository": repository,
+            "number": int(number),
+            "head_sha": head_sha,
+            "merge_commit_sha": merge_sha,
+        }
