@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from langchain_core.tools import StructuredTool
 from zara.plugins import PluginMetadata, ServicePlugin
@@ -51,7 +52,7 @@ class ZaraHomePlugin(ServicePlugin):
     def get_device(self, device_id: str) -> str:
         return self._json(self.home.get_device(device_id))
 
-    def set_property(self, device_id: str, capability: str, value: str) -> str:
+    def set_property(self, device_id: str, capability: str, value: Any) -> str:
         return self._json(self.home.set_property(device_id, capability, value))
 
     def activate_scene(self, scene_id: str) -> str:
