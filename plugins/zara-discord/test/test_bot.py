@@ -106,7 +106,11 @@ class BotTests(unittest.TestCase):
         )
         self.assertEqual(
             {command.name for command in random_group.commands},
-            {"on", "off", "chance"},
+            {"on", "off", "chance", "channel"},
+        )
+        self.assertEqual(
+            {command.name for command in random_group.get_command("channel").commands},
+            {"set"},
         )
 
     def test_setup_commands_require_manage_server(self):
@@ -118,9 +122,13 @@ class BotTests(unittest.TestCase):
                 self.assertTrue(command.default_permissions.manage_guild)
                 self.assertTrue(command.guild_only)
         self.assertTrue(root.get_command("status").default_permissions.manage_guild)
-        for command in random_group.commands:
+        for command_name in ("on", "off", "chance"):
+            command = random_group.get_command(command_name)
             self.assertTrue(command.default_permissions.manage_guild)
             self.assertTrue(command.guild_only)
+        channel_set = random_group.get_command("channel").get_command("set")
+        self.assertTrue(channel_set.default_permissions.manage_guild)
+        self.assertTrue(channel_set.guild_only)
 
     def test_manager_check_uses_interaction_permissions(self):
         interaction = SimpleNamespace(
