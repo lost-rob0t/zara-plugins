@@ -91,18 +91,29 @@ def _repository_payload(evidence: Mapping[str, object]) -> dict[str, object]:
     if not isinstance(snapshot, Mapping) or not isinstance(values, Mapping):
         raise CodingError("repository evidence is missing snapshot values")
     head_value = values.get("repository_head")
+    branch_value = values.get("repository_branch")
     clean_value = values.get("repository_clean")
-    if not isinstance(head_value, Mapping) or not isinstance(clean_value, Mapping):
+    if not all(isinstance(value, Mapping) for value in (head_value, branch_value, clean_value)):
         raise CodingError("repository evidence is missing trusted assertion values")
 
     root = snapshot.get("root")
     head = snapshot.get("head")
+    branch = branch_value.get("branch")
     dirty = clean_value.get("dirty")
     if head_value.get("root") != root or head_value.get("head") != head:
         raise CodingError("repository evidence head does not match snapshot")
+    if branch_value.get("root") != root:
+        raise CodingError("repository evidence branch does not match snapshot")
     if clean_value.get("root") != root:
         raise CodingError("repository evidence dirty state does not match snapshot")
-    if not isinstance(root, str) or not root or not isinstance(head, str) or not isinstance(dirty, bool):
+    if (
+        not isinstance(root, str)
+        or not root
+        or not isinstance(head, str)
+        or not isinstance(branch, str)
+        or not branch
+        or not isinstance(dirty, bool)
+    ):
         raise CodingError("repository evidence contains invalid snapshot values")
 
-    return {"root": root, "head": head, "dirty": dirty}
+    return {"root": root, "head": head, "branch": branch, "dirty": dirty}
