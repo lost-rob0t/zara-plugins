@@ -89,7 +89,7 @@ def unlock_worktree(
     if record["locked"] is None:
         raise CodingError("worktree is not locked")
     if record["locked"] != reason:
-        raise CodingError("worktree lock ownership changed")
+        raise CodingError("worktree lock coordination reason changed")
 
     inspector._git(root, "worktree", "unlock", str(target_path))
     return {
@@ -131,10 +131,10 @@ def _require_lockable_detached(
     expected_head: str,
 ) -> None:
     if record["path"] == str(root.resolve()):
-        raise CodingError("primary worktree cannot be ownership-locked")
+        raise CodingError("primary worktree cannot be coordination-locked")
     if record["detached"] is not True or record["branch"] is not None:
-        raise CodingError("worktree ownership locking requires a detached worktree")
+        raise CodingError("worktree coordination locking requires a detached worktree")
     if not isinstance(record["head"], str) or record["head"].lower() != expected_head.lower():
         raise CodingError("worktree HEAD changed since expected_head was observed")
     if record["prunable"] is not None:
-        raise CodingError("prunable worktree cannot be ownership-locked")
+        raise CodingError("prunable worktree cannot be coordination-locked")
