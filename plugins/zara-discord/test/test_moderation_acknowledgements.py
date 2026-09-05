@@ -1,16 +1,21 @@
+import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 
 from discord_test_support import LIB_ROOT
-from zara_discord_service.config import PolicyStore
+from zara_discord_service.moderation_acknowledgements import (
+    AcknowledgementConfigError,
+    ModerationAcknowledgementStore,
+)
 
 
 class ModerationAcknowledgementTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.directory = Path(self.temporary.name)
-        self.store = PolicyStore(self.directory)
+        self.store = ModerationAcknowledgementStore(self.directory)
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -22,7 +27,7 @@ class ModerationAcknowledgementTests(unittest.TestCase):
             "uwu, moderation bonk deployed",
         )
 
-        reloaded = PolicyStore(self.directory)
+        reloaded = ModerationAcknowledgementStore(self.directory)
         self.assertEqual(
             reloaded.moderation_acknowledgement(10, 20, "warn"),
             "uwu, moderation bonk deployed",
@@ -79,6 +84,51 @@ class ModerationAcknowledgementTests(unittest.TestCase):
             self.store.moderation_acknowledgement(10, 20, "timeout"),
             "",
         )
+
+    def test_policy_file_is_private_and_contains_only_configured_text(self):
+        self.store.set_moderation_acknowledgement(10, "warn", "bonk deployed")
+
+        self.assertEqual(self.store.path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.directory.stat().st_mode & 0o777, 0o700)
+        payload = json.loads(self.store.path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            payload,
+            {
+                "version": 1,
+                "guilds": {
+                    "10": {
+                        "acknowledgements": {"warn": "bonk deployed"},
+                        "channels": {},
+                    }
+                },
+            },
+        )
+
+    def test_invalid_on_disk_mentions_fail_closed(self):
+        self.directory.mkdir(parents=True, exist_ok=True)
+        self.directory.joinpath("moderation-acknowledgements.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "guilds": {
+                        "10": {
+                            "acknowledgements": {"warn": "ping @everyone"},
+                            "channels": {},
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(AcknowledgementConfigError, "invalid Discord"):
+            ModerationAcknowledgementStore(self.directory)
+
+    def test_negative_discord_ids_are_rejected(self):
+        with self.assertRaisesRegex(ValueError, "guild_id must be non-negative"):
+            self.store.set_moderation_acknowledgement(-1, "warn", "bonk")
+        with self.assertRaisesRegex(ValueError, "channel_id must be non-negative"):
+            self.store.set_channel_moderation_acknowledgement(10, -1, "warn", "bonk")
 
 
 if __name__ == "__main__":
