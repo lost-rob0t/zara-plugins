@@ -51,6 +51,10 @@ class RepositoryInspectorTests(unittest.TestCase):
                     f"feature\t{'b' * 40}\torigin/feature\n"
                     f"main\t{'a' * 40}\torigin/main\n"
                 ),
+                ("worktree", "list", "--porcelain", "-z"): (
+                    f"worktree {self.repo.resolve()}\x00HEAD {'a' * 40}\x00branch refs/heads/main\x00\x00"
+                    f"worktree {self.root / 'wt'}\x00HEAD {'b' * 40}\x00detached\x00locked testing\x00prunable stale\x00\x00"
+                ),
             }
             return subprocess.CompletedProcess(argv, 0, stdout=outputs.get(tuple(args), ""), stderr="")
 
@@ -157,6 +161,42 @@ class RepositoryInspectorTests(unittest.TestCase):
     def test_branches_rejects_unbounded_limits_before_spawning_git(self):
         with self.assertRaisesRegex(ValueError, "between 1 and 100"):
             self.inspector.branches(self.repo, limit=0)
+        self.assertEqual(self.calls, [])
+
+    def test_worktrees_returns_bounded_structured_porcelain_evidence(self):
+        worktrees = self.inspector.worktrees(self.repo, limit=2)
+        self.assertEqual(
+            worktrees,
+            [
+                {
+                    "path": str(self.repo.resolve()),
+                    "head": "a" * 40,
+                    "branch": "main",
+                    "detached": False,
+                    "locked": None,
+                    "prunable": None,
+                },
+                {
+                    "path": str(self.root / "wt"),
+                    "head": "b" * 40,
+                    "branch": None,
+                    "detached": True,
+                    "locked": "testing",
+                    "prunable": "stale",
+                },
+            ],
+        )
+        argv, kwargs = self.calls[-1]
+        self.assertEqual(argv[-4:], ["worktree", "list", "--porcelain", "-z"])
+        self.assertFalse(kwargs["shell"])
+
+    def test_worktrees_fails_closed_when_inventory_exceeds_bound(self):
+        with self.assertRaisesRegex(CodingError, "exceeds worktree limit"):
+            self.inspector.worktrees(self.repo, limit=1)
+
+    def test_worktrees_rejects_invalid_bound_before_spawning_git(self):
+        with self.assertRaisesRegex(ValueError, "between 1 and 100"):
+            self.inspector.worktrees(self.repo, limit=0)
         self.assertEqual(self.calls, [])
 
     def test_rejects_paths_outside_configured_roots(self):
