@@ -107,6 +107,12 @@ class ZaraCodingPlugin(ServicePlugin):
                 metadata=APPROVAL_METADATA,
             ),
             StructuredTool.from_function(
+                func=self.git_commit,
+                name="coding.git.commit",
+                description="Commit exactly the current staged index on the attached branch if HEAD still matches the caller-supplied full object ID.",
+                metadata=APPROVAL_METADATA,
+            ),
+            StructuredTool.from_function(
                 func=self.git_worktrees,
                 name="coding.git.worktree.list",
                 description="Return bounded structured linked-worktree evidence for an allowed repository.",
@@ -191,6 +197,16 @@ class ZaraCodingPlugin(ServicePlugin):
         if not isinstance(expected_head, str) or not expected_head:
             raise ValueError("expected_head must be a non-empty string")
         return json.dumps(inspector.delete_branch(Path(path), name, expected_head), sort_keys=True)
+
+    def git_commit(self, path: str, message: str, expected_head: str) -> str:
+        inspector = self._require_inspector()
+        if not isinstance(path, str) or not path:
+            raise ValueError("path must be a non-empty string")
+        if not isinstance(message, str) or not message.strip():
+            raise ValueError("message must be a non-empty string")
+        if not isinstance(expected_head, str) or not expected_head:
+            raise ValueError("expected_head must be a non-empty string")
+        return json.dumps(inspector.commit(Path(path), message, expected_head), sort_keys=True)
 
     def git_worktrees(self, path: str, limit: int = 50) -> str:
         inspector = self._require_inspector()
