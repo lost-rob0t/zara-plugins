@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from scripts.zara_compat import (
     CompatibilityError,
     exercise_service_lifecycle,
+    fake_dependency_environment,
     load_registry,
     require_metadata,
     temporary_runtime_environment,
@@ -79,6 +80,21 @@ class ZaraCompatibilityGateTest(unittest.TestCase):
 
         for name, value in previous.items():
             self.assertEqual(os.environ.get(name), value)
+
+    def test_fake_dependencies_are_scoped_to_the_plugin_that_needs_them(self) -> None:
+        variable = "ZARA_DISCORD_TOKEN"
+        previous = os.environ.pop(variable, None)
+        try:
+            with fake_dependency_environment("zara-browser"):
+                self.assertNotIn(variable, os.environ)
+
+            with fake_dependency_environment("zara-discord"):
+                self.assertTrue(os.environ.get(variable))
+
+            self.assertNotIn(variable, os.environ)
+        finally:
+            if previous is not None:
+                os.environ[variable] = previous
 
     def test_service_lifecycle_always_stops_and_shuts_down_runtime(self) -> None:
         calls: list[str] = []
