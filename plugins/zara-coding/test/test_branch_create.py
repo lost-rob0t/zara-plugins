@@ -61,7 +61,7 @@ class BranchCreateTests(unittest.TestCase):
             self.assertEqual(evidence, {"branch": "feature/safe", "head": "a" * 40})
             argv_calls = [call[0][3:] for call in calls]
             self.assertIn(["check-ref-format", "refs/heads/feature/safe"], argv_calls)
-            self.assertIn(["update-ref", "refs/heads/feature/safe", "a" * 40, "0" * 40], argv_calls)
+            self.assertIn(["update-ref", "refs/heads/feature/safe", "a" * 40, ""], argv_calls)
             self.assertTrue(all(call[1]["shell"] is False for call in calls))
 
     def test_domain_fails_closed_when_branch_already_exists(self):
