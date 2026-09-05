@@ -44,20 +44,25 @@ Slash commands are synchronized when the bot connects.
 
 ## Conversation context
 
-Each Discord channel or DM has a stable Zara conversation id. The plugin keeps
-the most recent routed user turns plus Zara responses and failures in an
-in-memory history and prepends that history to the next turn. This makes short
-follow-ups such as `retry`, `do that again`, or `use the previous file` retain
-the immediately preceding Discord conversation even when the underlying model
-starts a fresh session for the new turn.
+Each Discord user gets a distinct Zara conversation id inside each channel or
+DM. Conversation ids contain numeric Discord guild/channel/user ids only; they
+do not embed usernames or display names. Two people speaking in the same shared
+channel therefore cannot inherit one another's bounded transcript history.
+
+The plugin keeps the most recent routed user turns plus Zara responses and
+failures in an in-memory history and prepends that history to the next turn.
+This makes short follow-ups such as `retry`, `do that again`, or `use the
+previous file` retain the immediately preceding conversation for that same
+Discord user and channel even when the underlying model starts a fresh session
+for the new turn.
 
 History is bounded to 12,000 characters per conversation and at most 256 active
 conversations. Oldest entries are evicted first, oversized entries are clipped,
-and separate channels never share history. The current message is outside the
-history budget, so a long new request cannot evict itself before submission.
-The history is deliberately process-local and resets when the Zara service
-restarts; it does not scrape arbitrary channel backlog and therefore does not
-require Discord's privileged Message Content intent.
+and separate users/channels never share history. The current message is outside
+the history budget, so a long new request cannot evict itself before
+submission. The history is deliberately process-local and resets when the Zara
+service restarts; it does not scrape arbitrary channel backlog and therefore
+does not require Discord's privileged Message Content intent.
 
 ## Discord setup commands
 
