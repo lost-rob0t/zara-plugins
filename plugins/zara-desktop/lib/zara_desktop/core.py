@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import asdict, dataclass
-from typing import Any, Protocol, Sequence
+from typing import Any, Mapping, Protocol, Sequence
 
 
 class DesktopError(RuntimeError):
@@ -33,7 +32,7 @@ class DesktopBackend(Protocol):
     name: str
 
     def capabilities(self) -> dict[str, bool]: ...
-    def launch(self, app: str, args: Sequence[str]) -> dict[str, Any]: ...
+    def launch(self, argv: Sequence[str]) -> dict[str, Any]: ...
     def list_windows(self) -> list[dict[str, Any]]: ...
     def focus_window(self, window_id: str) -> dict[str, Any]: ...
     def close_window(self, window_id: str) -> dict[str, Any]: ...
@@ -45,30 +44,49 @@ class DesktopBackend(Protocol):
     def poll_events(self, limit: int) -> list[DesktopEvent]: ...
 
 
-_SAFE_APP = re.compile(r"^[A-Za-z0-9._+-]{1,128}$")
-
-
 class DesktopController:
-    def __init__(self, backend: DesktopBackend, *, max_text_bytes: int = 262144, max_events: int = 64) -> None:
+    def __init__(
+        self,
+        backend: DesktopBackend,
+        *,
+        applications: Mapping[str, Sequence[str]] | None = None,
+        max_text_bytes: int = 262144,
+        max_events: int = 64,
+    ) -> None:
         self.backend = backend
+        self.applications = {
+            str(alias): tuple(str(part) for part in argv)
+            for alias, argv in dict(applications or {}).items()
+        }
         self.max_text_bytes = int(max_text_bytes)
         self.max_events = int(max_events)
         if not 1 <= self.max_text_bytes <= 4 * 1024 * 1024:
             raise DesktopError("max_text_bytes is out of range")
         if not 1 <= self.max_events <= 1024:
             raise DesktopError("max_events is out of range")
+        for alias, argv in self.applications.items():
+            if not alias or len(alias) > 128 or not argv or len(argv) > 32:
+                raise DesktopError("application alias configuration is invalid")
+            if any(not part or "\x00" in part or len(part) > 4096 for part in argv):
+                raise DesktopError("application argv configuration is invalid")
 
     def status(self) -> dict[str, Any]:
-        return {"backend": self.backend.name, "capabilities": dict(self.backend.capabilities())}
+        return {
+            "backend": self.backend.name,
+            "capabilities": dict(self.backend.capabilities()),
+            "applications": sorted(self.applications),
+        }
 
-    def launch(self, app: str, args: Sequence[str] = ()) -> dict[str, Any]:
-        if not isinstance(app, str) or not _SAFE_APP.fullmatch(app):
-            raise DesktopError("application must be a simple executable identifier")
-        argv = [str(arg) for arg in args]
-        if len(argv) > 32 or any("\x00" in arg or len(arg) > 4096 for arg in argv):
-            raise DesktopError("application arguments exceed configured bounds")
-        observed = self.backend.launch(app, argv)
-        return {"operation": "launch", "backend": self.backend.name, "observed": observed}
+    def launch(self, application_id: str) -> dict[str, Any]:
+        if application_id not in self.applications:
+            raise DesktopError(f"unknown application alias: {application_id}")
+        observed = self.backend.launch(self.applications[application_id])
+        return {
+            "operation": "launch",
+            "application_id": application_id,
+            "backend": self.backend.name,
+            "observed": observed,
+        }
 
     def windows(self) -> dict[str, Any]:
         return {"backend": self.backend.name, "windows": self.backend.list_windows()[:256]}
