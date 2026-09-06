@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import selectors
 import shutil
@@ -14,10 +15,10 @@ from .domain import ExpertError
 
 class SwiplBackend:
     def __init__(self, program: str = "swipl", *, output_limit: int = 65536) -> None:
-        if output_limit <= 0:
-            raise ValueError("output_limit must be positive")
+        if isinstance(output_limit, bool) or not isinstance(output_limit, int) or output_limit <= 0:
+            raise ValueError("output_limit must be a positive integer")
         self.program = program
-        self.output_limit = int(output_limit)
+        self.output_limit = output_limit
 
     @classmethod
     def available(cls, program: str = "swipl") -> bool:
@@ -28,8 +29,20 @@ class SwiplBackend:
         if operation not in {"query", "explain"}:
             raise ExpertError(f"unsupported expert operation: {operation!r}")
 
-        timeout = float(request["timeout_seconds"])
-        max_results = int(request["max_results"])
+        timeout_value = request["timeout_seconds"]
+        max_results_value = request["max_results"]
+        if (
+            isinstance(timeout_value, bool)
+            or not isinstance(timeout_value, (int, float))
+            or not math.isfinite(timeout_value)
+            or timeout_value <= 0
+            or isinstance(max_results_value, bool)
+            or not isinstance(max_results_value, int)
+            or max_results_value <= 0
+        ):
+            raise ExpertError("expert execution bounds are invalid")
+        timeout = float(timeout_value)
+        max_results = max_results_value
         goal = str(request["goal"])
         source_files = [*request.get("knowledge_bases", ()), *request.get("state_files", ())]
 
