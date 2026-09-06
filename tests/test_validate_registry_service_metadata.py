@@ -31,7 +31,7 @@ class ServiceMetadataAgreementTest(unittest.TestCase):
             "A = PluginMetadata(name='example', version='0.1.0')\n"
             "B = PluginMetadata(name='other', version='0.1.0')\n"
         )
-        with self.assertRaisesRegex(validate_registry.RegistryError, "metadata name"):
+        with self.assertRaisesRegex(validate_registry.RegistryError, "PluginMetadata name"):
             validate_registry.validate_service_entrypoint(self.entry, self.entrypoint)
 
     def test_rejects_conflicting_literal_versions(self) -> None:
