@@ -98,6 +98,8 @@ class ShellRunner:
         }
 
     def _validate_argv(self, argv: Sequence[str]) -> list[str]:
+        if isinstance(argv, (str, bytes)) or not isinstance(argv, Sequence):
+            raise ShellError("argv must contain non-empty strings")
         if not argv or not all(isinstance(item, str) and item for item in argv):
             raise ShellError("argv must contain non-empty strings")
         requested = argv[0]
