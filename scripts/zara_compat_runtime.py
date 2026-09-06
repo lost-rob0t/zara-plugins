@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import concurrent.futures
+import inspect
 import os
 import queue
 from contextlib import contextmanager
@@ -105,15 +107,21 @@ class CompatibilityRuntime:
             subscription.close()
 
 
+def _invoke_lifecycle(method, *args) -> None:
+    result = method(*args)
+    if inspect.isawaitable(result):
+        asyncio.run(result)
+
+
 def exercise_service_lifecycle(instance: object, runtime: object) -> None:
     started = False
     try:
         started = True
-        instance.start(runtime)
+        _invoke_lifecycle(instance.start, runtime)
     finally:
         try:
             if started:
-                instance.stop()
+                _invoke_lifecycle(instance.stop)
         finally:
             shutdown = getattr(runtime, "_shutdown", None)
             if callable(shutdown):
