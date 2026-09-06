@@ -131,7 +131,7 @@ class CompatibilityRuntime:
             raise RuntimeError("managed worker limit reached")
         self.workers.append(name)
         return SimpleNamespace(
-            name=name,
+            name=f"{self.plugin_name}-{name}",
             is_alive=False,
             request_stop=lambda: None,
             join=lambda timeout=None: None,
