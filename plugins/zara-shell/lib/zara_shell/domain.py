@@ -29,8 +29,15 @@ class CommandPolicy:
     def __post_init__(self) -> None:
         if not self.allowed_programs:
             raise ValueError("allowed_programs must not be empty")
+        if any(not isinstance(name, str) or not name for name in self.allowed_programs):
+            raise ValueError("allowed_programs must contain non-empty strings")
         if not self.allowed_roots:
             raise ValueError("allowed_roots must not be empty")
+        if any(
+            not isinstance(root, (str, os.PathLike)) or not str(root)
+            for root in self.allowed_roots
+        ):
+            raise ValueError("allowed_roots must contain non-empty path-like values")
         if any(not isinstance(name, str) or not name for name in self.allowed_environment):
             raise ValueError("allowed_environment must contain non-empty strings")
         if (
