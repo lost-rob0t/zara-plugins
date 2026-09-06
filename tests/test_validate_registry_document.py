@@ -28,6 +28,7 @@ class RegistryDocumentMetadataTest(unittest.TestCase):
     def write(self, plugin_search_paths, **overrides) -> None:
         document = {
             "schema_version": 1,
+            "updated": "2026-09-06",
             "registry": "https://github.com/lost-rob0t/zara-plugins",
             "registry_raw": "https://raw.githubusercontent.com/lost-rob0t/zara-plugins/main/plugins.json",
             "plugin_search_paths": plugin_search_paths,
