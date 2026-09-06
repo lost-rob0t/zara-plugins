@@ -125,6 +125,12 @@ class RegistryPathConfinementTest(unittest.TestCase):
         with self.assertRaisesRegex(validate_registry.RegistryError, "install.nix"):
             validate_registry.validate_entry(entry)
 
+    def test_install_nix_rejects_noncanonical_whitespace(self) -> None:
+        entry = self.entry()
+        entry["install"]["nix"] = "  nix build github:lost-rob0t/zara-plugins#example  "
+        with self.assertRaisesRegex(validate_registry.RegistryError, "install.nix"):
+            validate_registry.validate_entry(entry)
+
     def test_install_nix_rejects_trailing_shell_syntax(self) -> None:
         entry = self.entry()
         entry["install"]["nix"] = (
