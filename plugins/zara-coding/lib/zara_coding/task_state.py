@@ -1,16 +1,26 @@
 from __future__ import annotations
 
 import json
+import select
 import subprocess
 import threading
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Callable
+from typing import Callable, TextIO
 
 from .domain import CodingError
 
 
 ProcessFactory = Callable[..., subprocess.Popen[str]]
+ReadinessWaiter = Callable[[TextIO, float], bool]
+
+
+def _default_readiness_waiter(stream: TextIO, timeout: float) -> bool:
+    try:
+        ready, _, _ = select.select((stream,), (), (), timeout)
+    except (OSError, TypeError, ValueError):
+        return True
+    return bool(ready)
 
 
 class TaskStateSession:
@@ -20,6 +30,7 @@ class TaskStateSession:
     MAX_LIST_ITEMS = 64
     MAX_DETAIL_CHARS = 4096
     MAX_RESPONSE_CHARS = 131072
+    MAX_RESPONSE_TIMEOUT_SECONDS = 60.0
     EVIDENCE_STATUSES = frozenset({"failed", "passed"})
     RESPONSE_STATUSES = frozenset({"ok", "rejected"})
 
@@ -29,12 +40,24 @@ class TaskStateSession:
         *,
         executable: str = "swipl",
         process_factory: ProcessFactory | None = None,
+        response_timeout_seconds: float = 5.0,
+        readiness_waiter: ReadinessWaiter | None = None,
     ) -> None:
         if not executable:
             raise ValueError("executable must be non-empty")
+        if (
+            isinstance(response_timeout_seconds, bool)
+            or not isinstance(response_timeout_seconds, (int, float))
+            or not 0 < response_timeout_seconds <= self.MAX_RESPONSE_TIMEOUT_SECONDS
+        ):
+            raise ValueError(
+                f"response_timeout_seconds must be greater than zero and at most {self.MAX_RESPONSE_TIMEOUT_SECONDS}"
+            )
         self.driver = Path(driver).expanduser().resolve()
         self.executable = executable
+        self.response_timeout_seconds = float(response_timeout_seconds)
         self._process_factory = process_factory or subprocess.Popen
+        self._readiness_waiter = readiness_waiter or _default_readiness_waiter
         self._process: subprocess.Popen[str] | None = None
         self._lock = threading.RLock()
 
@@ -72,12 +95,7 @@ class TaskStateSession:
             self._process = None
             if process is None or process.poll() is not None:
                 return
-            process.terminate()
-            try:
-                process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=2)
+            self._terminate_process(process)
 
     def status(self) -> dict[str, object]:
         return self._request({"op": "status"})
@@ -138,8 +156,14 @@ class TaskStateSession:
             try:
                 process.stdin.write(wire + "\n")
                 process.stdin.flush()
-                response_line = process.stdout.readline(self.MAX_RESPONSE_CHARS + 1)
             except (BrokenPipeError, OSError) as exc:
+                raise CodingError("zara-coding task-state protocol failed") from exc
+            if not self._readiness_waiter(process.stdout, self.response_timeout_seconds):
+                self._terminate_process(process)
+                raise CodingError("zara-coding task-state response timed out")
+            try:
+                response_line = process.stdout.readline(self.MAX_RESPONSE_CHARS + 1)
+            except OSError as exc:
                 raise CodingError("zara-coding task-state protocol failed") from exc
             if not response_line:
                 raise CodingError("zara-coding task-state Prolog process closed the protocol")
@@ -154,6 +178,17 @@ class TaskStateSession:
             if response["status"] not in self.RESPONSE_STATUSES:
                 raise CodingError("zara-coding task-state returned unknown status")
             return response
+
+    @staticmethod
+    def _terminate_process(process: subprocess.Popen[str]) -> None:
+        if process.poll() is not None:
+            return
+        process.terminate()
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=2)
 
     @classmethod
     def _bounded_string(cls, value: str, name: str, maximum: int) -> str:
