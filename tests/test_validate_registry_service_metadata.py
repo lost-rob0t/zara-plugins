@@ -35,12 +35,13 @@ class ServiceMetadataAgreementTest(unittest.TestCase):
         with self.assertRaisesRegex(validate_registry.RegistryError, "module-level create_plugin"):
             validate_registry.validate_service_entrypoint(self.entry, self.entrypoint)
 
-    def test_accepts_module_level_async_create_plugin_factory(self) -> None:
+    def test_rejects_module_level_async_create_plugin_factory(self) -> None:
         self.write(
             "async def create_plugin(): return None\n"
             "metadata = PluginMetadata(name='example', version='0.1.0', api_version='1')\n"
         )
-        validate_registry.validate_service_entrypoint(self.entry, self.entrypoint)
+        with self.assertRaisesRegex(validate_registry.RegistryError, "create_plugin\(\) must be synchronous"):
+            validate_registry.validate_service_entrypoint(self.entry, self.entrypoint)
 
     def test_rejects_conflicting_literal_metadata_names(self) -> None:
         self.write(
