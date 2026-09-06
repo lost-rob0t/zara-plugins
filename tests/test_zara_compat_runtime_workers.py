@@ -15,6 +15,7 @@ def _worker(_stop_event) -> None:
 class CompatibilityRuntimeWorkerTest(unittest.TestCase):
     def test_fake_dependency_environment_strips_live_provider_credentials(self) -> None:
         cases = (
+            ("zara-avatar", "ZARA_AVATAR_RENDERER"),
             ("zara-discord", "ZARA_DISCORD_TOKEN"),
             ("zara-github", "ZARA_GITHUB_TOKEN"),
             ("zara-knowledge", "BRAVE_SEARCH_API_KEY"),
