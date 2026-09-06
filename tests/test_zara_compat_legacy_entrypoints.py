@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+import time
 import unittest
 from types import SimpleNamespace
 
@@ -67,6 +69,47 @@ class LegacyEntrypointCompatibilityTest(unittest.TestCase):
                 SimpleNamespace(register_tools=None, register_skills=register_skills),
                 BaseTool,
                 {},
+            )
+
+    def test_blocked_sync_registration_returns_at_deadline(self) -> None:
+        release = threading.Event()
+
+        class BaseTool:
+            pass
+
+        def register_tools(prolog_engine):
+            release.wait(1.0)
+            return []
+
+        started = time.monotonic()
+        try:
+            with self.assertRaises(TimeoutError):
+                require_legacy_tool_entrypoint(
+                    "zara-legacy",
+                    SimpleNamespace(register_tools=register_tools),
+                    BaseTool,
+                    {},
+                    timeout=0.01,
+                )
+        finally:
+            release.set()
+
+        self.assertLess(time.monotonic() - started, 0.2)
+
+    def test_completed_registration_propagates_plugin_exception(self) -> None:
+        class BaseTool:
+            pass
+
+        def register_tools(prolog_engine):
+            raise ValueError("broken registration")
+
+        with self.assertRaisesRegex(ValueError, "broken registration"):
+            require_legacy_tool_entrypoint(
+                "zara-legacy",
+                SimpleNamespace(register_tools=register_tools),
+                BaseTool,
+                {},
+                timeout=0.1,
             )
 
 
