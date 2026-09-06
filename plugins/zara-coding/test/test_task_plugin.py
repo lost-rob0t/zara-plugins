@@ -50,6 +50,43 @@ class TaskPluginTest(unittest.TestCase):
             }.issubset(tools)
         )
 
+    def test_task_creation_binds_fresh_repository_identity(self) -> None:
+        calls: list[Path] = []
+
+        class Inspector:
+            def inspect(self, path: Path):
+                calls.append(path)
+                return {
+                    "root": "/projects/demo",
+                    "head": "a" * 40,
+                    "branch": "main",
+                    "dirty": False,
+                    "changed_paths": [],
+                }
+
+        class Session:
+            def create_task(self, task_id, **kwargs):
+                return {"status": "ok", "task": {"id": task_id, **kwargs}}
+
+        plugin = TaskStateCodingPlugin()
+        plugin.inspector = Inspector()
+        plugin.task_state = Session()
+
+        result = json.loads(
+            plugin.task_create(
+                "task-1",
+                "fix regression",
+                repository_path="/projects/demo/src/module.py",
+                completion_criteria=["tests-pass"],
+            )
+        )
+
+        self.assertEqual(calls, [Path("/projects/demo/src/module.py")])
+        self.assertEqual(
+            result["task"]["repository"],
+            {"root": "/projects/demo", "head": "a" * 40, "branch": "main"},
+        )
+
     def test_missing_prolog_configuration_degrades_without_breaking_startup(self) -> None:
         plugin = TaskStateCodingPlugin()
         plugin.start(Runtime({"plugins": {"zara-coding": {}}}))
