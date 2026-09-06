@@ -42,6 +42,11 @@ class RegistryDocumentMetadataTest(unittest.TestCase):
         with self.assertRaisesRegex(validate_registry.RegistryError, "plugin_search_paths"):
             validate_registry.load_registry()
 
+    def test_plugin_search_paths_must_not_contain_surrounding_whitespace(self) -> None:
+        self.write([" ~/.zarathushtra/plugins "])
+        with self.assertRaisesRegex(validate_registry.RegistryError, "plugin_search_paths"):
+            validate_registry.load_registry()
+
     def test_plugin_search_paths_must_not_contain_duplicates(self) -> None:
         self.write(["~/.zarathushtra/plugins", "~/.zarathushtra/plugins"])
         with self.assertRaisesRegex(validate_registry.RegistryError, "plugin_search_paths"):
