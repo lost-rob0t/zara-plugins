@@ -312,7 +312,7 @@ def validate_service_entrypoint(entry: dict, entrypoint: Path) -> None:
             if isinstance(target, ast.Assign)
             and len(target.targets) == 1
             and isinstance(target.targets[0], ast.Name)
-            and "VERSION" in target.targets[0].id
+            and target.targets[0].id == "PLUGIN_VERSION"
             and isinstance(target.value, ast.Constant)
         }
         versions = module_versions
