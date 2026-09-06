@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import socket
 import urllib.error
 import urllib.parse
@@ -32,16 +33,27 @@ class BraveProvider:
         timeout_seconds: float = 10.0,
         max_response_bytes: int = 2 * 1024 * 1024,
     ) -> None:
-        self.api_key = str(api_key).strip()
+        if not isinstance(api_key, str) or not api_key.strip():
+            raise BraveProviderError("Brave API key is not configured", kind="unavailable")
+        if api_key != api_key.strip() or any(ord(character) < 32 or ord(character) == 127 for character in api_key):
+            raise BraveProviderError("Brave API key must be a clean string", kind="configuration")
+        if (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or not math.isfinite(timeout_seconds)
+            or not 0.1 <= timeout_seconds <= 60
+        ):
+            raise BraveProviderError("Brave timeout must be between 0.1 and 60 seconds", kind="configuration")
+        if (
+            isinstance(max_response_bytes, bool)
+            or not isinstance(max_response_bytes, int)
+            or not 1024 <= max_response_bytes <= 8 * 1024 * 1024
+        ):
+            raise BraveProviderError("Brave response limit is out of range", kind="configuration")
+        self.api_key = api_key
         self._opener = opener or urllib.request.urlopen
         self.timeout_seconds = float(timeout_seconds)
-        self.max_response_bytes = int(max_response_bytes)
-        if not self.api_key:
-            raise BraveProviderError("Brave API key is not configured", kind="unavailable")
-        if not 0.1 <= self.timeout_seconds <= 60:
-            raise BraveProviderError("Brave timeout must be between 0.1 and 60 seconds", kind="configuration")
-        if not 1024 <= self.max_response_bytes <= 8 * 1024 * 1024:
-            raise BraveProviderError("Brave response limit is out of range", kind="configuration")
+        self.max_response_bytes = max_response_bytes
 
     @staticmethod
     def _validate_url(value: str) -> str:
