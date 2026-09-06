@@ -21,6 +21,7 @@ class TaskStateSession:
     MAX_DETAIL_CHARS = 4096
     MAX_RESPONSE_CHARS = 131072
     EVIDENCE_STATUSES = frozenset({"failed", "passed"})
+    RESPONSE_STATUSES = frozenset({"ok", "rejected"})
 
     def __init__(
         self,
@@ -148,6 +149,8 @@ class TaskStateSession:
                 raise CodingError("zara-coding task-state returned malformed JSON") from exc
             if not isinstance(response, dict) or not isinstance(response.get("status"), str):
                 raise CodingError("zara-coding task-state returned malformed response")
+            if response["status"] not in self.RESPONSE_STATUSES:
+                raise CodingError("zara-coding task-state returned unknown status")
             return response
 
     @classmethod
