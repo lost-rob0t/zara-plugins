@@ -157,27 +157,39 @@ class TaskStateSession:
                 process.stdin.write(wire + "\n")
                 process.stdin.flush()
             except (BrokenPipeError, OSError) as exc:
-                raise CodingError("zara-coding task-state protocol failed") from exc
+                self._fail_protocol(process, "zara-coding task-state protocol failed", exc)
             if not self._readiness_waiter(process.stdout, self.response_timeout_seconds):
-                self._terminate_process(process)
-                raise CodingError("zara-coding task-state response timed out")
+                self._fail_protocol(process, "zara-coding task-state response timed out")
             try:
                 response_line = process.stdout.readline(self.MAX_RESPONSE_CHARS + 1)
             except OSError as exc:
-                raise CodingError("zara-coding task-state protocol failed") from exc
+                self._fail_protocol(process, "zara-coding task-state protocol failed", exc)
             if not response_line:
-                raise CodingError("zara-coding task-state Prolog process closed the protocol")
+                self._fail_protocol(process, "zara-coding task-state Prolog process closed the protocol")
             if len(response_line) > self.MAX_RESPONSE_CHARS:
-                raise CodingError("zara-coding task-state response exceeds size limit")
+                self._fail_protocol(process, "zara-coding task-state response exceeds size limit")
             try:
                 response = json.loads(response_line)
             except json.JSONDecodeError as exc:
-                raise CodingError("zara-coding task-state returned malformed JSON") from exc
+                self._fail_protocol(process, "zara-coding task-state returned malformed JSON", exc)
             if not isinstance(response, dict) or not isinstance(response.get("status"), str):
-                raise CodingError("zara-coding task-state returned malformed response")
+                self._fail_protocol(process, "zara-coding task-state returned malformed response")
             if response["status"] not in self.RESPONSE_STATUSES:
-                raise CodingError("zara-coding task-state returned unknown status")
+                self._fail_protocol(process, "zara-coding task-state returned unknown status")
             return response
+
+    @classmethod
+    def _fail_protocol(
+        cls,
+        process: subprocess.Popen[str],
+        message: str,
+        cause: BaseException | None = None,
+    ) -> None:
+        cls._terminate_process(process)
+        error = CodingError(message)
+        if cause is not None:
+            raise error from cause
+        raise error
 
     @staticmethod
     def _terminate_process(process: subprocess.Popen[str]) -> None:
