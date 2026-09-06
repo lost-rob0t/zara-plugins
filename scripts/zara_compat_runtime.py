@@ -64,7 +64,7 @@ class CompatibilitySubscription:
 
 
 class CompatibilityRuntime:
-    def __init__(self, plugin_name: str) -> None:
+    def __init__(self, plugin_name: str, *, command_type: type | None = None) -> None:
         self.plugin_name = plugin_name
         self.configuration = MappingProxyType({})
         self.status = SimpleNamespace(state="running", alive=True, thread_id=None)
@@ -72,9 +72,23 @@ class CompatibilityRuntime:
         self.subscriptions: list[CompatibilitySubscription] = []
         self.workers: list[str] = []
         self.advice: list[tuple[str, int]] = []
+        self._command_type = command_type
 
     def dispatch(self, command):
         future: concurrent.futures.Future = concurrent.futures.Future()
+        command_type = self._command_type
+        if command_type is None:
+            try:
+                from zara.runtime.commands import RuntimeCommand
+            except ImportError:
+                RuntimeCommand = None
+            command_type = RuntimeCommand
+        if command_type is not None and not isinstance(command, command_type):
+            future.set_exception(TypeError("plugins may dispatch RuntimeCommand instances only"))
+            return future
+        if self.closed:
+            future.set_exception(RuntimeError("plugin runtime is closed"))
+            return future
         future.set_exception(RuntimeError("compatibility runtime does not execute commands"))
         return future
 
