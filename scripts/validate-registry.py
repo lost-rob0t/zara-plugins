@@ -192,9 +192,12 @@ def validate_entry(entry: dict) -> None:
 def validate_service_entrypoint(entry: dict, entrypoint: Path) -> None:
     source = entrypoint.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(entrypoint))
-    factories = [node for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "create_plugin"]
+    async_factories = [node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "create_plugin"]
+    if async_factories:
+        raise RegistryError(f"service plugin {entry['name']!r} create_plugin() must be synchronous")
+    factories = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "create_plugin"]
     if not factories:
-        raise RegistryError(f"service plugin {entry['name']!r} entrypoint must define create_plugin()")
+        raise RegistryError(f"service plugin {entry['name']!r} entrypoint must define a module-level create_plugin()")
 
     constants = {
         node.targets[0].id: node.value.value
