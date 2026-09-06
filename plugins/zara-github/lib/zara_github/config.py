@@ -26,6 +26,16 @@ def _token_from_file(path: Path) -> str:
         raise GitHubConfigError(f"cannot read token_file: {error}") from error
 
 
+def _numeric_config(source: dict, key: str, default: int | float, converter):
+    value = source.get(key, default)
+    if isinstance(value, bool):
+        raise GitHubConfigError(f"{key} must not be boolean")
+    try:
+        return converter(value)
+    except (TypeError, ValueError) as error:
+        raise GitHubConfigError(f"{key} must be numeric") from error
+
+
 @dataclass(frozen=True)
 class GitHubConfig:
     token: str = ""
@@ -39,9 +49,9 @@ class GitHubConfig:
     @classmethod
     def load(cls, mapping: dict | None) -> "GitHubConfig":
         source = dict(mapping or {})
-        for key in ("timeout_seconds", "max_response_bytes", "max_results"):
-            if isinstance(source.get(key), bool):
-                raise GitHubConfigError(f"{key} must not be boolean")
+        timeout_seconds = _numeric_config(source, "timeout_seconds", 30.0, float)
+        max_response_bytes = _numeric_config(source, "max_response_bytes", 2 * 1024 * 1024, int)
+        max_results = _numeric_config(source, "max_results", 20, int)
         xdg = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
         configured_file = source.get("token_file")
         token_file = Path(str(configured_file)).expanduser() if configured_file else None
@@ -53,9 +63,9 @@ class GitHubConfig:
             token_file=token_file,
             owner=str(source.get("owner", os.environ.get("ZARA_GITHUB_OWNER", ""))).strip(),
             api_base=str(source.get("api_base", "https://api.github.com")).strip().rstrip("/"),
-            timeout_seconds=float(source.get("timeout_seconds", 30.0)),
-            max_response_bytes=int(source.get("max_response_bytes", 2 * 1024 * 1024)),
-            max_results=int(source.get("max_results", 20)),
+            timeout_seconds=timeout_seconds,
+            max_response_bytes=max_response_bytes,
+            max_results=max_results,
         )
         config.validate()
         return config
