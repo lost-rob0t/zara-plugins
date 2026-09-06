@@ -111,7 +111,16 @@ completion_response(Id, Task, Response) :-
 
 passing_evidence(Id) :-
     task_evidence(Id, Evidence),
-    get_dict(status, Evidence, "passed"),
+    get_dict(kind, Evidence, Kind),
+    latest_evidence_status(Id, Kind, "passed"),
+    !.
+
+latest_evidence_status(Id, Kind, Status) :-
+    findall(Evidence, task_evidence(Id, Evidence), EvidenceList),
+    reverse(EvidenceList, LatestFirst),
+    member(Evidence, LatestFirst),
+    get_dict(kind, Evidence, Kind),
+    get_dict(status, Evidence, Status),
     !.
 
 task_completed(Task) :-
