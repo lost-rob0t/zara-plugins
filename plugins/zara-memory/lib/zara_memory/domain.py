@@ -125,7 +125,7 @@ class MemoryService:
 
     @staticmethod
     def _validate_scope_owner(scope: str, owner: str) -> None:
-        if scope not in SCOPES:
+        if not isinstance(scope, str) or scope not in SCOPES:
             raise MemoryError(f"unsupported memory scope: {scope!r}")
         if not isinstance(owner, str) or not owner.strip():
             raise MemoryError("memory scope owner is required")
