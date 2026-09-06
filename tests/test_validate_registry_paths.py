@@ -61,6 +61,12 @@ class RegistryPathConfinementTest(unittest.TestCase):
             },
         }
 
+    def add_installer(self) -> Path:
+        tool = self.plugin / "tools" / "example"
+        tool.parent.mkdir()
+        tool.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+        return tool
+
     def test_entrypoint_must_stay_inside_plugin_directory(self) -> None:
         outside = self.plugins / "outside.py"
         outside.write_text("VERSION = '0.1.0'\ndef create_plugin(): return None\n", encoding="utf-8")
@@ -125,6 +131,20 @@ class RegistryPathConfinementTest(unittest.TestCase):
             "nix build github:lost-rob0t/zara-plugins#example ; echo unsafe"
         )
         with self.assertRaisesRegex(validate_registry.RegistryError, "install.nix"):
+            validate_registry.validate_entry(entry)
+
+    def test_cli_plugin_must_advertise_generated_run_installer(self) -> None:
+        self.add_installer()
+        entry = self.entry()
+        with self.assertRaisesRegex(validate_registry.RegistryError, "installer layout"):
+            validate_registry.validate_entry(entry)
+
+    def test_non_cli_plugin_must_not_advertise_run_installer(self) -> None:
+        entry = self.entry()
+        entry["install"]["nix"] = (
+            "nix run github:lost-rob0t/zara-plugins#example -- install"
+        )
+        with self.assertRaisesRegex(validate_registry.RegistryError, "installer layout"):
             validate_registry.validate_entry(entry)
 
 
