@@ -13,8 +13,9 @@ from .task_state import TaskStateSession
 
 
 class TaskStateCodingPlugin(ZaraCodingPlugin):
-    def __init__(self) -> None:
+    def __init__(self, *, plugin_root: Path | None = None) -> None:
         super().__init__()
+        self.plugin_root = (plugin_root or Path(__file__).resolve().parents[2]).resolve()
         self.task_state: TaskStateSession | None = None
         self.task_state_reason = "not-started"
 
@@ -33,7 +34,7 @@ class TaskStateCodingPlugin(ZaraCodingPlugin):
             self.task_state = None
             self.task_state_reason = "swipl-executable-not-found"
             return
-        driver = Path(__file__).resolve().parents[2] / "prolog" / "zara_coding_task_state.pl"
+        driver = self.plugin_root / "prolog" / "zara_coding_task_state.pl"
         if not driver.is_file():
             self.task_state = None
             self.task_state_reason = "task-state-driver-missing"
@@ -132,5 +133,5 @@ class TaskStateCodingPlugin(ZaraCodingPlugin):
         return self.task_state
 
 
-def create_plugin() -> TaskStateCodingPlugin:
-    return TaskStateCodingPlugin()
+def create_plugin(*, plugin_root: Path | None = None) -> TaskStateCodingPlugin:
+    return TaskStateCodingPlugin(plugin_root=plugin_root)
