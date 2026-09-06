@@ -37,7 +37,7 @@ from zara_coding.plugin import ZaraCodingPlugin
 
 
 class BranchCreateTests(unittest.TestCase):
-    def test_domain_creates_only_new_branch_at_expected_head(self):
+    def test_domain_creates_branch_with_atomic_head_fence(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo = root / "repo"
@@ -50,8 +50,6 @@ class BranchCreateTests(unittest.TestCase):
                 args = tuple(argv[3:])
                 if args == ("rev-parse", "--show-toplevel"):
                     output = f"{repo.resolve()}\n"
-                elif args == ("rev-parse", "HEAD"):
-                    output = f"{expected_head}\n"
                 else:
                     output = ""
                 return subprocess.CompletedProcess(argv, 0, stdout=output, stderr="")
@@ -62,10 +60,21 @@ class BranchCreateTests(unittest.TestCase):
             self.assertEqual(evidence, {"branch": "feature/safe", "head": expected_head})
             argv_calls = [call[0][3:] for call in calls]
             self.assertIn(["check-ref-format", "refs/heads/feature/safe"], argv_calls)
-            self.assertIn(["update-ref", "refs/heads/feature/safe", expected_head, ""], argv_calls)
+            self.assertNotIn(["rev-parse", "HEAD"], argv_calls)
+            update_calls = [call for call in calls if call[0][3:] == ["update-ref", "--stdin"]]
+            self.assertEqual(len(update_calls), 1)
+            _, kwargs = update_calls[0]
+            self.assertEqual(
+                kwargs["input"],
+                "start\n"
+                f"verify HEAD {expected_head}\n"
+                f"create refs/heads/feature/safe {expected_head}\n"
+                "prepare\n"
+                "commit\n",
+            )
             self.assertTrue(all(call[1]["shell"] is False for call in calls))
 
-    def test_domain_rejects_branch_creation_when_head_moved(self):
+    def test_domain_fails_closed_when_atomic_transaction_rejects_stale_head(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo = root / "repo"
@@ -74,18 +83,18 @@ class BranchCreateTests(unittest.TestCase):
             expected_head = "a" * 40
 
             def run(argv, **kwargs):
-                calls.append(argv[3:])
+                calls.append((argv, kwargs))
                 args = tuple(argv[3:])
                 if args == ("rev-parse", "--show-toplevel"):
                     return subprocess.CompletedProcess(argv, 0, stdout=f"{repo.resolve()}\n", stderr="")
-                if args == ("rev-parse", "HEAD"):
-                    return subprocess.CompletedProcess(argv, 0, stdout=f"{'b' * 40}\n", stderr="")
+                if args == ("update-ref", "--stdin"):
+                    raise subprocess.CalledProcessError(1, argv)
                 return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
             inspector = RepositoryInspector((root,), runner=run)
-            with self.assertRaisesRegex(CodingError, "HEAD changed"):
+            with self.assertRaisesRegex(CodingError, "git operation failed: update-ref --stdin"):
                 inspector.create_branch(repo, "feature/stale", expected_head)
-            self.assertFalse(any(args and args[0] == "update-ref" for args in calls))
+            self.assertNotIn(["rev-parse", "HEAD"], [call[0][3:] for call in calls])
 
     def test_domain_fails_closed_when_branch_already_exists(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -98,9 +107,7 @@ class BranchCreateTests(unittest.TestCase):
                 args = tuple(argv[3:])
                 if args == ("rev-parse", "--show-toplevel"):
                     return subprocess.CompletedProcess(argv, 0, stdout=f"{repo.resolve()}\n", stderr="")
-                if args == ("rev-parse", "HEAD"):
-                    return subprocess.CompletedProcess(argv, 0, stdout=f"{expected_head}\n", stderr="")
-                if args and args[0] == "update-ref":
+                if args == ("update-ref", "--stdin"):
                     raise subprocess.CalledProcessError(1, argv)
                 return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
