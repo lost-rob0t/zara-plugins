@@ -95,9 +95,11 @@ class ZaraCompatibilityGateTest(unittest.TestCase):
             "path": "plugins/zara-example",
             "entrypoint": "zara-plugin/example.py",
         }
-        other = Path("/runtime/zara-other/lib")
+        runtime_other = Path("/runtime/zara-other/lib")
+        source_other = Path("/source/plugins/zara-other/lib")
+        non_plugin = Path("/python/site-packages")
         previous = list(sys.path)
-        sys.path.insert(0, str(other))
+        sys.path[:0] = [str(runtime_other), str(source_other), str(non_plugin)]
         try:
             with plugin_import_environment(
                 Path("/source"),
@@ -105,8 +107,13 @@ class ZaraCompatibilityGateTest(unittest.TestCase):
                 runtime_root=Path("/runtime"),
             ):
                 self.assertEqual(sys.path[0], "/runtime/zara-example/lib")
-                self.assertNotIn(str(other), sys.path[1:])
-            self.assertEqual(sys.path, [str(other), *previous])
+                self.assertNotIn(str(runtime_other), sys.path[1:])
+                self.assertNotIn(str(source_other), sys.path[1:])
+                self.assertIn(str(non_plugin), sys.path[1:])
+            self.assertEqual(
+                sys.path,
+                [str(runtime_other), str(source_other), str(non_plugin), *previous],
+            )
         finally:
             sys.path[:] = previous
 
