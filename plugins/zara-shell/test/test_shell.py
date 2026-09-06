@@ -47,6 +47,14 @@ class ShellRunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(ShellError, "environment exceeds configured limit"):
             self.runner.run(["printf", "ok"], cwd=self.root, env={"SECRET": "x" * 4096})
 
+    def test_env_must_be_mapping_before_execution(self):
+        for env in ([], "", 0, False, object()):
+            with self.subTest(env=env):
+                with patch("zara_shell.domain.subprocess.Popen") as popen:
+                    with self.assertRaisesRegex(ShellError, "environment must be a mapping"):
+                        self.runner.run(["printf", "ok"], cwd=self.root, env=env)
+                    popen.assert_not_called()
+
     def test_env_keys_are_default_deny_before_execution(self):
         policy = CommandPolicy(
             allowed_programs={"printf"},
