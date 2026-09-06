@@ -53,6 +53,8 @@ class MemoryService:
         return SCOPES
 
     def register_schema(self, schema: MemorySchema) -> None:
+        if not isinstance(schema, MemorySchema):
+            raise MemoryError("memory schema registration requires MemorySchema")
         if schema.name in self._schemas:
             raise MemoryError(f"memory schema already registered: {schema.name}")
         self._schemas[schema.name] = schema
