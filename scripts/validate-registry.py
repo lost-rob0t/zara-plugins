@@ -159,14 +159,14 @@ def validate_entry(entry: dict) -> None:
     except ValueError as error:
         raise RegistryError(f"plugin {name!r} install.nix is invalid: {error}") from error
     expected_target = f"{GENERATED_FLAKE_SOURCE}#{name}"
-    if (
-        len(install_argv) < 3
-        or install_argv[0] != "nix"
-        or install_argv[1] not in {"build", "run"}
-        or install_argv[2] != expected_target
-    ):
+    supported_install_commands = (
+        ["nix", "build", expected_target],
+        ["nix", "run", expected_target, "--", "install"],
+    )
+    if install_argv not in supported_install_commands:
         raise RegistryError(
-            f"plugin {name!r} install.nix must target generated package {expected_target!r}"
+            f"plugin {name!r} install.nix must be a supported generated install command "
+            f"for {expected_target!r}"
         )
 
     plugin_dir = ROOT / entry["path"]
