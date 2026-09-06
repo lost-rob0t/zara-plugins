@@ -114,8 +114,16 @@ class CompatibilityRuntime:
     def register_agent_loop_advice(self, kind, priority, callback):
         if self.closed:
             raise RuntimeError("plugin runtime is closed")
+        if kind not in {"before", "after", "around", "override"}:
+            raise ValueError(f"unknown hook kind: {kind!r}")
+        if isinstance(priority, bool) or not isinstance(priority, int):
+            raise ValueError("priority must be an integer")
+        if abs(priority) > 100_000:
+            raise ValueError("priority is outside the supported range")
+        if not callable(callback):
+            raise ValueError("callback must be callable")
         registration_id = len(self.advice) + 1
-        self.advice.append((str(kind), int(priority)))
+        self.advice.append((kind, priority))
         return registration_id
 
     def start_worker(self, name, target):
