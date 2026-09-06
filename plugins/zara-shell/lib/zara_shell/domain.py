@@ -32,8 +32,9 @@ class CommandPolicy:
             raise ValueError("allowed_roots must not be empty")
         if not math.isfinite(self.max_runtime_seconds) or self.max_runtime_seconds <= 0:
             raise ValueError("max_runtime_seconds must be finite positive")
-        if min(self.max_output_bytes, self.max_input_bytes, self.max_environment_bytes) <= 0:
-            raise ValueError("byte limits must be positive")
+        byte_limits = (self.max_output_bytes, self.max_input_bytes, self.max_environment_bytes)
+        if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in byte_limits):
+            raise ValueError("byte limits must be positive integers")
 
 
 class ShellRunner:

@@ -49,6 +49,21 @@ class ShellRunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(ShellError, "input"):
             self.runner.run(["printf", "ok"], cwd=self.root, stdin="x" * 65)
 
+    def test_policy_rejects_non_integer_byte_limits(self):
+        for field, value in (
+            ("max_output_bytes", 1.5),
+            ("max_input_bytes", True),
+            ("max_environment_bytes", 2.5),
+        ):
+            kwargs = {
+                "allowed_programs": {"printf"},
+                "allowed_roots": (self.root,),
+                field: value,
+            }
+            with self.subTest(field=field, value=value):
+                with self.assertRaisesRegex(ValueError, "byte limits must be positive integers"):
+                    CommandPolicy(**kwargs)
+
     def test_timeout_is_reported_structurally(self):
         policy = CommandPolicy(
             allowed_programs={sys.executable},
