@@ -73,6 +73,7 @@ class CodingPluginTests(unittest.TestCase):
                 "coding.git.worktree.add-detached-locked",
                 "coding.git.worktree.lock",
                 "coding.git.worktree.unlock",
+                "coding.git.worktree.remove-detached",
                 "coding.spec.catalog",
                 "coding.spec.normalize",
                 "coding.spec.compile",
@@ -88,6 +89,7 @@ class CodingPluginTests(unittest.TestCase):
             "coding.git.worktree.add-detached-locked",
             "coding.git.worktree.lock",
             "coding.git.worktree.unlock",
+            "coding.git.worktree.remove-detached",
         }
         for name, tool in tools.items():
             self.assertEqual(
@@ -130,6 +132,8 @@ class CodingPluginTests(unittest.TestCase):
             plugin.git_worktree_lock("/", "/tmp/task", "a" * 40, "coding-task:17")
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.git_worktree_unlock("/", "/tmp/task", "a" * 40, "coding-task:17")
+        with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
+            plugin.git_worktree_remove_detached("/", "/tmp/task", "a" * 40)
         with self.assertRaisesRegex(RuntimeError, "Prolog-RLM"):
             plugin.spec_catalog()
         with self.assertRaisesRegex(RuntimeError, "Prolog-RLM"):
