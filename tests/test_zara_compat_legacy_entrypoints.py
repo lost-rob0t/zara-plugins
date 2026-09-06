@@ -48,6 +48,27 @@ class LegacyEntrypointCompatibilityTest(unittest.TestCase):
                 {},
             )
 
+    def test_noncallable_register_tools_does_not_fall_back_to_register_skills(self) -> None:
+        class BaseTool:
+            pass
+
+        class Tool(BaseTool):
+            name = "legacy.skill"
+
+        def register_skills(prolog_engine):
+            return [Tool()]
+
+        with self.assertRaisesRegex(
+            CompatibilityError,
+            "zara-legacy.*register_tools.*not callable",
+        ):
+            require_legacy_tool_entrypoint(
+                "zara-legacy",
+                SimpleNamespace(register_tools=None, register_skills=register_skills),
+                BaseTool,
+                {},
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
