@@ -175,9 +175,10 @@ def _is_plugin_library(path: str, root: Path, runtime_root: Path | None) -> bool
         return False
     if candidate.name != "lib":
         return False
-    if runtime_root is not None:
-        return candidate.parent.parent == runtime_root.resolve()
-    return candidate.parent.parent == (root.resolve() / "plugins")
+    source_plugins = root.resolve() / "plugins"
+    if candidate.parent.parent == source_plugins:
+        return True
+    return runtime_root is not None and candidate.parent.parent == runtime_root.resolve()
 
 
 @contextmanager
