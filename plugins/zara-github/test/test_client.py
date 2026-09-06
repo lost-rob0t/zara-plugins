@@ -103,6 +103,22 @@ class GitHubClientTest(unittest.TestCase):
             ],
         )
 
+    def test_result_limits_are_typed_positive_integers(self):
+        for method_name in ("latest_prs", "pr_list", "issue_list"):
+            for limit in (0, -1, True, 1.5, "2"):
+                client, opener = self.client([])
+                method = getattr(client, method_name)
+                args = () if method_name == "latest_prs" else ("lost-rob0t/zara-plugins",)
+                with self.subTest(method=method_name, limit=limit):
+                    with self.assertRaisesRegex(GitHubError, "limit must be a positive integer"):
+                        method(*args, limit=limit)
+                    self.assertEqual(opener.requests, [])
+
+    def test_result_limit_clamps_only_above_configured_maximum(self):
+        client, opener = self.client([[]])
+        client.pr_list("lost-rob0t/zara-plugins", limit=999)
+        self.assertIn("per_page=20", opener.requests[0].full_url)
+
     def test_merge_rejects_pending_exact_head_checks_before_mutation(self):
         client, opener = self.client(
             [
