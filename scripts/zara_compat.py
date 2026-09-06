@@ -280,6 +280,7 @@ def check_registry(
     zara_source: Path,
     *,
     runtime_root: Path | None = None,
+    call_timeout: float = 5.0,
 ) -> list[str]:
     root = root.resolve()
     runtime_root = runtime_root.resolve() if runtime_root is not None else None
@@ -324,21 +325,30 @@ def check_registry(
                     continue
                 try:
                     with plugin_import_environment(root, entry, runtime_root=runtime_root):
-                        module = load_plugin_module(entrypoint)
+                        module = invoke_compatibility_call(
+                            load_plugin_module,
+                            entrypoint,
+                            timeout=call_timeout,
+                        )
                         if entry.get("plugin_type") == "service":
                             factory = read_compatibility_attribute(
                                 module,
                                 "create_plugin",
                                 _MISSING,
+                                timeout=call_timeout,
                             )
                             if factory is _MISSING or not callable(factory):
                                 raise CompatibilityError("service entrypoint has no create_plugin()")
-                            instance = construct_service_plugin(factory)
+                            instance = construct_service_plugin(factory, timeout=call_timeout)
                             if not isinstance(instance, ServicePlugin):
                                 raise CompatibilityError(
                                     f"create_plugin() returned {type(instance).__name__}, not Zara ServicePlugin"
                                 )
-                            metadata = read_compatibility_attribute(instance, "metadata")
+                            metadata = read_compatibility_attribute(
+                                instance,
+                                "metadata",
+                                timeout=call_timeout,
+                            )
                             if not isinstance(metadata, PluginMetadata):
                                 expected = f"{PluginMetadata.__module__}.{PluginMetadata.__qualname__}"
                                 observed = _qualified_type(metadata)
@@ -346,23 +356,41 @@ def check_registry(
                                     "service metadata is not Zara PluginMetadata "
                                     f"(expected {expected}, observed {observed})"
                                 )
-                            require_metadata(entry, metadata)
-                            require_service_activation_contract(name, instance)
-                            tools = collect_service_tools(instance)
-                            invalid = [type(tool).__name__ for tool in tools if not isinstance(tool, BaseTool)]
+                            require_metadata(entry, metadata, timeout=call_timeout)
+                            require_service_activation_contract(
+                                name,
+                                instance,
+                                timeout=call_timeout,
+                            )
+                            tools = collect_service_tools(instance, timeout=call_timeout)
+                            invalid = [
+                                type(tool).__name__
+                                for tool in tools
+                                if not isinstance(tool, BaseTool)
+                            ]
                             if invalid:
                                 raise CompatibilityError(
                                     f"tools() returned non-BaseTool values: {', '.join(invalid)}"
                                 )
-                            require_tool_names(name, tools, seen_tool_names)
+                            require_tool_names(
+                                name,
+                                tools,
+                                seen_tool_names,
+                                timeout=call_timeout,
+                            )
                             with fake_dependency_environment(name):
-                                exercise_service_lifecycle(instance, CompatibilityRuntime(name))
+                                exercise_service_lifecycle(
+                                    instance,
+                                    CompatibilityRuntime(name),
+                                    timeout=call_timeout,
+                                )
                         else:
                             require_legacy_tool_entrypoint(
                                 name,
                                 module,
                                 BaseTool,
                                 seen_tool_names,
+                                timeout=call_timeout,
                             )
                 except Exception as error:
                     failures.append(f"{name}: {type(error).__name__}: {error}")
