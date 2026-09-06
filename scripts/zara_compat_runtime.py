@@ -39,6 +39,10 @@ def temporary_runtime_environment(home: Path):
 @contextmanager
 def fake_dependency_environment(plugin_name: str):
     live_dependency_environment = {
+        "zara-agent-zero": (
+            "ZARA_AGENT_ZERO_URL",
+            "ZARA_AGENT_ZERO_API_KEY",
+        ),
         "zara-avatar": ("ZARA_AVATAR_RENDERER",),
         "zara-discord": ("ZARA_DISCORD_TOKEN",),
         "zara-github": ("ZARA_GITHUB_TOKEN",),
