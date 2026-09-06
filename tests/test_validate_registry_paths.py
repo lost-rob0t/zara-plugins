@@ -51,6 +51,9 @@ class RegistryPathConfinementTest(unittest.TestCase):
             "entrypoint": "entrypoint.py",
             "docs": "plugins/example/README.md",
             "license": "GPL-3.0-or-later",
+            "install": {
+                "nix": "nix build github:lost-rob0t/zara-plugins#example",
+            },
             "nix": {
                 "flake": "github:lost-rob0t/zara-plugins",
                 "package": "example",
@@ -108,6 +111,12 @@ class RegistryPathConfinementTest(unittest.TestCase):
         entry = self.entry()
         entry["nix"]["flake"] = "github:someone/else"
         with self.assertRaisesRegex(validate_registry.RegistryError, "nix flake"):
+            validate_registry.validate_entry(entry)
+
+    def test_install_nix_target_must_match_generated_package(self) -> None:
+        entry = self.entry()
+        entry["install"]["nix"] = "nix build github:lost-rob0t/zara-plugins#other"
+        with self.assertRaisesRegex(validate_registry.RegistryError, "install.nix"):
             validate_registry.validate_entry(entry)
 
 

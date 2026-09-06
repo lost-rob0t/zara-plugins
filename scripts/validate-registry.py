@@ -20,6 +20,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -123,6 +124,27 @@ def validate_entry(entry: dict) -> None:
     if nix.get("aggregate") != "zara-plugins":
         raise RegistryError(
             f"plugin {name!r} nix aggregate must be 'zara-plugins'"
+        )
+
+    install = entry.get("install")
+    if not isinstance(install, dict):
+        raise RegistryError(f"plugin {name!r} is missing install metadata")
+    install_nix = install.get("nix")
+    if not isinstance(install_nix, str) or not install_nix.strip():
+        raise RegistryError(f"plugin {name!r} is missing install.nix metadata")
+    try:
+        install_argv = shlex.split(install_nix)
+    except ValueError as error:
+        raise RegistryError(f"plugin {name!r} install.nix is invalid: {error}") from error
+    expected_target = f"{GENERATED_FLAKE_SOURCE}#{name}"
+    if (
+        len(install_argv) < 3
+        or install_argv[0] != "nix"
+        or install_argv[1] not in {"build", "run"}
+        or install_argv[2] != expected_target
+    ):
+        raise RegistryError(
+            f"plugin {name!r} install.nix must target generated package {expected_target!r}"
         )
 
     plugin_dir = ROOT / entry["path"]
