@@ -119,6 +119,14 @@ class RegistryPathConfinementTest(unittest.TestCase):
         with self.assertRaisesRegex(validate_registry.RegistryError, "install.nix"):
             validate_registry.validate_entry(entry)
 
+    def test_install_nix_rejects_trailing_shell_syntax(self) -> None:
+        entry = self.entry()
+        entry["install"]["nix"] = (
+            "nix build github:lost-rob0t/zara-plugins#example ; echo unsafe"
+        )
+        with self.assertRaisesRegex(validate_registry.RegistryError, "install.nix"):
+            validate_registry.validate_entry(entry)
+
 
 if __name__ == "__main__":
     unittest.main()
