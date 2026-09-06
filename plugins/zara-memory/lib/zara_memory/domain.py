@@ -10,7 +10,7 @@ class MemoryError(RuntimeError):
 
 
 SCOPES = frozenset({"session", "user", "project", "machine", "global"})
-_PREDICATE = re.compile(r"^([a-z][a-z0-9_]*)\(")
+_PREDICATE = re.compile(r"^([a-z][a-z0-9_]*)\(.*\)$")
 
 
 @dataclass(frozen=True)
