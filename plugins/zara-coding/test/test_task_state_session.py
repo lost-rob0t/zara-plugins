@@ -146,6 +146,22 @@ class TaskStateSessionTest(unittest.TestCase):
 
         self.assertEqual(calls, 1)
 
+    def test_protocol_timeout_terminates_and_fences_owned_process(self) -> None:
+        process = FakeProcess([])
+        session = TaskStateSession(
+            Path("/tmp/driver.pl"),
+            process_factory=lambda *args, **kwargs: process,
+            response_timeout_seconds=0.1,
+            readiness_waiter=lambda stream, timeout: False,
+        )
+
+        with self.assertRaisesRegex(CodingError, "response timed out"):
+            session.status()
+
+        self.assertTrue(process.terminated)
+        with self.assertRaisesRegex(CodingError, "exited unexpectedly"):
+            session.status()
+
     def test_stop_terminates_the_owned_process(self) -> None:
         process = FakeProcess([])
         session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
