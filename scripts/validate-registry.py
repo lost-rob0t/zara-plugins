@@ -32,6 +32,10 @@ SUPPORTED_SCHEMA_VERSIONS = {1}
 ALLOWED_PLUGIN_TYPES = {"service", "tool"}
 GENERATED_FLAKE_LICENSE = "GPL-3.0-or-later"
 GENERATED_FLAKE_SOURCE = "github:lost-rob0t/zara-plugins"
+CANONICAL_REGISTRY_URL = "https://github.com/lost-rob0t/zara-plugins"
+CANONICAL_REGISTRY_RAW_URL = (
+    "https://raw.githubusercontent.com/lost-rob0t/zara-plugins/main/plugins.json"
+)
 REQUIRED_FIELDS = (
     "name",
     "version",
@@ -72,6 +76,14 @@ def load_registry() -> dict:
         raise RegistryError(
             f"unsupported schema_version {schema_version!r}; "
             f"supported: {sorted(SUPPORTED_SCHEMA_VERSIONS)}"
+        )
+    if document.get("registry") != CANONICAL_REGISTRY_URL:
+        raise RegistryError(
+            f"plugins.json registry URL must be {CANONICAL_REGISTRY_URL!r}"
+        )
+    if document.get("registry_raw") != CANONICAL_REGISTRY_RAW_URL:
+        raise RegistryError(
+            f"plugins.json registry_raw URL must be {CANONICAL_REGISTRY_RAW_URL!r}"
         )
     search_paths = document.get("plugin_search_paths")
     if (
