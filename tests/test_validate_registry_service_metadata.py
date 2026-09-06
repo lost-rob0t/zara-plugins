@@ -25,6 +25,23 @@ class ServiceMetadataAgreementTest(unittest.TestCase):
     def write(self, source: str) -> None:
         self.entrypoint.write_text(source, encoding="utf-8")
 
+    def test_rejects_nested_only_create_plugin_factory(self) -> None:
+        self.write(
+            "def wrapper():\n"
+            "    def create_plugin(): return None\n"
+            "    return create_plugin\n"
+            "metadata = PluginMetadata(name='example', version='0.1.0', api_version='1')\n"
+        )
+        with self.assertRaisesRegex(validate_registry.RegistryError, "module-level create_plugin"):
+            validate_registry.validate_service_entrypoint(self.entry, self.entrypoint)
+
+    def test_accepts_module_level_async_create_plugin_factory(self) -> None:
+        self.write(
+            "async def create_plugin(): return None\n"
+            "metadata = PluginMetadata(name='example', version='0.1.0', api_version='1')\n"
+        )
+        validate_registry.validate_service_entrypoint(self.entry, self.entrypoint)
+
     def test_rejects_conflicting_literal_metadata_names(self) -> None:
         self.write(
             "def create_plugin(): return None\n"
