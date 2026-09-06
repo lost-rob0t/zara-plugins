@@ -93,18 +93,18 @@ def require_legacy_tool_entrypoint(
     BaseTool: type[Any],
     seen_tool_names: dict[str, str],
 ) -> tuple[Any, ...]:
-    register_tools = getattr(module, "register_tools", None)
-    register_skills = getattr(module, "register_skills", None)
-    if callable(register_tools):
+    if hasattr(module, "register_tools"):
         entrypoint_name = "register_tools"
-        entrypoint = register_tools
-    elif callable(register_skills):
+        entrypoint = getattr(module, entrypoint_name)
+    elif hasattr(module, "register_skills"):
         entrypoint_name = "register_skills"
-        entrypoint = register_skills
+        entrypoint = getattr(module, entrypoint_name)
     else:
         raise CompatibilityError(
             "tool entrypoint defines neither register_tools() nor register_skills()"
         )
+    if not callable(entrypoint):
+        raise CompatibilityError(f"{name}: {entrypoint_name} exists but is not callable")
 
     tools = tuple(entrypoint(None))
     invalid = [type(tool).__name__ for tool in tools if not isinstance(tool, BaseTool)]
