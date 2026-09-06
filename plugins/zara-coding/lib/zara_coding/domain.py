@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import subprocess
 from pathlib import Path
 from typing import Callable
@@ -461,9 +462,20 @@ class PrologRLMBridge:
         timeout_seconds: float = 5.0,
         runner: Runner | None = None,
     ) -> None:
-        if timeout_seconds <= 0:
-            raise ValueError("timeout_seconds must be positive")
-        self.checkout = Path(checkout).expanduser()
+        if not isinstance(checkout, Path):
+            raise ValueError("checkout must be a Path")
+        if not isinstance(executable, str) or not executable or executable != executable.strip():
+            raise ValueError("executable must be a non-empty clean string")
+        if any(ord(character) < 32 or ord(character) == 127 for character in executable):
+            raise ValueError("executable must be a non-empty clean string")
+        if (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+        ):
+            raise ValueError("timeout_seconds must be a finite positive number")
+        self.checkout = checkout.expanduser()
         self.executable = executable
         self.timeout_seconds = timeout_seconds
         self._runner = runner or subprocess.run
