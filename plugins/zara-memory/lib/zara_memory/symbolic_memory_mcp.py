@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 from pathlib import Path
@@ -43,8 +44,13 @@ class SymbolicMemoryMCP:
                 raise ValueError(f"{name} must be a non-empty string")
         if not capabilities or any(not isinstance(capability, str) or not capability for capability in capabilities):
             raise ValueError("capabilities must contain non-empty strings")
-        if timeout_seconds <= 0:
-            raise ValueError("timeout_seconds must be positive")
+        if (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+        ):
+            raise ValueError("timeout_seconds must be finite positive")
         self.executable = executable
         self.database = Path(database).expanduser()
         self.principal = principal
@@ -52,7 +58,7 @@ class SymbolicMemoryMCP:
         self.project_remote = project_remote
         self.source_class = source_class
         self.capabilities = tuple(capabilities)
-        self.timeout_seconds = timeout_seconds
+        self.timeout_seconds = float(timeout_seconds)
         self._runner = runner or subprocess.run
         self._request_id = 0
 
