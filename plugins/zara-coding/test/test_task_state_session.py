@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 import unittest
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "lib"))
 
 from zara_coding.task_state import TaskStateSession
 
