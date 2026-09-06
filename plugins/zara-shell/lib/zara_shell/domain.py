@@ -33,7 +33,11 @@ class CommandPolicy:
             raise ValueError("allowed_roots must not be empty")
         if any(not isinstance(name, str) or not name for name in self.allowed_environment):
             raise ValueError("allowed_environment must contain non-empty strings")
-        if not math.isfinite(self.max_runtime_seconds) or self.max_runtime_seconds <= 0:
+        if (
+            isinstance(self.max_runtime_seconds, bool)
+            or not math.isfinite(self.max_runtime_seconds)
+            or self.max_runtime_seconds <= 0
+        ):
             raise ValueError("max_runtime_seconds must be finite positive")
         byte_limits = (self.max_output_bytes, self.max_input_bytes, self.max_environment_bytes)
         if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in byte_limits):
