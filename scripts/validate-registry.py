@@ -220,6 +220,12 @@ def validate_entry(entry: dict) -> None:
     if not plugin_dir.is_dir():
         raise RegistryError(f"plugin {name!r} directory {entry['path']!r} does not exist")
 
+    plugin_root = plugin_dir.resolve()
+    if plugin_root.parent != PLUGINS_DIR.resolve():
+        raise RegistryError(
+            f"plugin {name!r} plugin root must resolve directly under plugins/"
+        )
+
     installer = plugin_dir / "tools" / name
     has_installer = installer.is_file()
     uses_run_installer = install_argv[1] == "run"
@@ -234,7 +240,6 @@ def validate_entry(entry: dict) -> None:
     elif "tool" in install:
         raise RegistryError(f"plugin {name!r} advertises install.tool without a packaged installer")
 
-    plugin_root = plugin_dir.resolve()
     entrypoint = (plugin_dir / entry["entrypoint"]).resolve()
     if not entrypoint.is_relative_to(plugin_root):
         raise RegistryError(f"plugin {name!r} entrypoint must stay inside its plugin directory")
