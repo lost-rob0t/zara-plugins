@@ -51,6 +51,11 @@ class RegistryPathConfinementTest(unittest.TestCase):
             "entrypoint": "entrypoint.py",
             "docs": "plugins/example/README.md",
             "license": "GPL-3.0-or-later",
+            "nix": {
+                "flake": "github:lost-rob0t/zara-plugins",
+                "package": "example",
+                "aggregate": "zara-plugins",
+            },
         }
 
     def test_entrypoint_must_stay_inside_plugin_directory(self) -> None:
@@ -73,6 +78,24 @@ class RegistryPathConfinementTest(unittest.TestCase):
         entry = self.entry()
         entry.pop("docs")
         with self.assertRaisesRegex(validate_registry.RegistryError, "missing 'docs'"):
+            validate_registry.validate_entry(entry)
+
+    def test_published_plugin_requires_nix_metadata(self) -> None:
+        entry = self.entry()
+        entry.pop("nix")
+        with self.assertRaisesRegex(validate_registry.RegistryError, "nix metadata"):
+            validate_registry.validate_entry(entry)
+
+    def test_nix_package_must_match_registry_name(self) -> None:
+        entry = self.entry()
+        entry["nix"]["package"] = "other"
+        with self.assertRaisesRegex(validate_registry.RegistryError, "nix package"):
+            validate_registry.validate_entry(entry)
+
+    def test_nix_aggregate_must_match_generated_flake(self) -> None:
+        entry = self.entry()
+        entry["nix"]["aggregate"] = "other"
+        with self.assertRaisesRegex(validate_registry.RegistryError, "nix aggregate"):
             validate_registry.validate_entry(entry)
 
 
