@@ -118,7 +118,10 @@ class ShellRunner:
         return [executable, *argv[1:]]
 
     def _validate_cwd(self, cwd: Path) -> Path:
-        resolved = Path(cwd).resolve()
+        try:
+            resolved = Path(cwd).resolve()
+        except TypeError as exc:
+            raise ShellError("cwd must be path-like") from exc
         if not resolved.is_dir():
             raise ShellError("cwd must be an existing directory")
         if not any(resolved == root or root in resolved.parents for root in self._roots):
