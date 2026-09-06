@@ -166,6 +166,7 @@ class SymbolicMemoryMCP:
             raise SymbolicMemoryMCPError("symbolic-memory MCP returned invalid response")
         if response.get("jsonrpc") != "2.0":
             raise SymbolicMemoryMCPError("symbolic-memory MCP returned invalid JSON-RPC version")
-        if response.get("id") != request_id:
+        response_id = response.get("id")
+        if type(response_id) is not int or response_id != request_id:
             raise SymbolicMemoryMCPError("symbolic-memory MCP returned mismatched response identity")
         return response
