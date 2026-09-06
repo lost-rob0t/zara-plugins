@@ -119,11 +119,15 @@ class TaskStateSessionTest(unittest.TestCase):
         self.assertEqual(session.status(), {"status": "ok", "state": "ready"})
         self.assertEqual(stdout.readline_sizes, [TaskStateSession.MAX_RESPONSE_CHARS + 1])
 
-    def test_protocol_rejects_unknown_response_status(self) -> None:
+    def test_protocol_rejects_unknown_response_status_and_fences_process(self) -> None:
         process = FakeProcess([{"status": "maybe", "state": "ready"}])
         session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
 
         with self.assertRaisesRegex(CodingError, "unknown status"):
+            session.status()
+
+        self.assertTrue(process.terminated)
+        with self.assertRaisesRegex(CodingError, "exited unexpectedly"):
             session.status()
 
     def test_unexpected_process_exit_is_not_silently_replaced(self) -> None:
