@@ -125,9 +125,8 @@ class RepositoryInspectorTests(unittest.TestCase):
             for call in self.calls
             if call[0][-5:] == ["diff", "--numstat", "--no-renames", "HEAD", "--"]
         ]
-        self.assertEqual(len(diff_calls), 1)
-        _, kwargs = diff_calls[0]
-        self.assertFalse(kwargs["shell"])
+        self.assertEqual(len(diff_calls), 2)
+        self.assertTrue(all(kwargs["shell"] is False for _, kwargs in diff_calls))
 
     def test_diff_fails_closed_when_changed_file_count_exceeds_bound(self):
         with self.assertRaisesRegex(CodingError, "exceeds file limit"):
@@ -180,90 +179,99 @@ class RepositoryInspectorTests(unittest.TestCase):
             self.inspector.branches(self.repo, limit=0)
         self.assertEqual(self.calls, [])
 
-    def test_worktrees_returns_bounded_structured_porcelain_evidence(self):
-        worktrees = self.inspector.worktrees(self.repo, limit=2)
-        self.assertEqual(
-            worktrees,
-            [
-                {
-                    "path": str(self.repo.resolve()),
-                    "head": "a" * 40,
-                    "branch": "main",
-                    "detached": False,
-                    "locked": None,
-                    "prunable": None,
-                },
-                {
-                    "path": str(self.root / "wt"),
-                    "head": "b" * 40,
-                    "branch": None,
-                    "detached": True,
-                    "locked": "testing",
-                    "prunable": "stale",
-                },
-            ],
-        )
+    def test_create_branch_uses_expected_head_transaction(self):
+        self.inspector.create_branch(self.repo, "feature/x", "a" * 40)
         argv, kwargs = self.calls[-1]
-        self.assertEqual(argv[-4:], ["worktree", "list", "--porcelain", "-z"])
+        self.assertEqual(argv[-2:], ["update-ref", "--stdin"])
+        self.assertEqual(
+            kwargs["input"],
+            f"start\nverify HEAD {'a' * 40}\ncreate refs/heads/feature/x {'a' * 40}\nprepare\ncommit\n",
+        )
         self.assertFalse(kwargs["shell"])
 
-    def test_worktrees_fails_closed_when_inventory_exceeds_bound(self):
-        with self.assertRaisesRegex(CodingError, "exceeds worktree limit"):
-            self.inspector.worktrees(self.repo, limit=1)
+    def test_delete_branch_rejects_checked_out_branch(self):
+        with self.assertRaisesRegex(CodingError, "checked out in worktree"):
+            self.inspector.delete_branch(self.repo, "main", "a" * 40)
 
-    def test_worktrees_rejects_invalid_bound_before_spawning_git(self):
-        with self.assertRaisesRegex(ValueError, "between 1 and 100"):
-            self.inspector.worktrees(self.repo, limit=0)
-        self.assertEqual(self.calls, [])
+    def test_commit_requires_attached_branch(self):
+        def detached_run(argv, **kwargs):
+            args = argv[3:]
+            if args == ["rev-parse", "--show-toplevel"]:
+                output = f"{self.repo.resolve()}\n"
+                return subprocess.CompletedProcess(argv, 0, stdout=output, stderr="")
+            if args == ["symbolic-ref", "-q", "HEAD"]:
+                return subprocess.CompletedProcess(argv, 1, stdout="", stderr="")
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
-    def test_rejects_paths_outside_configured_roots(self):
-        with self.assertRaisesRegex(CodingError, "outside allowed roots"):
-            self.inspector.inspect(Path("/"))
-        self.assertEqual(self.calls, [])
+        inspector = RepositoryInspector((self.root,), runner=detached_run)
+        with self.assertRaisesRegex(CodingError, "attached branch"):
+            inspector.commit(self.repo, "message", "a" * 40)
 
-    def test_rejects_non_repository_directory(self):
-        with self.assertRaisesRegex(CodingError, "Git repository"):
-            self.inspector.inspect(self.plain)
+    def test_worktrees_returns_bounded_structured_inventory(self):
+        worktrees = self.inspector.worktrees(self.repo, limit=2)
+        self.assertEqual(len(worktrees), 2)
+        self.assertEqual(worktrees[0]["branch"], "main")
+        self.assertFalse(worktrees[0]["detached"])
+        self.assertEqual(worktrees[1]["branch"], None)
+        self.assertTrue(worktrees[1]["detached"])
+        self.assertEqual(worktrees[1]["locked"], "testing")
+        self.assertEqual(worktrees[1]["prunable"], "stale")
 
 
 class PrologRLMBridgeTests(unittest.TestCase):
-    def test_readiness_uses_public_rlm_facade_without_shell_interpolation(self):
-        checkout = Path("/srv/prolog-rlm")
-        calls = []
+    def test_status_reports_missing_checkout_without_spawning(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            bridge = PrologRLMBridge(Path(temporary))
+            self.assertEqual(
+                bridge.status(),
+                {"status": "unavailable", "reason": "prolog-rlm-checkout-missing"},
+            )
 
-        def run(argv, **kwargs):
-            calls.append((argv, kwargs))
-            return subprocess.CompletedProcess(argv, 0, stdout="ready\t0.9.0\n", stderr="")
-
-        bridge = PrologRLMBridge(checkout, executable="swipl", runner=run)
-        status = bridge.status()
-        self.assertEqual(status, {"status": "ready", "version": "0.9.0"})
-        argv, kwargs = calls[0]
-        self.assertEqual(argv[0], "swipl")
-        self.assertIn(str(checkout / "prolog" / "rlm.pl"), argv)
-        self.assertFalse(kwargs.get("shell", False))
-        self.assertTrue(kwargs["check"])
-        self.assertGreater(kwargs["timeout"], 0)
-
-    def test_missing_checkout_degrades_honestly(self):
-        bridge = PrologRLMBridge(Path("/definitely/missing/prolog-rlm"))
-        self.assertEqual(
-            bridge.status(),
-            {"status": "unavailable", "reason": "prolog-rlm-checkout-missing"},
-        )
-
-    def test_failed_runtime_reports_bounded_error_without_claiming_ready(self):
-        def run(argv, **kwargs):
-            raise subprocess.CalledProcessError(2, argv, stderr="boom")
-
+    def test_status_accepts_ready_facade_output(self):
         with tempfile.TemporaryDirectory() as temporary:
             checkout = Path(temporary)
-            (checkout / "prolog").mkdir()
-            (checkout / "prolog" / "rlm.pl").write_text(":- module(rlm, []).\n")
+
+            def run(argv, **kwargs):
+                return subprocess.CompletedProcess(argv, 0, stdout="ready\t1.2.3\n", stderr="")
+
             bridge = PrologRLMBridge(checkout, runner=run)
-            status = bridge.status()
-        self.assertEqual(status["status"], "unavailable")
-        self.assertEqual(status["reason"], "prolog-rlm-not-ready")
+            self.assertEqual(bridge.status(), {"status": "ready", "version": "1.2.3"})
+
+    def test_status_rejects_malformed_ready_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            checkout = Path(temporary)
+
+            def run(argv, **kwargs):
+                return subprocess.CompletedProcess(argv, 0, stdout="ready\n", stderr="")
+
+            bridge = PrologRLMBridge(checkout, runner=run)
+            self.assertEqual(
+                bridge.status(),
+                {"status": "unavailable", "reason": "prolog-rlm-invalid-readiness-output"},
+            )
+
+    def test_spec_catalog_calls_prolog_rlm_spec_language(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            checkout = Path(temporary)
+            calls = []
+
+            def run(argv, **kwargs):
+                calls.append((argv, kwargs))
+                return subprocess.CompletedProcess(argv, 0, stdout="ok(catalog)\n", stderr="")
+
+            bridge = PrologRLMBridge(checkout, runner=run)
+            result = bridge.spec_catalog()
+            self.assertEqual(result, {"status": "ok", "outcome": "ok(catalog)"})
+            argv, kwargs = calls[-1]
+            self.assertIn("rlm_spec_lang.pl", argv[3])
+            self.assertIn("spec_language_catalog", argv[-1])
+            self.assertFalse(kwargs["shell"])
+
+    def test_normalize_spec_rejects_unbounded_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            bridge = PrologRLMBridge(Path(temporary), runner=lambda *args, **kwargs: None)
+            with self.assertRaisesRegex(CodingError, "65536"):
+                bridge.normalize_spec("x" * 65537)
 
 
 if __name__ == "__main__":

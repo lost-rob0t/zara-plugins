@@ -96,6 +96,15 @@ class RepositoryInspector:
         max_files = self._bounded_limit(max_files)
         root = self._repository_root(path)
         head = self._git(root, "rev-parse", "HEAD").strip()
+        entries = self._diff_entries(root, max_files=max_files)
+        final_head = self._git(root, "rev-parse", "HEAD").strip()
+        if final_head != head:
+            raise CodingError("repository identity changed during diff")
+        if self._diff_entries(root, max_files=max_files) != entries:
+            raise CodingError("repository working tree changed during diff")
+        return entries
+
+    def _diff_entries(self, root: Path, *, max_files: int) -> list[dict[str, object]]:
         output = self._git(root, "diff", "--numstat", "--no-renames", "HEAD", "--")
         entries = []
         for line in output.splitlines():
@@ -116,9 +125,6 @@ class RepositoryInspector:
             )
             if len(entries) > max_files:
                 raise CodingError(f"git diff exceeds file limit of {max_files}")
-        final_head = self._git(root, "rev-parse", "HEAD").strip()
-        if final_head != head:
-            raise CodingError("repository identity changed during diff")
         return entries
 
     def log(self, path: Path, *, limit: int = 20) -> list[dict[str, object]]:
