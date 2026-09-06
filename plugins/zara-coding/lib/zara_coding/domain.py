@@ -283,7 +283,15 @@ class RepositoryInspector:
         if actual_head.lower() != expected_head.lower():
             raise CodingError("repository HEAD changed since expected_head was observed")
         tree = self._git(root, "write-tree").strip()
+        try:
+            self._require_full_object_id(tree)
+        except ValueError as exc:
+            raise CodingError("git commit returned malformed staged tree object ID") from exc
         parent_tree = self._git(root, "rev-parse", f"{expected_head}^{{tree}}").strip()
+        try:
+            self._require_full_object_id(parent_tree)
+        except ValueError as exc:
+            raise CodingError("git commit returned malformed parent tree object ID") from exc
         if tree == parent_tree:
             raise CodingError("git commit has no staged changes")
         commit_message = message if message.endswith("\n") else f"{message}\n"
