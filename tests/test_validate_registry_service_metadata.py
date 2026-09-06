@@ -58,7 +58,6 @@ class ServiceMetadataAgreementTest(unittest.TestCase):
             "def create_plugin(): return None\n"
             "metadata = PluginMetadata(name='example', version=PLUGIN_VERSION, api_version=API_VERSION)\n"
         )
-
         validate_registry.validate_service_entrypoint(self.entry, self.entrypoint)
 
     def test_accepts_plugin_scoped_api_version_constant(self) -> None:
@@ -68,8 +67,23 @@ class ServiceMetadataAgreementTest(unittest.TestCase):
             "def create_plugin(): return None\n"
             "metadata = PluginMetadata(name='example', version=EXAMPLE_PLUGIN_VERSION, api_version=EXAMPLE_API_VERSION)\n"
         )
-
         validate_registry.validate_service_entrypoint(self.entry, self.entrypoint)
+
+    def test_accepts_omitted_api_version_when_registry_matches_default(self) -> None:
+        self.write(
+            "def create_plugin(): return None\n"
+            "metadata = PluginMetadata(name='example', version='0.1.0')\n"
+        )
+        validate_registry.validate_service_entrypoint(self.entry, self.entrypoint)
+
+    def test_rejects_omitted_api_version_when_registry_disagrees_with_default(self) -> None:
+        self.entry["api_version"] = "2"
+        self.write(
+            "def create_plugin(): return None\n"
+            "metadata = PluginMetadata(name='example', version='0.1.0')\n"
+        )
+        with self.assertRaisesRegex(validate_registry.RegistryError, "api_version"):
+            validate_registry.validate_service_entrypoint(self.entry, self.entrypoint)
 
 
 if __name__ == "__main__":
