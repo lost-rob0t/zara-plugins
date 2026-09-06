@@ -45,6 +45,10 @@ class ShellRunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(ShellError, "environment"):
             self.runner.run(["printf", "ok"], cwd=self.root, env={"SECRET": "x" * 4096})
 
+    def test_env_keys_are_default_deny_before_execution(self):
+        with self.assertRaisesRegex(ShellError, "environment variable is not allowed: LD_PRELOAD"):
+            self.runner.run(["printf", "ok"], cwd=self.root, env={"LD_PRELOAD": "/tmp/inject.so"})
+
     def test_stdin_limit_fails_before_execution(self):
         with self.assertRaisesRegex(ShellError, "input"):
             self.runner.run(["printf", "ok"], cwd=self.root, stdin="x" * 65)
