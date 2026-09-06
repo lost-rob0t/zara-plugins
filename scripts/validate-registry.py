@@ -194,6 +194,10 @@ def validate_entry(entry: dict) -> None:
         install_argv = shlex.split(install_nix)
     except ValueError as error:
         raise RegistryError(f"plugin {name!r} install.nix is invalid: {error}") from error
+    if install_nix != shlex.join(install_argv):
+        raise RegistryError(
+            f"plugin {name!r} install.nix must use canonical generated command text"
+        )
     expected_target = f"{GENERATED_FLAKE_SOURCE}#{name}"
     supported_install_commands = (
         ["nix", "build", expected_target],
