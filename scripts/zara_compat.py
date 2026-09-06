@@ -73,6 +73,10 @@ def require_service_activation_contract(name: str, instance: Any) -> None:
         raise CompatibilityError(f"{name}: enabled_by_default must be a boolean")
 
 
+def construct_service_plugin(factory: Any, *, timeout: float = 5.0) -> Any:
+    return invoke_compatibility_call(factory, timeout=timeout)
+
+
 def collect_service_tools(instance: Any, *, timeout: float = 5.0) -> tuple[Any, ...]:
     method = getattr(instance, "tools", None)
     if not callable(method):
@@ -275,7 +279,7 @@ def check_registry(
                             factory = getattr(module, "create_plugin", None)
                             if not callable(factory):
                                 raise CompatibilityError("service entrypoint has no create_plugin()")
-                            instance = factory()
+                            instance = construct_service_plugin(factory)
                             if not isinstance(instance, ServicePlugin):
                                 raise CompatibilityError(
                                     f"create_plugin() returned {type(instance).__name__}, not Zara ServicePlugin"
