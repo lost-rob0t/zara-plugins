@@ -104,6 +104,12 @@ class RegistryPathConfinementTest(unittest.TestCase):
         with self.assertRaisesRegex(validate_registry.RegistryError, "license"):
             validate_registry.validate_entry(entry)
 
+    def test_nix_flake_must_match_generated_registry_source(self) -> None:
+        entry = self.entry()
+        entry["nix"]["flake"] = "github:someone/else"
+        with self.assertRaisesRegex(validate_registry.RegistryError, "nix flake"):
+            validate_registry.validate_entry(entry)
+
 
 if __name__ == "__main__":
     unittest.main()
