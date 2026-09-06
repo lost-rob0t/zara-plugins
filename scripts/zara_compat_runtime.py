@@ -5,6 +5,8 @@ import concurrent.futures
 import inspect
 import os
 import queue
+import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
@@ -63,6 +65,38 @@ class CompatibilitySubscription:
         self.closed = True
 
 
+class CompatibilityWorker:
+    def __init__(self, name: str, target) -> None:
+        self.name = name
+        self.stop_event = threading.Event()
+        self.error: Exception | None = None
+
+        def run() -> None:
+            try:
+                target(self.stop_event)
+            except Exception as error:
+                self.error = error
+
+        self._thread = threading.Thread(
+            target=run,
+            name=f"zara-plugin-{name}",
+            daemon=True,
+        )
+
+    @property
+    def is_alive(self) -> bool:
+        return self._thread.is_alive()
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def request_stop(self) -> None:
+        self.stop_event.set()
+
+    def join(self, timeout=None) -> None:
+        self._thread.join(timeout=timeout)
+
+
 class CompatibilityRuntime:
     def __init__(self, plugin_name: str, *, command_type: type | None = None) -> None:
         self.plugin_name = plugin_name
@@ -72,6 +106,7 @@ class CompatibilityRuntime:
         self.subscriptions: list[CompatibilitySubscription] = []
         self.workers: list[str] = []
         self.advice: list[tuple[str, int]] = []
+        self._worker_handles: dict[str, CompatibilityWorker] = {}
         self._command_type = command_type
 
     def dispatch(self, command):
@@ -145,13 +180,11 @@ class CompatibilityRuntime:
             raise ValueError(f"managed worker {name!r} is already registered")
         if len(self.workers) >= 8:
             raise RuntimeError("managed worker limit reached")
+        worker = CompatibilityWorker(f"{self.plugin_name}-{name}", target)
         self.workers.append(name)
-        return SimpleNamespace(
-            name=f"{self.plugin_name}-{name}",
-            is_alive=False,
-            request_stop=lambda: None,
-            join=lambda timeout=None: None,
-        )
+        self._worker_handles[name] = worker
+        worker.start()
+        return worker
 
     def _shutdown(self) -> None:
         if self.closed:
@@ -159,6 +192,20 @@ class CompatibilityRuntime:
         self.closed = True
         for subscription in self.subscriptions:
             subscription.close()
+        workers = tuple(self._worker_handles.values())
+        for worker in workers:
+            worker.request_stop()
+        deadline = time.monotonic() + 5.0
+        for worker in workers:
+            worker.join(timeout=max(0.0, deadline - time.monotonic()))
+            if worker.is_alive:
+                raise RuntimeError(
+                    f"managed worker {worker.name!r} did not stop before the deadline"
+                )
+            if worker.error is not None:
+                raise RuntimeError(
+                    f"managed worker {worker.name!r} failed: {worker.error}"
+                ) from worker.error
 
 
 def _invoke_lifecycle(method, *args, timeout: float = 5.0) -> None:
