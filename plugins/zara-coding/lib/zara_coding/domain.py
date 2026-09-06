@@ -24,11 +24,15 @@ class RepositoryInspector:
         executable: str = "git",
         runner: Runner | None = None,
     ) -> None:
-        if not allowed_roots:
-            raise ValueError("allowed_roots must not be empty")
-        if not executable:
-            raise ValueError("executable must not be empty")
-        self._roots = tuple(Path(root).expanduser().resolve() for root in allowed_roots)
+        if not isinstance(allowed_roots, tuple) or not allowed_roots:
+            raise ValueError("allowed_roots must be a non-empty tuple of Path values")
+        if any(not isinstance(root, Path) for root in allowed_roots):
+            raise ValueError("allowed_roots must contain only Path values")
+        if not isinstance(executable, str) or not executable or executable != executable.strip():
+            raise ValueError("executable must be a non-empty clean string")
+        if any(ord(character) < 32 or ord(character) == 127 for character in executable):
+            raise ValueError("executable must be a non-empty clean string")
+        self._roots = tuple(root.expanduser().resolve() for root in allowed_roots)
         self._executable = executable
         self._runner = runner or subprocess.run
 
