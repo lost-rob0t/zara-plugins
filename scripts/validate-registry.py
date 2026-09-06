@@ -107,6 +107,10 @@ def validate_entry(entry: dict) -> None:
         value = entry.get(field)
         if not isinstance(value, str) or not value.strip():
             raise RegistryError(f"entry {entry.get('name', '?')!r} is missing {field!r}")
+        if value != value.strip():
+            raise RegistryError(
+                f"entry {entry.get('name', '?')!r} field {field!r} has surrounding whitespace"
+            )
 
     name = entry["name"]
     if not NAME_PATTERN.match(name):
@@ -219,6 +223,10 @@ def validate_entry(entry: dict) -> None:
     tags = entry.get("tags", [])
     if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
         raise RegistryError(f"plugin {name!r} tags must be a list of strings")
+    if any(not tag.strip() or tag != tag.strip() for tag in tags):
+        raise RegistryError(
+            f"plugin {name!r} tags must be non-empty strings without surrounding whitespace"
+        )
     if len(tags) != len(set(tags)):
         raise RegistryError(f"plugin {name!r} tags contain duplicates")
 
