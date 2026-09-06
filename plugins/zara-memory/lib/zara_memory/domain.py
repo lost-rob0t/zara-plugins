@@ -21,12 +21,24 @@ class MemorySchema:
     allowed_fact_predicates: frozenset[str]
 
     def __post_init__(self) -> None:
-        if not self.name or len(self.name) > 128:
+        if not isinstance(self.name, str) or not self.name.strip() or len(self.name) > 128:
             raise ValueError("memory schema name must contain 1 to 128 characters")
-        if not self.allowed_scopes or not self.allowed_scopes <= SCOPES:
+        if (
+            not isinstance(self.allowed_scopes, frozenset)
+            or not self.allowed_scopes
+            or any(not isinstance(scope, str) or not scope.strip() for scope in self.allowed_scopes)
+            or not self.allowed_scopes <= SCOPES
+        ):
             raise ValueError("memory schema scopes must be supported Zara memory scopes")
-        if not self.allowed_fact_predicates:
-            raise ValueError("memory schema must allow at least one fact predicate")
+        if (
+            not isinstance(self.allowed_fact_predicates, frozenset)
+            or not self.allowed_fact_predicates
+            or any(
+                not isinstance(predicate, str) or not predicate.strip()
+                for predicate in self.allowed_fact_predicates
+            )
+        ):
+            raise ValueError("memory schema must allow non-empty fact predicates")
 
 
 class MemoryService:
