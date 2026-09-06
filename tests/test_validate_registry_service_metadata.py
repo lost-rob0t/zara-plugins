@@ -43,6 +43,16 @@ class ServiceMetadataAgreementTest(unittest.TestCase):
         with self.assertRaisesRegex(validate_registry.RegistryError, "version"):
             validate_registry.validate_service_entrypoint(self.entry, self.entrypoint)
 
+    def test_fallback_ignores_api_version_constant(self) -> None:
+        self.write(
+            "PLUGIN_VERSION = '0.1.0'\n"
+            "API_VERSION = '1'\n"
+            "def create_plugin(): return None\n"
+            "metadata = PluginMetadata(name='example', version=PLUGIN_VERSION)\n"
+        )
+
+        validate_registry.validate_service_entrypoint(self.entry, self.entrypoint)
+
 
 if __name__ == "__main__":
     unittest.main()
