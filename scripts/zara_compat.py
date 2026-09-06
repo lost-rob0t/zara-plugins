@@ -4,8 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
-import inspect
 import json
 import sys
 import tempfile
@@ -18,6 +16,7 @@ try:
         CompatibilityRuntime,
         exercise_service_lifecycle,
         fake_dependency_environment,
+        invoke_compatibility_call,
         temporary_runtime_environment,
     )
 except ImportError:
@@ -25,6 +24,7 @@ except ImportError:
         CompatibilityRuntime,
         exercise_service_lifecycle,
         fake_dependency_environment,
+        invoke_compatibility_call,
         temporary_runtime_environment,
     )
 
@@ -77,18 +77,7 @@ def collect_service_tools(instance: Any, *, timeout: float = 5.0) -> tuple[Any, 
     method = getattr(instance, "tools", None)
     if not callable(method):
         return ()
-
-    async def collect() -> tuple[Any, ...]:
-        if inspect.iscoroutinefunction(method):
-            result = await method()
-        else:
-            result = await asyncio.to_thread(method)
-        return tuple(result)
-
-    async def bounded_collect() -> tuple[Any, ...]:
-        return await asyncio.wait_for(collect(), timeout=timeout)
-
-    return asyncio.run(bounded_collect())
+    return tuple(invoke_compatibility_call(method, timeout=timeout))
 
 
 def require_tool_names(name: str, tools: tuple[Any, ...] | list[Any], seen: dict[str, str]) -> None:
