@@ -71,8 +71,10 @@ dispatch_op("get", Command, Response) :-
 
 dispatch_op("record_evidence", Command, Response) :-
     get_dict(task_id, Command, Id),
-    ( task_state(Id, _) ->
-        ( evidence_limit_reached(Id) ->
+    ( task_state(Id, Task) ->
+        ( task_completed(Task) ->
+            Response = _{status:"rejected", reason:"task-already-completed"}
+        ; evidence_limit_reached(Id) ->
             Response = _{status:"rejected", reason:"evidence-limit-reached"}
         ; get_dict(kind, Command, Kind),
           get_dict(status, Command, Status),
@@ -87,7 +89,10 @@ dispatch_op("record_evidence", Command, Response) :-
 dispatch_op("complete", Command, Response) :-
     get_dict(task_id, Command, Id),
     ( task_state(Id, Task) ->
-        completion_response(Id, Task, Response)
+        ( task_completed(Task) ->
+            Response = _{status:"rejected", reason:"task-already-completed"}
+        ; completion_response(Id, Task, Response)
+        )
     ; Response = _{status:"rejected", reason:"task-not-found"}
     ).
 
@@ -106,6 +111,9 @@ passing_evidence(Id) :-
     task_evidence(Id, Evidence),
     get_dict(status, Evidence, "passed"),
     !.
+
+task_completed(Task) :-
+    get_dict(state, Task, "completed").
 
 task_limit_reached :-
     max_tasks(Max),
