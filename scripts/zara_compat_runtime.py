@@ -112,6 +112,8 @@ class CompatibilityRuntime:
         return subscription
 
     def register_agent_loop_advice(self, kind, priority, callback):
+        if self.closed:
+            raise RuntimeError("plugin runtime is closed")
         registration_id = len(self.advice) + 1
         self.advice.append((str(kind), int(priority)))
         return registration_id
