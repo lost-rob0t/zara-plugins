@@ -63,6 +63,36 @@ class PrologTaskStateIntegrationTest(unittest.TestCase):
         self.assertEqual(fetched["task"]["state"], "open")
         self.assertEqual(fetched["task"]["evidence"][0]["status"], "failed")
 
+    def test_completed_task_rejects_further_mutation(self) -> None:
+        self.session.create_task(
+            "task-terminal",
+            goal="freeze terminal state",
+            completion_criteria=["test-passed"],
+        )
+        self.session.record_evidence(
+            "task-terminal",
+            kind="test",
+            status="passed",
+            detail="terminal proof",
+        )
+        completed = self.session.complete_task("task-terminal")
+
+        repeated = self.session.complete_task("task-terminal")
+        mutation = self.session.record_evidence(
+            "task-terminal",
+            kind="test",
+            status="failed",
+            detail="late contradictory evidence",
+        )
+        fetched = self.session.get_task("task-terminal")
+
+        self.assertEqual(completed["task"]["state"], "completed")
+        self.assertEqual(repeated, {"status": "rejected", "reason": "task-already-completed"})
+        self.assertEqual(mutation, {"status": "rejected", "reason": "task-already-completed"})
+        self.assertEqual(fetched["task"]["state"], "completed")
+        self.assertEqual(len(fetched["task"]["evidence"]), 1)
+        self.assertEqual(fetched["task"]["evidence"][0]["status"], "passed")
+
     def test_session_rejects_more_than_64_tasks(self) -> None:
         for index in range(64):
             created = self.session.create_task(
