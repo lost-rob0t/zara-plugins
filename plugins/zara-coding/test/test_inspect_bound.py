@@ -84,6 +84,36 @@ class RepositoryInspectBoundTests(unittest.TestCase):
             with self.assertRaisesRegex(CodingError, "identity changed during inspection"):
                 inspector.inspect(repo)
 
+    def test_inspect_rejects_dirty_state_change_during_snapshot(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = root / "repo"
+            repo.mkdir()
+            diff_reads = 0
+
+            def run(argv, **kwargs):
+                nonlocal diff_reads
+                args = tuple(argv[3:])
+                if args == ("rev-parse", "--show-toplevel"):
+                    output = f"{repo.resolve()}\n"
+                elif args == ("rev-parse", "HEAD"):
+                    output = "a" * 40 + "\n"
+                elif args == ("symbolic-ref", "--short", "-q", "HEAD"):
+                    output = "main\n"
+                elif args == ("diff", "--name-only", "HEAD"):
+                    diff_reads += 1
+                    output = "" if diff_reads == 1 else "tracked.txt\n"
+                elif args == ("ls-files", "--others", "--exclude-standard"):
+                    output = ""
+                else:
+                    output = ""
+                return subprocess.CompletedProcess(argv, 0, stdout=output, stderr="")
+
+            inspector = RepositoryInspector((root,), runner=run)
+            with self.assertRaisesRegex(CodingError, "working tree changed during inspection"):
+                inspector.inspect(repo)
+            self.assertEqual(diff_reads, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
