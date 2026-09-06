@@ -392,6 +392,9 @@ def check_registry(
                                 seen_tool_names,
                                 timeout=call_timeout,
                             )
+                except TimeoutError as error:
+                    failures.append(f"{name}: {type(error).__name__}: {error}")
+                    return failures
                 except Exception as error:
                     failures.append(f"{name}: {type(error).__name__}: {error}")
             try:

@@ -11,62 +11,91 @@ from scripts.zara_compat import check_registry
 
 
 class ZaraCompatibilityModuleImportDeadlineTest(unittest.TestCase):
-    def test_blocking_plugin_import_is_bounded(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            plugin = root / "plugins" / "zara-example"
-            entrypoint = plugin / "zara-plugin" / "example.py"
+    @staticmethod
+    def _write_fixture(root: Path, names: tuple[str, ...]) -> Path:
+        entries = []
+        for name in names:
+            plugin = root / "plugins" / name
+            entrypoint = plugin / "zara-plugin" / "entrypoint.py"
             entrypoint.parent.mkdir(parents=True)
             entrypoint.write_text("pass\n", encoding="utf-8")
             (plugin / "lib").mkdir()
-            (root / "plugins.json").write_text(
-                json.dumps(
-                    {
-                        "plugins": [
-                            {
-                                "name": "zara-example",
-                                "version": "1.0.0",
-                                "api_version": "1",
-                                "plugin_type": "service",
-                                "description": "example",
-                                "path": "plugins/zara-example",
-                                "entrypoint": "zara-plugin/example.py",
-                            }
-                        ]
-                    }
-                ),
-                encoding="utf-8",
+            entries.append(
+                {
+                    "name": name,
+                    "version": "1.0.0",
+                    "api_version": "1",
+                    "plugin_type": "service",
+                    "description": "example",
+                    "path": f"plugins/{name}",
+                    "entrypoint": "zara-plugin/entrypoint.py",
+                }
             )
-            zara_source = root / "zara-source"
-            api_root = zara_source / "zara" / "plugins"
-            api_root.mkdir(parents=True)
-            for name in ("api.py", "manager.py", "loader.py"):
-                (api_root / name).write_text("pass\n", encoding="utf-8")
+        (root / "plugins.json").write_text(json.dumps({"plugins": entries}), encoding="utf-8")
+        zara_source = root / "zara-source"
+        api_root = zara_source / "zara" / "plugins"
+        api_root.mkdir(parents=True)
+        for filename in ("api.py", "manager.py", "loader.py"):
+            (api_root / filename).write_text("pass\n", encoding="utf-8")
+        return zara_source
 
-            class PluginMetadata:
-                pass
+    @staticmethod
+    def _contracts(loader):
+        class PluginMetadata:
+            pass
 
-            class ServicePlugin:
-                pass
+        class ServicePlugin:
+            pass
+
+        return (
+            object,
+            "1",
+            PluginMetadata,
+            ServicePlugin,
+            lambda paths: (),
+            loader,
+        )
+
+    def test_blocking_plugin_import_is_bounded(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            zara_source = self._write_fixture(root, ("zara-example",))
 
             def blocking_loader(path):
                 time.sleep(1.0)
                 return object()
 
-            contracts = (
-                object,
-                "1",
-                PluginMetadata,
-                ServicePlugin,
-                lambda paths: (),
-                blocking_loader,
-            )
             started = time.monotonic()
-            with patch("scripts.zara_compat._load_runtime_contracts", return_value=contracts):
+            with patch(
+                "scripts.zara_compat._load_runtime_contracts",
+                return_value=self._contracts(blocking_loader),
+            ):
                 failures = check_registry(root, zara_source, call_timeout=0.05)
 
             self.assertLess(time.monotonic() - started, 0.5)
             self.assertTrue(any("TimeoutError" in failure for failure in failures), failures)
+
+    def test_timeout_aborts_before_loading_later_plugins(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            zara_source = self._write_fixture(root, ("zara-first", "zara-second"))
+            calls: list[str] = []
+
+            def loader(path):
+                calls.append(Path(path).parents[1].name)
+                if calls == ["zara-first"]:
+                    time.sleep(1.0)
+                return object()
+
+            with patch(
+                "scripts.zara_compat._load_runtime_contracts",
+                return_value=self._contracts(loader),
+            ):
+                failures = check_registry(root, zara_source, call_timeout=0.05)
+
+            self.assertEqual(calls, ["zara-first"])
+            self.assertEqual(len(failures), 1)
+            self.assertIn("zara-first: TimeoutError", failures[0])
 
 
 if __name__ == "__main__":
