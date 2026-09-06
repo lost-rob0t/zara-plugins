@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import re
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Sequence
 
 
 class MemoryError(RuntimeError):
@@ -30,6 +30,8 @@ class MemorySchema:
 
 
 class MemoryService:
+    MAX_FACTS = 64
+
     def __init__(self, backend: Any) -> None:
         self.backend = backend
         self._schemas: dict[str, MemorySchema] = {}
@@ -49,7 +51,7 @@ class MemoryService:
         scope: str,
         owner: str,
         text: str,
-        facts: Iterable[str],
+        facts: Sequence[str],
         provenance: dict[str, Any],
         memory_type: str,
     ) -> dict[str, Any]:
@@ -61,6 +63,10 @@ class MemoryService:
             raise MemoryError("memory text must be a string")
         if not isinstance(provenance, dict) or not provenance:
             raise MemoryError("memory provenance is required")
+        if isinstance(facts, (str, bytes)) or not isinstance(facts, Sequence):
+            raise MemoryError("memory facts must be a sequence of fact strings")
+        if len(facts) > self.MAX_FACTS:
+            raise MemoryError(f"memory facts exceed {self.MAX_FACTS} item limit")
         normalized_facts = tuple(self._validate_fact(schema, fact) for fact in facts)
         expected_provenance = copy.deepcopy(provenance)
         result = self.backend.remember(
