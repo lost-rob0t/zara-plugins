@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import unittest
 
 from scripts.zara_compat_runtime import CompatibilityRuntime
@@ -14,6 +15,25 @@ class CompatibilityRuntimeWorkerTest(unittest.TestCase):
         runtime = CompatibilityRuntime("example")
         worker = runtime.start_worker("events", _worker)
         self.assertEqual(worker.name, "example-events")
+
+    def test_managed_worker_runs_and_stops_with_runtime(self) -> None:
+        runtime = CompatibilityRuntime("example")
+        started = threading.Event()
+        stopped = threading.Event()
+
+        def target(stop_event: threading.Event) -> None:
+            started.set()
+            stop_event.wait(timeout=1.0)
+            if stop_event.is_set():
+                stopped.set()
+
+        worker = runtime.start_worker("events", target)
+
+        self.assertTrue(started.wait(timeout=0.25))
+        self.assertTrue(worker.is_alive)
+        runtime._shutdown()
+        self.assertTrue(stopped.wait(timeout=0.25))
+        self.assertFalse(worker.is_alive)
 
     def test_worker_name_must_be_bounded(self) -> None:
         runtime = CompatibilityRuntime("example")
