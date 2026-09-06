@@ -40,6 +40,12 @@ class CompatibilityRuntimeWorkerTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             runtime.start_worker("worker-8", _worker)
 
+    def test_closed_runtime_rejects_new_workers(self) -> None:
+        runtime = CompatibilityRuntime("example")
+        runtime._shutdown()
+        with self.assertRaises(RuntimeError):
+            runtime.start_worker("events", _worker)
+
 
 if __name__ == "__main__":
     unittest.main()
