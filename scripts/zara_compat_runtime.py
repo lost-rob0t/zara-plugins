@@ -108,9 +108,13 @@ class CompatibilityRuntime:
 
 
 def _invoke_lifecycle(method, *args) -> None:
-    result = method(*args)
-    if inspect.isawaitable(result):
-        asyncio.run(result)
+    async def invoke() -> None:
+        if inspect.iscoroutinefunction(method):
+            await method(*args)
+        else:
+            await asyncio.to_thread(method, *args)
+
+    asyncio.run(invoke())
 
 
 def exercise_service_lifecycle(instance: object, runtime: object) -> None:
