@@ -75,6 +75,19 @@ class SwiplBackendTests(unittest.TestCase):
             with self.assertRaisesRegex(ExpertError, "invalid structured output"):
                 SwiplBackend(str(program)).run(self._request(root))
 
+    def test_boolean_output_limit_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "positive integer"):
+            SwiplBackend(output_limit=True)
+
+    def test_boolean_request_bounds_fail_before_subprocess(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            backend = SwiplBackend(str(root / "must-not-run"))
+            for key in ("timeout_seconds", "max_results"):
+                with self.subTest(key=key):
+                    with self.assertRaisesRegex(ExpertError, "execution bounds"):
+                        backend.run(self._request(root, **{key: True}))
+
 
 if __name__ == "__main__":
     unittest.main()
