@@ -69,6 +69,12 @@ class RegistryPathConfinementTest(unittest.TestCase):
         with self.assertRaisesRegex(validate_registry.RegistryError, "docs must stay inside"):
             validate_registry.validate_entry(entry)
 
+    def test_published_plugin_requires_docs_metadata(self) -> None:
+        entry = self.entry()
+        entry.pop("docs")
+        with self.assertRaisesRegex(validate_registry.RegistryError, "missing 'docs'"):
+            validate_registry.validate_entry(entry)
+
 
 if __name__ == "__main__":
     unittest.main()
