@@ -128,10 +128,14 @@ class MemoryService:
             raise MemoryError(
                 f"memory backend returned more than {self.MAX_RECALL_RESULTS} recall results"
             )
-        return [
+        validated = [
             self._validate_memory(item, scope=scope, owner=owner, memory_type=memory_type)
             for item in items
         ]
+        memory_ids = [item["id"] for item in validated]
+        if len(memory_ids) != len(set(memory_ids)):
+            raise MemoryError("memory backend returned duplicate memory id")
+        return validated
 
     def forget(self, memory_id: str, *, scope: str, owner: str) -> dict[str, Any]:
         self._validate_scope_owner(scope, owner)
