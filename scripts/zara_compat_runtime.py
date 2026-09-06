@@ -38,12 +38,19 @@ def temporary_runtime_environment(home: Path):
 
 @contextmanager
 def fake_dependency_environment(plugin_name: str):
-    provider_secrets = {
+    live_dependency_environment = {
         "zara-discord": ("ZARA_DISCORD_TOKEN",),
         "zara-github": ("ZARA_GITHUB_TOKEN",),
         "zara-knowledge": ("BRAVE_SEARCH_API_KEY",),
+        "zara-starintel-server": (
+            "ZARA_STARINTEL_URL",
+            "ZARA_STARINTEL_API_KEY",
+            "ZARA_STARINTEL_API_KEY_FILE",
+            "ZARA_STARINTEL_BOOTSTRAP_SECRET",
+            "ZARA_STARINTEL_BOOTSTRAP_SECRET_FILE",
+        ),
     }
-    removed = provider_secrets.get(plugin_name, ())
+    removed = live_dependency_environment.get(plugin_name, ())
     previous = {name: os.environ.get(name) for name in removed}
     try:
         for name in removed:

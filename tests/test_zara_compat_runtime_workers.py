@@ -18,9 +18,14 @@ class CompatibilityRuntimeWorkerTest(unittest.TestCase):
             ("zara-discord", "ZARA_DISCORD_TOKEN"),
             ("zara-github", "ZARA_GITHUB_TOKEN"),
             ("zara-knowledge", "BRAVE_SEARCH_API_KEY"),
+            ("zara-starintel-server", "ZARA_STARINTEL_URL"),
+            ("zara-starintel-server", "ZARA_STARINTEL_API_KEY"),
+            ("zara-starintel-server", "ZARA_STARINTEL_API_KEY_FILE"),
+            ("zara-starintel-server", "ZARA_STARINTEL_BOOTSTRAP_SECRET"),
+            ("zara-starintel-server", "ZARA_STARINTEL_BOOTSTRAP_SECRET_FILE"),
         )
         for plugin_name, variable in cases:
-            with self.subTest(plugin_name=plugin_name), mock.patch.dict(
+            with self.subTest(plugin_name=plugin_name, variable=variable), mock.patch.dict(
                 os.environ,
                 {variable: "existing-secret"},
                 clear=True,
