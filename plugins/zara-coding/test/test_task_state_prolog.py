@@ -13,34 +13,76 @@ from zara_coding.task_state import TaskStateSession
 
 @unittest.skipUnless(shutil.which("swipl"), "SWI-Prolog is not installed")
 class PrologTaskStateIntegrationTest(unittest.TestCase):
-    def test_task_survives_multiple_protocol_operations_and_requires_evidence(self) -> None:
+    def setUp(self) -> None:
         driver = ROOT / "prolog" / "zara_coding_task_state.pl"
-        session = TaskStateSession(driver)
-        self.addCleanup(session.stop)
+        self.session = TaskStateSession(driver)
+        self.addCleanup(self.session.stop)
 
-        self.assertEqual(session.status(), {"status": "ok", "state": "ready"})
-        created = session.create_task(
+    def test_task_survives_multiple_protocol_operations_and_requires_evidence(self) -> None:
+        self.assertEqual(self.session.status(), {"status": "ok", "state": "ready"})
+        created = self.session.create_task(
             "task-integration",
             goal="verify persistent state",
             constraints=["bounded"],
             dependencies=[],
             completion_criteria=["test-passed"],
         )
-        rejected = session.complete_task("task-integration")
-        session.record_evidence(
+        rejected = self.session.complete_task("task-integration")
+        self.session.record_evidence(
             "task-integration",
             kind="test",
             status="passed",
             detail="deterministic integration proof",
         )
-        completed = session.complete_task("task-integration")
-        fetched = session.get_task("task-integration")
+        completed = self.session.complete_task("task-integration")
+        fetched = self.session.get_task("task-integration")
 
         self.assertEqual(created["task"]["state"], "open")
         self.assertEqual(rejected["reason"], "verification-evidence-required")
         self.assertEqual(completed["task"]["state"], "completed")
         self.assertEqual(fetched["task"]["state"], "completed")
         self.assertEqual(len(fetched["task"]["evidence"]), 1)
+
+    def test_session_rejects_more_than_64_tasks(self) -> None:
+        for index in range(64):
+            created = self.session.create_task(
+                f"task-{index}",
+                goal="bounded task",
+                completion_criteria=["verified"],
+            )
+            self.assertEqual(created["status"], "ok")
+
+        rejected = self.session.create_task(
+            "task-overflow",
+            goal="must be rejected",
+            completion_criteria=["verified"],
+        )
+
+        self.assertEqual(rejected, {"status": "rejected", "reason": "task-limit-reached"})
+
+    def test_task_rejects_more_than_64_evidence_records(self) -> None:
+        self.session.create_task(
+            "task-evidence",
+            goal="bound evidence",
+            completion_criteria=["verified"],
+        )
+        for index in range(64):
+            recorded = self.session.record_evidence(
+                "task-evidence",
+                kind="test",
+                status="passed",
+                detail=f"proof-{index}",
+            )
+            self.assertEqual(recorded["status"], "ok")
+
+        rejected = self.session.record_evidence(
+            "task-evidence",
+            kind="test",
+            status="passed",
+            detail="overflow",
+        )
+
+        self.assertEqual(rejected, {"status": "rejected", "reason": "evidence-limit-reached"})
 
 
 if __name__ == "__main__":

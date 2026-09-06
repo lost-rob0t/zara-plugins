@@ -211,7 +211,8 @@
               (entry: pkgs.lib.nameValuePair "${entry.name}-tests" (
                 pkgs.runCommand "zara-check-${entry.name}-tests"
                   {
-                    nativeBuildInputs = [ (pythonFor entry) ];
+                    nativeBuildInputs = [ (pythonFor entry) ]
+                      ++ pkgs.lib.optional (entry.name == "zara-coding") pkgs.swi-prolog;
                     src = self;
                   }
                   ''
