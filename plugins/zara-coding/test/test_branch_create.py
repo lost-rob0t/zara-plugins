@@ -37,12 +37,13 @@ from zara_coding.plugin import ZaraCodingPlugin
 
 
 class BranchCreateTests(unittest.TestCase):
-    def test_domain_creates_only_new_branch_at_current_head(self):
+    def test_domain_creates_only_new_branch_at_expected_head(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo = root / "repo"
             repo.mkdir()
             calls = []
+            expected_head = "a" * 40
 
             def run(argv, **kwargs):
                 calls.append((argv, kwargs))
@@ -50,39 +51,62 @@ class BranchCreateTests(unittest.TestCase):
                 if args == ("rev-parse", "--show-toplevel"):
                     output = f"{repo.resolve()}\n"
                 elif args == ("rev-parse", "HEAD"):
-                    output = f"{'a' * 40}\n"
+                    output = f"{expected_head}\n"
                 else:
                     output = ""
                 return subprocess.CompletedProcess(argv, 0, stdout=output, stderr="")
 
             inspector = RepositoryInspector((root,), runner=run)
-            evidence = inspector.create_branch(repo, "feature/safe")
+            evidence = inspector.create_branch(repo, "feature/safe", expected_head)
 
-            self.assertEqual(evidence, {"branch": "feature/safe", "head": "a" * 40})
+            self.assertEqual(evidence, {"branch": "feature/safe", "head": expected_head})
             argv_calls = [call[0][3:] for call in calls]
             self.assertIn(["check-ref-format", "refs/heads/feature/safe"], argv_calls)
-            self.assertIn(["update-ref", "refs/heads/feature/safe", "a" * 40, ""], argv_calls)
+            self.assertIn(["update-ref", "refs/heads/feature/safe", expected_head, ""], argv_calls)
             self.assertTrue(all(call[1]["shell"] is False for call in calls))
+
+    def test_domain_rejects_branch_creation_when_head_moved(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = root / "repo"
+            repo.mkdir()
+            calls = []
+            expected_head = "a" * 40
+
+            def run(argv, **kwargs):
+                calls.append(argv[3:])
+                args = tuple(argv[3:])
+                if args == ("rev-parse", "--show-toplevel"):
+                    return subprocess.CompletedProcess(argv, 0, stdout=f"{repo.resolve()}\n", stderr="")
+                if args == ("rev-parse", "HEAD"):
+                    return subprocess.CompletedProcess(argv, 0, stdout=f"{'b' * 40}\n", stderr="")
+                return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+            inspector = RepositoryInspector((root,), runner=run)
+            with self.assertRaisesRegex(CodingError, "HEAD changed"):
+                inspector.create_branch(repo, "feature/stale", expected_head)
+            self.assertFalse(any(args and args[0] == "update-ref" for args in calls))
 
     def test_domain_fails_closed_when_branch_already_exists(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo = root / "repo"
             repo.mkdir()
+            expected_head = "a" * 40
 
             def run(argv, **kwargs):
                 args = tuple(argv[3:])
                 if args == ("rev-parse", "--show-toplevel"):
                     return subprocess.CompletedProcess(argv, 0, stdout=f"{repo.resolve()}\n", stderr="")
                 if args == ("rev-parse", "HEAD"):
-                    return subprocess.CompletedProcess(argv, 0, stdout=f"{'a' * 40}\n", stderr="")
+                    return subprocess.CompletedProcess(argv, 0, stdout=f"{expected_head}\n", stderr="")
                 if args and args[0] == "update-ref":
                     raise subprocess.CalledProcessError(1, argv)
                 return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
             inspector = RepositoryInspector((root,), runner=run)
             with self.assertRaisesRegex(CodingError, "git operation failed"):
-                inspector.create_branch(repo, "existing")
+                inspector.create_branch(repo, "existing", expected_head)
 
     @patch("zara_coding.plugin.shutil.which", return_value="/usr/bin/git")
     @patch("zara_coding.plugin.RepositoryInspector.create_branch")
@@ -91,14 +115,15 @@ class BranchCreateTests(unittest.TestCase):
             root = Path(temporary)
             repo = root / "repo"
             repo.mkdir()
-            create_branch.return_value = {"branch": "feature/safe", "head": "b" * 40}
+            expected_head = "b" * 40
+            create_branch.return_value = {"branch": "feature/safe", "head": expected_head}
             plugin = ZaraCodingPlugin()
             plugin.start(type("Runtime", (), {"configuration": {"plugins": {"zara-coding": {"allowed_roots": [str(root)]}}}})())
             tools = {tool.name: tool for tool in plugin.tools()}
             self.assertTrue(bool((tools["coding.git.branch.create"].metadata or {}).get("zara_requires_approval", False)))
-            evidence = json.loads(plugin.git_branch_create(str(repo), "feature/safe"))
+            evidence = json.loads(plugin.git_branch_create(str(repo), "feature/safe", expected_head))
             self.assertEqual(evidence["branch"], "feature/safe")
-            create_branch.assert_called_once_with(repo, "feature/safe")
+            create_branch.assert_called_once_with(repo, "feature/safe", expected_head)
 
 
 if __name__ == "__main__":
