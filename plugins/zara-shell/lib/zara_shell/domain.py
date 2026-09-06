@@ -27,10 +27,14 @@ class CommandPolicy:
     max_environment_bytes: int = 4096
 
     def __post_init__(self) -> None:
+        if not isinstance(self.allowed_programs, (set, frozenset)):
+            raise ValueError("allowed_programs must be a set of strings")
         if not self.allowed_programs:
             raise ValueError("allowed_programs must not be empty")
         if any(not isinstance(name, str) or not name for name in self.allowed_programs):
             raise ValueError("allowed_programs must contain non-empty strings")
+        if not isinstance(self.allowed_roots, tuple):
+            raise ValueError("allowed_roots must be a tuple of paths")
         if not self.allowed_roots:
             raise ValueError("allowed_roots must not be empty")
         if any(
@@ -38,6 +42,8 @@ class CommandPolicy:
             for root in self.allowed_roots
         ):
             raise ValueError("allowed_roots must contain non-empty path-like values")
+        if not isinstance(self.allowed_environment, (set, frozenset)):
+            raise ValueError("allowed_environment must be a set of strings")
         if any(not isinstance(name, str) or not name for name in self.allowed_environment):
             raise ValueError("allowed_environment must contain non-empty strings")
         if (
