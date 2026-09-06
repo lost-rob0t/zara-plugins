@@ -176,9 +176,13 @@ def validate_entry(entry: dict) -> None:
             f"{GENERATED_FLAKE_SOURCE!r}"
         )
     if nix.get("package") != name:
-        raise RegistryError(f"plugin {name!r} nix package must match the registry name")
+        raise RegistryError(
+            f"plugin {name!r} nix package must match the registry name"
+        )
     if nix.get("aggregate") != "zara-plugins":
-        raise RegistryError(f"plugin {name!r} nix aggregate must be 'zara-plugins'")
+        raise RegistryError(
+            f"plugin {name!r} nix aggregate must be 'zara-plugins'"
+        )
 
     install = entry.get("install")
     if not isinstance(install, dict):
@@ -224,7 +228,9 @@ def validate_entry(entry: dict) -> None:
     has_installer = installer.is_file()
     uses_run_installer = install_argv[1] == "run"
     if has_installer != uses_run_installer:
-        raise RegistryError(f"plugin {name!r} install.nix does not match packaged installer layout")
+        raise RegistryError(
+            f"plugin {name!r} install.nix does not match packaged installer layout"
+        )
     if has_installer:
         expected_tool = f"python3 plugins/{name}/tools/{name} install"
         if install.get("tool") != expected_tool:
@@ -232,7 +238,9 @@ def validate_entry(entry: dict) -> None:
                 f"plugin {name!r} install.tool does not match packaged installer layout"
             )
     elif "tool" in install:
-        raise RegistryError(f"plugin {name!r} advertises install.tool without a packaged installer")
+        raise RegistryError(
+            f"plugin {name!r} advertises install.tool without a packaged installer"
+        )
 
     plugin_root = plugin_dir.resolve()
     entrypoint = (plugin_dir / entry["entrypoint"]).resolve()
