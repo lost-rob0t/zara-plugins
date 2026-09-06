@@ -157,10 +157,17 @@ class RepositoryInspector:
             if len(fields) != 5:
                 raise CodingError("git log returned malformed structured output")
             commit, parents, author, authored_at, subject = fields
+            parent_ids = parents.split() if parents else []
+            try:
+                self._require_full_object_id(commit)
+                for parent in parent_ids:
+                    self._require_full_object_id(parent)
+            except ValueError as exc:
+                raise CodingError("git log returned malformed object ID") from exc
             history.append(
                 {
                     "commit": commit,
-                    "parents": parents.split() if parents else [],
+                    "parents": parent_ids,
                     "author": author,
                     "authored_at": authored_at,
                     "subject": subject,
