@@ -288,18 +288,37 @@ def validate_service_entrypoint(entry: dict, entrypoint: Path) -> None:
             f"service plugin {entry['name']!r} entrypoint must define create_plugin()"
         )
 
+    constants = {
+        node.targets[0].id: node.value.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+    }
+
     names = set()
     versions = set()
+    api_versions = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         if getattr(node.func, "id", None) != "PluginMetadata":
             continue
         for keyword in node.keywords:
-            if keyword.arg == "name" and isinstance(keyword.value, ast.Constant):
-                names.add(keyword.value.value)
-            if keyword.arg == "version" and isinstance(keyword.value, ast.Constant):
-                versions.add(keyword.value.value)
+            if isinstance(keyword.value, ast.Constant):
+                value = keyword.value.value
+            elif isinstance(keyword.value, ast.Name):
+                value = constants.get(keyword.value.id)
+            else:
+                value = None
+            if keyword.arg == "name" and value is not None:
+                names.add(value)
+            if keyword.arg == "version" and value is not None:
+                versions.add(value)
+            if keyword.arg == "api_version" and value is not None:
+                api_versions.add(value)
 
     if names and names != {entry["name"]}:
         raise RegistryError(
@@ -307,19 +326,11 @@ def validate_service_entrypoint(entry: dict, entrypoint: Path) -> None:
             "which does not match the registry entry"
         )
     if not versions:
-        module_versions = {
-            target.value.value
-            for target in ast.walk(tree)
-            if isinstance(target, ast.Assign)
-            and len(target.targets) == 1
-            and isinstance(target.targets[0], ast.Name)
-            and (
-                target.targets[0].id == "VERSION"
-                or target.targets[0].id.endswith("PLUGIN_VERSION")
-            )
-            and isinstance(target.value, ast.Constant)
+        versions = {
+            value
+            for constant_name, value in constants.items()
+            if constant_name == "VERSION" or constant_name.endswith("PLUGIN_VERSION")
         }
-        versions = module_versions
     if versions and versions != {entry["version"]}:
         raise RegistryError(
             f"plugin {entry['name']!r} declares version(s) {sorted(map(str, versions))!r} "
@@ -328,6 +339,23 @@ def validate_service_entrypoint(entry: dict, entrypoint: Path) -> None:
     if not versions:
         raise RegistryError(
             f"plugin {entry['name']!r} version {entry['version']!r} could not be "
+            "verified against the entrypoint source"
+        )
+
+    if not api_versions:
+        api_versions = {
+            value
+            for constant_name, value in constants.items()
+            if constant_name == "API_VERSION" or constant_name.endswith("_API_VERSION")
+        }
+    if api_versions and api_versions != {entry["api_version"]}:
+        raise RegistryError(
+            f"plugin {entry['name']!r} declares api_version(s) {sorted(map(str, api_versions))!r} "
+            f"but the registry publishes {entry['api_version']!r}"
+        )
+    if not api_versions:
+        raise RegistryError(
+            f"plugin {entry['name']!r} api_version {entry['api_version']!r} could not be "
             "verified against the entrypoint source"
         )
 
