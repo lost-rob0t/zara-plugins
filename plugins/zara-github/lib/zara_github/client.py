@@ -99,6 +99,12 @@ class GitHubClient:
             "failed": failed,
         }
 
+    @staticmethod
+    def _object_number(number: int) -> int:
+        if isinstance(number, bool) or not isinstance(number, int) or number <= 0:
+            raise GitHubError("number must be a positive integer")
+        return number
+
     def _result_limit(self, limit: int | None) -> int:
         if limit is None:
             return self.config.max_results
@@ -110,11 +116,13 @@ class GitHubClient:
         return self._request("GET", f"/repos/{self._repo_path(repository)}")
 
     def pr_get(self, repository: str, number: int) -> Any:
-        return self._request("GET", f"/repos/{self._repo_path(repository)}/pulls/{int(number)}")
+        number = self._object_number(number)
+        return self._request("GET", f"/repos/{self._repo_path(repository)}/pulls/{number}")
 
     def pr_diff(self, repository: str, number: int) -> Any:
+        number = self._object_number(number)
         return self._request(
-            "GET", f"/repos/{self._repo_path(repository)}/pulls/{int(number)}/files?per_page=100"
+            "GET", f"/repos/{self._repo_path(repository)}/pulls/{number}/files?per_page=100"
         )
 
     def pr_checks(self, repository: str, number: int) -> dict[str, Any]:
@@ -132,8 +140,9 @@ class GitHubClient:
         }
 
     def pr_reviews(self, repository: str, number: int) -> Any:
+        number = self._object_number(number)
         return self._request(
-            "GET", f"/repos/{self._repo_path(repository)}/pulls/{int(number)}/reviews?per_page=100"
+            "GET", f"/repos/{self._repo_path(repository)}/pulls/{number}/reviews?per_page=100"
         )
 
     def pr_list(self, repository: str, *, state: str = "open", limit: int | None = None) -> Any:
@@ -189,7 +198,8 @@ class GitHubClient:
         )
 
     def issue_get(self, repository: str, number: int) -> Any:
-        return self._request("GET", f"/repos/{self._repo_path(repository)}/issues/{int(number)}")
+        number = self._object_number(number)
+        return self._request("GET", f"/repos/{self._repo_path(repository)}/issues/{number}")
 
     def commit_status(self, repository: str, sha: str) -> Any:
         return self._request(
@@ -215,6 +225,7 @@ class GitHubClient:
         body: str = "",
         state: str = "",
     ) -> Any:
+        number = self._object_number(number)
         payload: dict[str, Any] = {}
         if title:
             if len(title) > 256:
@@ -232,22 +243,24 @@ class GitHubClient:
             raise GitHubError("issue update requires at least one field")
         return self._request(
             "PATCH",
-            f"/repos/{self._repo_path(repository)}/issues/{int(number)}",
+            f"/repos/{self._repo_path(repository)}/issues/{number}",
             body=payload,
         )
 
     def pr_comment(self, repository: str, number: int, body: str) -> Any:
+        number = self._object_number(number)
         if not body.strip() or len(body) > 65536:
             raise GitHubError("comment body is invalid or too large")
         return self._request(
             "POST",
-            f"/repos/{self._repo_path(repository)}/issues/{int(number)}/comments",
+            f"/repos/{self._repo_path(repository)}/issues/{number}/comments",
             body={"body": body},
         )
 
     def merge_pull_request(
         self, repository: str, number: int, *, method: str = "squash"
     ) -> dict[str, Any]:
+        number = self._object_number(number)
         if method not in {"merge", "squash", "rebase"}:
             raise GitHubError("merge method must be merge, squash, or rebase")
         pull = self.pr_get(repository, number)
@@ -278,7 +291,7 @@ class GitHubClient:
             raise GitHubError("pull request has a blocking review")
         acknowledgement = self._request(
             "PUT",
-            f"/repos/{self._repo_path(repository)}/pulls/{int(number)}/merge",
+            f"/repos/{self._repo_path(repository)}/pulls/{number}/merge",
             body={"sha": head_sha, "merge_method": method},
         )
         if (
@@ -299,7 +312,7 @@ class GitHubClient:
         return {
             "merged": True,
             "repository": repository,
-            "number": int(number),
+            "number": number,
             "head_sha": head_sha,
             "merge_commit_sha": merge_sha,
         }
