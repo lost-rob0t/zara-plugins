@@ -127,6 +127,8 @@ class MemoryService:
         return None
 
     def _schema(self, memory_type: str) -> MemorySchema:
+        if not isinstance(memory_type, str) or not memory_type.strip():
+            raise MemoryError("memory type must be non-empty text")
         schema = self._schemas.get(memory_type)
         if schema is None:
             raise MemoryError(f"memory schema is not registered: {memory_type}")
