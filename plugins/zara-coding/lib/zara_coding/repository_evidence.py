@@ -49,6 +49,9 @@ def build_repository_evidence(
         raise ValueError("repository worktree evidence entry must be structured")
 
     worktree_values = [_worktree_lock_value(worktree) for worktree in worktrees]
+    worktree_paths = [value["path"] for value in worktree_values]
+    if len(set(worktree_paths)) != len(worktree_paths):
+        raise ValueError("repository worktree evidence contains duplicate worktree paths")
     changed_path_values = [{"root": root, "path": path} for path in changed_paths]
 
     state_ref = {"root": root, "head": head}
