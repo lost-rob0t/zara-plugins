@@ -3,6 +3,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
@@ -63,6 +64,14 @@ class ShellRunnerTests(unittest.TestCase):
     def test_stdin_limit_fails_before_execution(self):
         with self.assertRaisesRegex(ShellError, "input"):
             self.runner.run(["printf", "ok"], cwd=self.root, stdin="x" * 65)
+
+    def test_stdin_must_be_text_before_execution(self):
+        for stdin in (None, b"payload", 123):
+            with self.subTest(stdin=stdin):
+                with patch("zara_shell.domain.subprocess.Popen") as popen:
+                    with self.assertRaisesRegex(ShellError, "stdin must be text"):
+                        self.runner.run(["printf", "ok"], cwd=self.root, stdin=stdin)
+                    popen.assert_not_called()
 
     def test_policy_rejects_non_integer_byte_limits(self):
         for field, value in (

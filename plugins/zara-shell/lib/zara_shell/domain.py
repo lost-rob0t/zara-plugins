@@ -56,6 +56,8 @@ class ShellRunner:
         command = self._validate_argv(argv)
         working_directory = self._validate_cwd(cwd)
         environment = self._validate_env(env or {})
+        if not isinstance(stdin, str):
+            raise ShellError("stdin must be text")
         stdin_bytes = stdin.encode("utf-8")
         if len(stdin_bytes) > self.policy.max_input_bytes:
             raise ShellError("input exceeds configured limit")
