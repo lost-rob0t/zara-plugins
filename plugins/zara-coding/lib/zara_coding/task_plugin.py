@@ -65,7 +65,7 @@ class TaskStateCodingPlugin(ZaraCodingPlugin):
             StructuredTool.from_function(
                 func=self.task_create,
                 name="coding.task.create",
-                description="Create bounded Prolog-owned symbolic coding task state with completion criteria.",
+                description="Create bounded Prolog-owned symbolic coding task state bound to a freshly inspected repository identity.",
             ),
             StructuredTool.from_function(
                 func=self.task_get,
@@ -99,15 +99,26 @@ class TaskStateCodingPlugin(ZaraCodingPlugin):
         self,
         task_id: str,
         goal: str,
+        repository_path: str,
         constraints: list[str] | None = None,
         dependencies: list[str] | None = None,
         completion_criteria: list[str] | None = None,
     ) -> str:
+        if not isinstance(repository_path, str) or not repository_path:
+            raise ValueError("repository_path must be a non-empty string")
+        inspector = self._require_inspector()
+        observed = inspector.inspect(Path(repository_path))
+        repository = {
+            "root": observed["root"],
+            "head": observed["head"],
+            "branch": observed["branch"],
+        }
         session = self._require_task_state()
         return json.dumps(
             session.create_task(
                 task_id,
                 goal=goal,
+                repository=repository,
                 constraints=constraints or (),
                 dependencies=dependencies or (),
                 completion_criteria=completion_criteria or (),

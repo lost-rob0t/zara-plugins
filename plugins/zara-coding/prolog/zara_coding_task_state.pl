@@ -45,12 +45,14 @@ dispatch_op("create", Command, Response) :-
     ; task_limit_reached ->
         Response = _{status:"rejected", reason:"task-limit-reached"}
     ; get_dict(goal, Command, Goal),
+      get_dict(repository, Command, Repository),
       get_dict(constraints, Command, Constraints),
       get_dict(dependencies, Command, Dependencies),
       get_dict(completion_criteria, Command, Criteria),
       Task = _{
           id:Id,
           goal:Goal,
+          repository:Repository,
           constraints:Constraints,
           dependencies:Dependencies,
           completion_criteria:Criteria,

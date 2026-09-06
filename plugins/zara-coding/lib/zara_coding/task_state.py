@@ -4,7 +4,7 @@ import json
 import select
 import subprocess
 import threading
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Callable, TextIO
 
@@ -105,6 +105,7 @@ class TaskStateSession:
         task_id: str,
         *,
         goal: str,
+        repository: Mapping[str, str] | None = None,
         constraints: Sequence[str] = (),
         dependencies: Sequence[str] = (),
         completion_criteria: Sequence[str] = (),
@@ -113,6 +114,7 @@ class TaskStateSession:
             "op": "create",
             "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS),
             "goal": self._bounded_string(goal, "goal", self.MAX_GOAL_CHARS),
+            "repository": self._bounded_repository(repository),
             "constraints": self._bounded_strings(constraints, "constraints"),
             "dependencies": self._bounded_strings(dependencies, "dependencies"),
             "completion_criteria": self._bounded_strings(completion_criteria, "completion_criteria"),
@@ -201,6 +203,20 @@ class TaskStateSession:
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait(timeout=2)
+
+    @classmethod
+    def _bounded_repository(cls, repository: Mapping[str, str] | None) -> dict[str, str] | None:
+        if repository is None:
+            return None
+        if not isinstance(repository, Mapping):
+            raise ValueError("repository must be a mapping")
+        if set(repository) != {"root", "head", "branch"}:
+            raise ValueError("repository must contain exactly root, head, and branch")
+        return {
+            "root": cls._bounded_string(repository["root"], "repository.root", cls.MAX_GOAL_CHARS),
+            "head": cls._bounded_string(repository["head"], "repository.head", cls.MAX_ID_CHARS),
+            "branch": cls._bounded_string(repository["branch"], "repository.branch", cls.MAX_ITEM_CHARS),
+        }
 
     @classmethod
     def _bounded_string(cls, value: str, name: str, maximum: int) -> str:
