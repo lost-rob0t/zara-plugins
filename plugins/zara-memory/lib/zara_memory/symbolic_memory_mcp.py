@@ -128,7 +128,7 @@ class SymbolicMemoryMCP:
                 shell=False,
                 env=env,
             )
-        except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             raise SymbolicMemoryMCPError("symbolic-memory MCP invocation failed") from exc
         response = self._parse_response(completed.stdout, request_id)
         result = response.get("result")
