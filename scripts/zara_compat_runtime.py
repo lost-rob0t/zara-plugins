@@ -79,6 +79,11 @@ class CompatibilityRuntime:
         return future
 
     def subscribe(self, *, maxsize=None):
+        queue_size = 256 if maxsize is None else maxsize
+        if not isinstance(queue_size, int) or isinstance(queue_size, bool):
+            raise TypeError("event queue size must be an integer")
+        if not 1 <= queue_size <= 4096:
+            raise ValueError("event queue size must be between 1 and 4096")
         subscription = CompatibilitySubscription()
         self.subscriptions.append(subscription)
         return subscription
