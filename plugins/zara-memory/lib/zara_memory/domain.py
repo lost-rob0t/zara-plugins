@@ -61,15 +61,23 @@ class MemoryService:
         if not isinstance(provenance, dict) or not provenance:
             raise MemoryError("memory provenance is required")
         normalized_facts = tuple(self._validate_fact(schema, fact) for fact in facts)
+        expected_provenance = dict(provenance)
         result = self.backend.remember(
             scope=scope,
             owner=owner,
             text=text,
             facts=normalized_facts,
-            provenance=dict(provenance),
+            provenance=expected_provenance,
             memory_type=memory_type,
         )
-        return self._validate_memory(result, scope=scope, owner=owner, memory_type=memory_type)
+        validated = self._validate_memory(result, scope=scope, owner=owner, memory_type=memory_type)
+        if (
+            validated["text"] != text
+            or tuple(validated["facts"]) != normalized_facts
+            or validated["provenance"] != expected_provenance
+        ):
+            raise MemoryError("memory backend returned mismatched write evidence")
+        return validated
 
     def recall(
         self,
