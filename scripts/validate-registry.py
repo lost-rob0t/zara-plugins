@@ -228,6 +228,10 @@ def validate_entry(entry: dict) -> None:
 
     installer = plugin_dir / "tools" / name
     has_installer = installer.is_file()
+    if has_installer and not installer.resolve().is_relative_to(plugin_root):
+        raise RegistryError(
+            f"plugin {name!r} installer must stay inside its plugin directory"
+        )
     uses_run_installer = install_argv[1] == "run"
     if has_installer != uses_run_installer:
         raise RegistryError(f"plugin {name!r} install.nix does not match packaged installer layout")

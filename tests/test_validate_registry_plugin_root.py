@@ -62,6 +62,24 @@ class PluginRootConfinementTest(unittest.TestCase):
         with self.assertRaisesRegex(validate_registry.RegistryError, "plugin root"):
             validate_registry.validate_entry(self.entry())
 
+    def test_rejects_installer_symlinked_outside_plugin_root(self) -> None:
+        plugin = self.plugins / "zara-example"
+        tools = plugin / "tools"
+        tools.mkdir(parents=True)
+        (plugin / "entrypoint.py").write_text("pass\n", encoding="utf-8")
+        (plugin / "README.md").write_text("fixture\n", encoding="utf-8")
+        outside = Path(self.temporary.name) / "outside-installer"
+        outside.write_text("#!/bin/sh\n", encoding="utf-8")
+        (tools / "zara-example").symlink_to(outside)
+        entry = self.entry()
+        entry["install"] = {
+            "nix": "nix run github:lost-rob0t/zara-plugins#zara-example -- install",
+            "tool": "python3 plugins/zara-example/tools/zara-example install",
+        }
+
+        with self.assertRaisesRegex(validate_registry.RegistryError, "installer"):
+            validate_registry.validate_entry(entry)
+
 
 if __name__ == "__main__":
     unittest.main()
