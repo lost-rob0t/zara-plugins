@@ -17,6 +17,7 @@ class ShellRunnerTests(unittest.TestCase):
         self.policy = CommandPolicy(
             allowed_programs={"printf", "pwd"},
             allowed_roots=(self.root,),
+            allowed_environment={"SECRET"},
             max_runtime_seconds=0.5,
             max_output_bytes=128,
             max_input_bytes=64,
@@ -42,8 +43,22 @@ class ShellRunnerTests(unittest.TestCase):
             self.runner.run(["pwd"], cwd=Path("/"))
 
     def test_env_is_explicit_and_bounded(self):
-        with self.assertRaisesRegex(ShellError, "environment"):
+        with self.assertRaisesRegex(ShellError, "environment exceeds configured limit"):
             self.runner.run(["printf", "ok"], cwd=self.root, env={"SECRET": "x" * 4096})
+
+    def test_env_keys_are_default_deny_before_execution(self):
+        policy = CommandPolicy(
+            allowed_programs={"printf"},
+            allowed_roots=(self.root,),
+        )
+        runner = ShellRunner(policy)
+        with self.assertRaisesRegex(ShellError, "environment variable is not allowed: LD_PRELOAD"):
+            runner.run(["printf", "ok"], cwd=self.root, env={"LD_PRELOAD": "/tmp/inject.so"})
+
+    def test_allowlisted_environment_key_is_forwarded(self):
+        result = self.runner.run(["printf", "ok"], cwd=self.root, env={"SECRET": "value"})
+        self.assertEqual(result["exit_code"], 0)
+        self.assertEqual(result["stdout"], "ok")
 
     def test_stdin_limit_fails_before_execution(self):
         with self.assertRaisesRegex(ShellError, "input"):

@@ -30,12 +30,14 @@ class ZaraShellPlugin(ServicePlugin):
         section = self._section(runtime.configuration)
         programs = self._string_list(section.get("allowed_programs", []), "allowed_programs")
         roots = self._string_list(section.get("allowed_roots", []), "allowed_roots")
+        environment = self._string_list(section.get("allowed_environment", []), "allowed_environment")
         if not programs or not roots:
             self.runner = None
             return
         policy = CommandPolicy(
             allowed_programs=set(programs),
             allowed_roots=tuple(Path(value).expanduser() for value in roots),
+            allowed_environment=set(environment),
             max_runtime_seconds=float(section.get("max_runtime_seconds", 10.0)),
             max_output_bytes=int(section.get("max_output_bytes", 65536)),
             max_input_bytes=int(section.get("max_input_bytes", 65536)),
@@ -55,6 +57,7 @@ class ZaraShellPlugin(ServicePlugin):
                 "status": "ready",
                 "allowed_program_count": len(policy.allowed_programs),
                 "allowed_root_count": len(policy.allowed_roots),
+                "allowed_environment_count": len(policy.allowed_environment),
                 "max_runtime_seconds": policy.max_runtime_seconds,
                 "max_output_bytes": policy.max_output_bytes,
                 "max_input_bytes": policy.max_input_bytes,
@@ -90,7 +93,7 @@ class ZaraShellPlugin(ServicePlugin):
             StructuredTool.from_function(
                 func=self.run,
                 name="shell.run",
-                description="Run one explicitly allowlisted argv command inside a configured root with bounded input, output and runtime. Never invokes a shell.",
+                description="Run one explicitly allowlisted argv command inside a configured root with bounded input, output, runtime, and operator-allowlisted environment keys. Never invokes a shell.",
                 metadata=APPROVAL_METADATA,
             ),
         )

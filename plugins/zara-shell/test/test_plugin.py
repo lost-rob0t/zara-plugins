@@ -71,6 +71,7 @@ class ShellPluginTests(unittest.TestCase):
                             "zara-shell": {
                                 "allowed_programs": ["printf"],
                                 "allowed_roots": [str(root)],
+                                "allowed_environment": ["LANG"],
                                 "max_runtime_seconds": 0.5,
                                 "max_output_bytes": 64,
                                 "max_input_bytes": 32,
@@ -80,10 +81,16 @@ class ShellPluginTests(unittest.TestCase):
                     }
                 )
             )
-            result = json.loads(plugin.run(["printf", "%s", "hello; echo nope"], cwd=str(root)))
+            status = json.loads(plugin.status())
+            self.assertEqual(status["allowed_environment_count"], 1)
+            result = json.loads(
+                plugin.run(["printf", "%s", "hello; echo nope"], cwd=str(root), env={"LANG": "C"})
+            )
             self.assertEqual(result["exit_code"], 0)
             self.assertEqual(result["stdout"], "hello; echo nope")
             self.assertFalse(result["timed_out"])
+            with self.assertRaisesRegex(RuntimeError, "environment variable is not allowed"):
+                plugin.run(["printf", "ok"], cwd=str(root), env={"LD_PRELOAD": "/tmp/inject.so"})
             plugin.stop()
             self.assertEqual(json.loads(plugin.status())["status"], "unavailable")
 

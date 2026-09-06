@@ -7,7 +7,7 @@ import shutil
 import signal
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -20,6 +20,7 @@ class ShellError(RuntimeError):
 class CommandPolicy:
     allowed_programs: set[str]
     allowed_roots: tuple[Path, ...]
+    allowed_environment: set[str] = field(default_factory=set)
     max_runtime_seconds: float = 10.0
     max_output_bytes: int = 65536
     max_input_bytes: int = 65536
@@ -30,6 +31,8 @@ class CommandPolicy:
             raise ValueError("allowed_programs must not be empty")
         if not self.allowed_roots:
             raise ValueError("allowed_roots must not be empty")
+        if any(not isinstance(name, str) or not name for name in self.allowed_environment):
+            raise ValueError("allowed_environment must contain non-empty strings")
         if not math.isfinite(self.max_runtime_seconds) or self.max_runtime_seconds <= 0:
             raise ValueError("max_runtime_seconds must be finite positive")
         byte_limits = (self.max_output_bytes, self.max_input_bytes, self.max_environment_bytes)
@@ -116,6 +119,9 @@ class ShellRunner:
     def _validate_env(self, env: Mapping[str, str]) -> dict[str, str]:
         if not all(isinstance(key, str) and isinstance(value, str) for key, value in env.items()):
             raise ShellError("environment must contain string keys and values")
+        for key in env:
+            if key not in self.policy.allowed_environment:
+                raise ShellError(f"environment variable is not allowed: {key}")
         size = sum(len(key.encode("utf-8")) + len(value.encode("utf-8")) + 2 for key, value in env.items())
         if size > self.policy.max_environment_bytes:
             raise ShellError("environment exceeds configured limit")
