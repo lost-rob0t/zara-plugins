@@ -46,8 +46,10 @@ class WorktreeAddLockedTests(unittest.TestCase):
             target = root / "worktrees" / "task-17"
             target.parent.mkdir()
             calls = []
+            current_locked = None
 
             def run(argv, **kwargs):
+                nonlocal current_locked
                 calls.append((argv, kwargs))
                 args = tuple(argv[3:])
                 if args == ("rev-parse", "--show-toplevel"):
@@ -55,10 +57,14 @@ class WorktreeAddLockedTests(unittest.TestCase):
                 elif args == ("rev-parse", "--verify", f"{'a' * 40}^{{commit}}"):
                     output = f"{'a' * 40}\n"
                 elif args == ("worktree", "list", "--porcelain", "-z"):
+                    lock_field = "" if current_locked is None else f"locked {current_locked}\0"
                     output = (
                         f"worktree {repo.resolve()}\0HEAD {'b' * 40}\0branch refs/heads/main\0\0"
-                        f"worktree {target.resolve()}\0HEAD {'a' * 40}\0detached\0\0"
+                        f"worktree {target.resolve()}\0HEAD {'a' * 40}\0detached\0{lock_field}\0"
                     )
+                elif args == ("worktree", "lock", "--reason", "coding-task:17", str(target.resolve())):
+                    current_locked = "coding-task:17"
+                    output = ""
                 else:
                     output = ""
                 return subprocess.CompletedProcess(argv, 0, stdout=output, stderr="")
@@ -87,6 +93,7 @@ class WorktreeAddLockedTests(unittest.TestCase):
                 ["worktree", "lock", "--reason", "coding-task:17", str(target.resolve())]
             )
             self.assertLess(add_index, lock_index)
+            self.assertGreaterEqual(argv_calls.count(["worktree", "list", "--porcelain", "-z"]), 3)
             self.assertTrue(all(call[1]["shell"] is False for call in calls))
 
     def test_add_locked_rolls_back_clean_created_worktree_when_lock_command_fails(self):

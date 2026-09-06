@@ -41,18 +41,26 @@ class WorktreeLockTests(unittest.TestCase):
     def _inspector(self, root, repo, target, *, locked=None, head=None, calls=None):
         head = head or "a" * 40
         calls = calls if calls is not None else []
+        current_locked = locked
 
         def run(argv, **kwargs):
+            nonlocal current_locked
             calls.append((argv, kwargs))
             args = tuple(argv[3:])
             if args == ("rev-parse", "--show-toplevel"):
                 output = f"{repo.resolve()}\n"
             elif args == ("worktree", "list", "--porcelain", "-z"):
-                lock_field = "" if locked is None else f"locked {locked}\0"
+                lock_field = "" if current_locked is None else f"locked {current_locked}\0"
                 output = (
                     f"worktree {repo.resolve()}\0HEAD {'b' * 40}\0branch refs/heads/main\0\0"
                     f"worktree {target.resolve()}\0HEAD {head}\0detached\0{lock_field}\0"
                 )
+            elif args[:3] == ("worktree", "lock", "--reason"):
+                current_locked = args[3]
+                output = ""
+            elif args[:2] == ("worktree", "unlock"):
+                current_locked = None
+                output = ""
             else:
                 output = ""
             return subprocess.CompletedProcess(argv, 0, stdout=output, stderr="")
@@ -85,6 +93,7 @@ class WorktreeLockTests(unittest.TestCase):
                 ["worktree", "lock", "--reason", "coding-task:17", str(target.resolve())],
                 argv_calls,
             )
+            self.assertGreaterEqual(argv_calls.count(["worktree", "list", "--porcelain", "-z"]), 2)
             self.assertTrue(all(call[1]["shell"] is False for call in calls))
 
     def test_lock_refuses_primary_attached_stale_or_already_locked_worktrees(self):
