@@ -128,9 +128,9 @@ def _repository_payload(evidence: Mapping[str, object]) -> dict[str, object]:
     if (
         not isinstance(head, str)
         or len(head) not in (40, 64)
-        or any(char not in "0123456789abcdefABCDEF" for char in head)
+        or any(char not in "0123456789abcdef" for char in head)
     ):
-        raise CodingError("repository evidence head must be a full Git object ID")
+        raise CodingError("repository evidence head must be a full Git object ID in canonical lowercase")
     if not isinstance(branch, str) or not branch or not isinstance(dirty, bool):
         raise CodingError("repository evidence contains invalid snapshot values")
     if any(character in branch for character in ("\x00", "\n", "\r")):
@@ -179,9 +179,9 @@ def _worktree_payload(value: object) -> dict[str, object]:
     if (
         not isinstance(head, str)
         or len(head) not in (40, 64)
-        or any(char not in "0123456789abcdefABCDEF" for char in head)
+        or any(char not in "0123456789abcdef" for char in head)
     ):
-        raise CodingError("repository evidence worktree head must be a full Git object ID")
+        raise CodingError("repository evidence worktree head must be a full Git object ID in canonical lowercase")
     if not isinstance(locked, bool):
         raise CodingError("repository evidence worktree locked state must be boolean")
     return {"path": path, "head": head, "locked": locked}
