@@ -47,6 +47,8 @@ class TaskStateSession:
         with self._lock:
             if self.running:
                 return
+            if self._process is not None:
+                raise CodingError("zara-coding task-state Prolog process exited unexpectedly")
             try:
                 process = self._process_factory(
                     [self.executable, "-q", "-s", str(self.driver), "-g", "zara_coding_task_state:serve"],
