@@ -101,6 +101,18 @@ def validate_entry(entry: dict) -> None:
     if len(entry["description"]) > 256:
         raise RegistryError(f"plugin {name!r} description exceeds 256 characters")
 
+    nix = entry.get("nix")
+    if not isinstance(nix, dict):
+        raise RegistryError(f"plugin {name!r} is missing nix metadata")
+    if nix.get("package") != name:
+        raise RegistryError(
+            f"plugin {name!r} nix package must match the registry name"
+        )
+    if nix.get("aggregate") != "zara-plugins":
+        raise RegistryError(
+            f"plugin {name!r} nix aggregate must be 'zara-plugins'"
+        )
+
     plugin_dir = ROOT / entry["path"]
     if plugin_dir.parent != PLUGINS_DIR:
         raise RegistryError(
