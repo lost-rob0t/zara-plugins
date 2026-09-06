@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
+import inspect
 import json
 import sys
 import tempfile
@@ -69,6 +71,13 @@ def require_service_activation_contract(name: str, instance: Any) -> None:
     enabled_by_default = getattr(instance, "enabled_by_default", True)
     if not isinstance(enabled_by_default, bool):
         raise CompatibilityError(f"{name}: enabled_by_default must be a boolean")
+
+
+def collect_service_tools(instance: Any) -> tuple[Any, ...]:
+    result = instance.tools()
+    if inspect.isawaitable(result):
+        result = asyncio.run(result)
+    return tuple(result)
 
 
 def require_tool_names(name: str, tools: tuple[Any, ...] | list[Any], seen: dict[str, str]) -> None:
@@ -278,7 +287,7 @@ def check_registry(
                                 )
                             require_metadata(entry, metadata)
                             require_service_activation_contract(name, instance)
-                            tools = tuple(instance.tools())
+                            tools = collect_service_tools(instance)
                             invalid = [type(tool).__name__ for tool in tools if not isinstance(tool, BaseTool)]
                             if invalid:
                                 raise CompatibilityError(
