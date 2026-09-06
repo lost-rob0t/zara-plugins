@@ -99,6 +99,12 @@ dispatch_op("complete", Command, Response) :-
     ).
 
 completion_response(Id, Task, Response) :-
+    ( dependencies_completed(Task) ->
+        completion_evidence_response(Id, Task, Response)
+    ; Response = _{status:"rejected", reason:"dependencies-incomplete"}
+    ).
+
+completion_evidence_response(Id, Task, Response) :-
     ( passing_evidence(Id) ->
         put_dict(state, Task, "completed", Completed),
         retractall(task_state(Id, _)),
@@ -107,6 +113,15 @@ completion_response(Id, Task, Response) :-
     ; task_evidence(Id, _) ->
         Response = _{status:"rejected", reason:"passing-verification-required"}
     ; Response = _{status:"rejected", reason:"verification-evidence-required"}
+    ).
+
+dependencies_completed(Task) :-
+    get_dict(dependencies, Task, Dependencies),
+    forall(
+        member(DependencyId, Dependencies),
+        ( task_state(DependencyId, Dependency),
+          task_completed(Dependency)
+        )
     ).
 
 passing_evidence(Id) :-
