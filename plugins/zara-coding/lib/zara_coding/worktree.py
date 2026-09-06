@@ -30,6 +30,17 @@ def add_detached_worktree(
         raise CodingError("expected_head must identify the commit object directly")
 
     inspector._git(root, "worktree", "add", "--detach", str(target_path), expected_head)
+    try:
+        record = _find_worktree(inspector, root, target_path)
+    except CodingError as exc:
+        raise CodingError("created worktree was not registered") from exc
+    if (
+        record["detached"] is not True
+        or record["branch"] is not None
+        or not isinstance(record["head"], str)
+        or record["head"].lower() != expected_head.lower()
+    ):
+        raise CodingError("created worktree identity changed after creation")
     return {"path": str(target_path), "head": expected_head, "detached": True}
 
 
