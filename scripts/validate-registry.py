@@ -152,6 +152,21 @@ def validate_entry(entry: dict) -> None:
             f"{GENERATED_FLAKE_LICENSE!r}"
         )
 
+    dependencies = entry.get("python_dependencies", [])
+    if (
+        not isinstance(dependencies, list)
+        or any(
+            not isinstance(dependency, str)
+            or not dependency.strip()
+            or dependency != dependency.strip()
+            for dependency in dependencies
+        )
+        or len(dependencies) != len(set(dependencies))
+    ):
+        raise RegistryError(
+            f"plugin {name!r} python_dependencies must be a list of unique canonical non-empty strings"
+        )
+
     nix = entry.get("nix")
     if not isinstance(nix, dict):
         raise RegistryError(f"plugin {name!r} is missing nix metadata")
