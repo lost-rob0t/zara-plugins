@@ -123,6 +123,8 @@ class CompatibilityRuntime:
             raise ValueError("worker name must contain 1 to 64 characters")
         if not callable(target):
             raise TypeError("worker target must be callable")
+        if inspect.iscoroutinefunction(target):
+            raise TypeError("worker target must be synchronous")
         try:
             inspect.signature(target).bind(object())
         except ValueError:
