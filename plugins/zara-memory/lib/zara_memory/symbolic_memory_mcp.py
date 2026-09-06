@@ -137,7 +137,10 @@ class SymbolicMemoryMCP:
             if isinstance(error, dict) and isinstance(error.get("message"), str):
                 raise SymbolicMemoryMCPError(error["message"])
             raise SymbolicMemoryMCPError("symbolic-memory MCP returned no result")
-        if result.get("isError") is True:
+        is_error = result.get("isError")
+        if not isinstance(is_error, bool):
+            raise SymbolicMemoryMCPError("symbolic-memory MCP returned invalid result status")
+        if is_error:
             content = result.get("content", [])
             message = "symbolic-memory MCP tool failed"
             if isinstance(content, list) and content and isinstance(content[0], dict):
