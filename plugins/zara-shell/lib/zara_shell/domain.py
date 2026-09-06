@@ -55,7 +55,12 @@ class ShellRunner:
     ) -> dict[str, object]:
         command = self._validate_argv(argv)
         working_directory = self._validate_cwd(cwd)
-        environment = self._validate_env(env or {})
+        if env is None:
+            environment = self._validate_env({})
+        elif not isinstance(env, Mapping):
+            raise ShellError("environment must be a mapping")
+        else:
+            environment = self._validate_env(env)
         if not isinstance(stdin, str):
             raise ShellError("stdin must be text")
         stdin_bytes = stdin.encode("utf-8")
