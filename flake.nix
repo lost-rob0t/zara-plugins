@@ -56,7 +56,7 @@
             owner = "lost-rob0t";
             repo = "zara";
             rev = "b1ca89d52e0ffc84f8ad6eb18987f3f77fc841e5";
-            hash = pkgs.lib.fakeHash;
+            hash = "sha256-mgxOcusFdBjAPHf4f8bjg2sQo8RLuGrfMOSbNmMfQ/Y=";
           };
 
           # Export a stable, immutable runtime layout for Home Manager and
