@@ -137,9 +137,14 @@ def _repository_payload(evidence: Mapping[str, object]) -> dict[str, object]:
         raise CodingError("repository evidence branch must be single-line text")
 
     changed_paths = [_changed_path_payload(value, root) for value in changed_path_values]
+    if len(set(changed_paths)) != len(changed_paths):
+        raise CodingError("repository evidence contains duplicate changed paths")
     if dirty is not bool(changed_paths):
         raise CodingError("repository evidence dirty state contradicts changed paths")
     worktrees = [_worktree_payload(value) for value in worktree_values]
+    worktree_paths = [str(worktree["path"]) for worktree in worktrees]
+    if len(set(worktree_paths)) != len(worktree_paths):
+        raise CodingError("repository evidence contains duplicate worktree paths")
     return {
         "root": root,
         "head": head,
