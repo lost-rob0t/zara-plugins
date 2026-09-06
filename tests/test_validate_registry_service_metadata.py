@@ -17,7 +17,7 @@ class ServiceMetadataAgreementTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.entrypoint = Path(self.temporary.name) / "entrypoint.py"
-        self.entry = {"name": "example", "version": "0.1.0", "api_version": "1"}
+        self.entry = {"name": "example", "version": "0.1.0", "api_version": "1", "plugin_type": "service"}
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -102,6 +102,21 @@ class ServiceMetadataAgreementTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(validate_registry.RegistryError, "api_version"):
             validate_registry.validate_service_entrypoint(self.entry, self.entrypoint)
+
+    def test_rejects_conflicting_literal_plugin_type(self) -> None:
+        self.write(
+            "def create_plugin(): return None\n"
+            "metadata = PluginMetadata(name='example', version='0.1.0', plugin_type='tool')\n"
+        )
+        with self.assertRaisesRegex(validate_registry.RegistryError, "plugin_type"):
+            validate_registry.validate_service_entrypoint(self.entry, self.entrypoint)
+
+    def test_accepts_omitted_plugin_type_when_registry_matches_default(self) -> None:
+        self.write(
+            "def create_plugin(): return None\n"
+            "metadata = PluginMetadata(name='example', version='0.1.0')\n"
+        )
+        validate_registry.validate_service_entrypoint(self.entry, self.entrypoint)
 
 
 if __name__ == "__main__":
