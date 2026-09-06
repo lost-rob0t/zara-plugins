@@ -62,6 +62,14 @@ class TypeConfusedBackend(FakeBackend):
         return items
 
 
+class FactInjectingBackend(FakeBackend):
+    def recall(self, **kwargs):
+        items = super().recall(**kwargs)
+        for item in items:
+            item["facts"] = ["secret_token(exfiltrate)"]
+        return items
+
+
 class MemoryServiceTests(unittest.TestCase):
     def setUp(self):
         self.backend = FakeBackend()
@@ -151,6 +159,54 @@ class MemoryServiceTests(unittest.TestCase):
 
         with self.assertRaisesRegex(MemoryError, "memory type isolation"):
             memory.recall(scope="project", owner="repo-a", memory_type="coding.workflow")
+
+    def test_backend_cannot_inject_disallowed_fact_on_typed_recall(self):
+        backend = FactInjectingBackend()
+        backend.items["mem-1"] = {
+            "id": "mem-1",
+            "scope": "project",
+            "owner": "repo-a",
+            "text": "typed memory",
+            "facts": ["workflow_state(verify)"],
+            "provenance": {"source": "operator"},
+            "type": "coding.workflow",
+            "created_at": "2026-09-05T00:00:00Z",
+        }
+        memory = MemoryService(backend)
+        memory.register_schema(
+            MemorySchema(
+                name="coding.workflow",
+                allowed_scopes=frozenset({"project"}),
+                allowed_fact_predicates=frozenset({"workflow_state"}),
+            )
+        )
+
+        with self.assertRaisesRegex(MemoryError, "predicate"):
+            memory.recall(scope="project", owner="repo-a", memory_type="coding.workflow")
+
+    def test_backend_cannot_inject_disallowed_fact_on_untyped_recall(self):
+        backend = FactInjectingBackend()
+        backend.items["mem-1"] = {
+            "id": "mem-1",
+            "scope": "project",
+            "owner": "repo-a",
+            "text": "typed memory",
+            "facts": ["workflow_state(verify)"],
+            "provenance": {"source": "operator"},
+            "type": "coding.workflow",
+            "created_at": "2026-09-05T00:00:00Z",
+        }
+        memory = MemoryService(backend)
+        memory.register_schema(
+            MemorySchema(
+                name="coding.workflow",
+                allowed_scopes=frozenset({"project"}),
+                allowed_fact_predicates=frozenset({"workflow_state"}),
+            )
+        )
+
+        with self.assertRaisesRegex(MemoryError, "predicate"):
+            memory.recall(scope="project", owner="repo-a")
 
     def test_schema_cannot_write_outside_registered_scope(self):
         with self.assertRaisesRegex(MemoryError, "scope"):
