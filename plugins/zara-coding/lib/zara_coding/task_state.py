@@ -130,7 +130,7 @@ class TaskStateSession:
             try:
                 process.stdin.write(wire + "\n")
                 process.stdin.flush()
-                response_line = process.stdout.readline()
+                response_line = process.stdout.readline(self.MAX_RESPONSE_CHARS + 1)
             except (BrokenPipeError, OSError) as exc:
                 raise CodingError("zara-coding task-state protocol failed") from exc
             if not response_line:
