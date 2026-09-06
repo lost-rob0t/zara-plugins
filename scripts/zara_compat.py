@@ -107,6 +107,8 @@ def require_legacy_tool_entrypoint(
     module: Any,
     BaseTool: type[Any],
     seen_tool_names: dict[str, str],
+    *,
+    timeout: float = 5.0,
 ) -> tuple[Any, ...]:
     if hasattr(module, "register_tools"):
         entrypoint_name = "register_tools"
@@ -121,7 +123,7 @@ def require_legacy_tool_entrypoint(
     if not callable(entrypoint):
         raise CompatibilityError(f"{name}: {entrypoint_name} exists but is not callable")
 
-    tools = tuple(entrypoint(None))
+    tools = tuple(invoke_compatibility_call(entrypoint, None, timeout=timeout))
     invalid = [type(tool).__name__ for tool in tools if not isinstance(tool, BaseTool)]
     if invalid:
         raise CompatibilityError(
