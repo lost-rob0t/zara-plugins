@@ -316,6 +316,10 @@ class RepositoryInspector:
         head = record.get("HEAD")
         if not isinstance(path_value, str) or not path_value or not isinstance(head, str) or not head:
             raise CodingError("git worktree returned malformed structured output")
+        try:
+            self._require_full_object_id(head)
+        except ValueError as exc:
+            raise CodingError("git worktree returned malformed worktree HEAD object ID") from exc
         worktree_path = Path(path_value).expanduser().resolve()
         self._require_allowed(worktree_path)
         branch_value = record.get("branch")
