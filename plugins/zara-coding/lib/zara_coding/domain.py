@@ -210,6 +210,10 @@ class RepositoryInspector:
             if len(fields) != 3:
                 raise CodingError("git branch inventory returned malformed structured output")
             name, commit, upstream = fields
+            try:
+                RepositoryInspector._require_full_object_id(commit)
+            except ValueError as exc:
+                raise CodingError("git branch inventory returned malformed object ID") from exc
             branches.append({"name": name, "commit": commit, "upstream": upstream})
             if len(branches) > limit:
                 raise CodingError(f"git branch inventory exceeds branch limit of {limit}")
