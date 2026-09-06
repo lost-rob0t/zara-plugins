@@ -38,10 +38,12 @@ def temporary_runtime_environment(home: Path):
 
 @contextmanager
 def fake_dependency_environment(plugin_name: str):
-    removed = []
-    if plugin_name == "zara-discord":
-        removed.append("ZARA_DISCORD_TOKEN")
-
+    provider_secrets = {
+        "zara-discord": ("ZARA_DISCORD_TOKEN",),
+        "zara-github": ("ZARA_GITHUB_TOKEN",),
+        "zara-knowledge": ("BRAVE_SEARCH_API_KEY",),
+    }
+    removed = provider_secrets.get(plugin_name, ())
     previous = {name: os.environ.get(name) for name in removed}
     try:
         for name in removed:
