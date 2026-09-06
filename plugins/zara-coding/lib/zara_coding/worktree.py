@@ -92,6 +92,20 @@ def lock_worktree(
         raise CodingError("worktree is already locked")
 
     inspector._git(root, "worktree", "lock", "--reason", reason, str(target_path))
+    try:
+        locked_record = _find_worktree(inspector, root, target_path)
+    except CodingError as exc:
+        raise CodingError("worktree lock state was not established") from exc
+    if (
+        locked_record["detached"] is not True
+        or locked_record["branch"] is not None
+        or not isinstance(locked_record["head"], str)
+        or locked_record["head"].lower() != expected_head.lower()
+        or locked_record["prunable"] is not None
+    ):
+        raise CodingError("worktree identity changed after lock")
+    if locked_record["locked"] != reason:
+        raise CodingError("worktree lock state was not established")
     return {
         "path": str(target_path),
         "head": expected_head,
