@@ -26,6 +26,14 @@ class RuntimeBoundValidationTest(unittest.TestCase):
                 max_runtime_seconds=math.inf,
             )
 
+    def test_runtime_bound_rejects_boolean(self) -> None:
+        with self.assertRaisesRegex(ValueError, "finite positive"):
+            CommandPolicy(
+                allowed_programs={"printf"},
+                allowed_roots=(Path("/tmp"),),
+                max_runtime_seconds=True,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
