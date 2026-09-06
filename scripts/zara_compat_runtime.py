@@ -107,6 +107,8 @@ class CompatibilityRuntime:
             raise ValueError("worker name must contain 1 to 64 characters")
         if not callable(target):
             raise TypeError("worker target must be callable")
+        if self.closed:
+            raise RuntimeError("plugin runtime is closed")
         if name in self.workers:
             raise ValueError(f"managed worker {name!r} is already registered")
         if len(self.workers) >= 8:
