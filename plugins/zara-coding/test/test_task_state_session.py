@@ -126,6 +126,26 @@ class TaskStateSessionTest(unittest.TestCase):
         with self.assertRaisesRegex(CodingError, "unknown status"):
             session.status()
 
+    def test_unexpected_process_exit_is_not_silently_replaced(self) -> None:
+        first = FakeProcess([{"status": "ok", "state": "ready"}])
+        replacement = FakeProcess([{"status": "rejected", "reason": "task-not-found"}])
+        processes = iter((first, replacement))
+        calls = 0
+
+        def process_factory(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return next(processes)
+
+        session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=process_factory)
+        self.assertEqual(session.status(), {"status": "ok", "state": "ready"})
+        first.returncode = 1
+
+        with self.assertRaisesRegex(CodingError, "exited unexpectedly"):
+            session.get_task("task-1")
+
+        self.assertEqual(calls, 1)
+
     def test_stop_terminates_the_owned_process(self) -> None:
         process = FakeProcess([])
         session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
