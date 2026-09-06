@@ -163,6 +163,8 @@ class MemoryService:
             raise MemoryError(
                 f"memory backend projection ids must contain 1 to {self.MAX_PROJECTION_ID_CHARS} characters"
             )
+        if len(projections) != len(set(projections)):
+            raise MemoryError("memory backend returned duplicate projection id")
         return {"removed": result["removed"], "projection_ids": list(projections)}
 
     def observe_context(self, context: dict[str, Any]) -> None:
