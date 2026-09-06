@@ -180,17 +180,20 @@ class ZaraCompatibilityGateTest(unittest.TestCase):
 
     def test_fake_dependencies_are_scoped_to_the_plugin_that_needs_them(self) -> None:
         variable = "ZARA_DISCORD_TOKEN"
-        previous = os.environ.pop(variable, None)
+        previous = os.environ.get(variable)
+        os.environ[variable] = "existing-secret"
         try:
             with fake_dependency_environment("zara-browser"):
-                self.assertNotIn(variable, os.environ)
+                self.assertEqual(os.environ.get(variable), "existing-secret")
 
             with fake_dependency_environment("zara-discord"):
-                self.assertTrue(os.environ.get(variable))
+                self.assertNotIn(variable, os.environ)
 
-            self.assertNotIn(variable, os.environ)
+            self.assertEqual(os.environ.get(variable), "existing-secret")
         finally:
-            if previous is not None:
+            if previous is None:
+                os.environ.pop(variable, None)
+            else:
                 os.environ[variable] = previous
 
     def test_service_lifecycle_always_stops_and_shuts_down_runtime(self) -> None:
