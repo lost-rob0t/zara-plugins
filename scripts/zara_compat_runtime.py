@@ -123,6 +123,12 @@ class CompatibilityRuntime:
             raise ValueError("worker name must contain 1 to 64 characters")
         if not callable(target):
             raise TypeError("worker target must be callable")
+        try:
+            inspect.signature(target).bind(object())
+        except ValueError:
+            pass
+        except TypeError as error:
+            raise TypeError("worker target must accept one stop_event argument") from error
         if self.closed:
             raise RuntimeError("plugin runtime is closed")
         if name in self.workers:
