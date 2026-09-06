@@ -166,7 +166,7 @@ class MemoryService:
         schema = self._schema(item["type"])
         if scope not in schema.allowed_scopes:
             raise MemoryError("memory backend violated registered schema scope isolation")
-        if not isinstance(item.get("provenance"), dict):
+        if not isinstance(item.get("provenance"), dict) or not item["provenance"]:
             raise MemoryError("memory backend result is missing provenance")
         facts = item.get("facts", [])
         if not isinstance(facts, list):
