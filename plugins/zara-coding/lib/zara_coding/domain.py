@@ -68,16 +68,14 @@ class RepositoryInspector:
         head = self._git(root, "rev-parse", "HEAD").strip()
         branch_result = self._run(root, "symbolic-ref", "--short", "-q", "HEAD", check=False)
         branch = branch_result.stdout.strip() if branch_result.returncode == 0 else "DETACHED"
-        changed = set(filter(None, self._git(root, "diff", "--name-only", "HEAD").splitlines()))
-        untracked = set(filter(None, self._git(root, "ls-files", "--others", "--exclude-standard").splitlines()))
-        changed_paths = sorted(changed | untracked)
-        if len(changed_paths) > self.MAX_CHANGED_PATHS:
-            raise CodingError(f"repository inspection exceeds changed path limit of {self.MAX_CHANGED_PATHS}")
+        changed_paths = self._changed_paths(root)
         final_head = self._git(root, "rev-parse", "HEAD").strip()
         final_branch_result = self._run(root, "symbolic-ref", "--short", "-q", "HEAD", check=False)
         final_branch = final_branch_result.stdout.strip() if final_branch_result.returncode == 0 else "DETACHED"
         if final_head != head or final_branch != branch:
             raise CodingError("repository identity changed during inspection")
+        if self._changed_paths(root) != changed_paths:
+            raise CodingError("repository working tree changed during inspection")
         return {
             "root": str(root),
             "head": head,
@@ -85,6 +83,14 @@ class RepositoryInspector:
             "dirty": bool(changed_paths),
             "changed_paths": changed_paths,
         }
+
+    def _changed_paths(self, root: Path) -> list[str]:
+        changed = set(filter(None, self._git(root, "diff", "--name-only", "HEAD").splitlines()))
+        untracked = set(filter(None, self._git(root, "ls-files", "--others", "--exclude-standard").splitlines()))
+        changed_paths = sorted(changed | untracked)
+        if len(changed_paths) > self.MAX_CHANGED_PATHS:
+            raise CodingError(f"repository inspection exceeds changed path limit of {self.MAX_CHANGED_PATHS}")
+        return changed_paths
 
     def diff(self, path: Path, *, max_files: int = 50) -> list[dict[str, object]]:
         max_files = self._bounded_limit(max_files)
