@@ -249,15 +249,38 @@ class CompatibilityRuntime:
                 ) from worker.error
 
 
-def _invoke_lifecycle(method, *args, timeout: float = 5.0) -> None:
-    async def invoke() -> None:
-        if inspect.iscoroutinefunction(method):
-            operation = method(*args)
-        else:
-            operation = asyncio.to_thread(method, *args)
-        await asyncio.wait_for(operation, timeout=timeout)
+def invoke_compatibility_call(method, *args, timeout: float = 5.0):
+    if inspect.iscoroutinefunction(method):
+        async def invoke_async():
+            return await asyncio.wait_for(method(*args), timeout=timeout)
 
-    asyncio.run(invoke())
+        return asyncio.run(invoke_async())
+
+    outcomes: queue.Queue[tuple[bool, object]] = queue.Queue(maxsize=1)
+
+    def invoke_sync() -> None:
+        try:
+            outcomes.put((True, method(*args)))
+        except BaseException as error:
+            outcomes.put((False, error))
+
+    worker = threading.Thread(
+        target=invoke_sync,
+        name="zara-plugin-compat-call",
+        daemon=True,
+    )
+    worker.start()
+    try:
+        succeeded, outcome = outcomes.get(timeout=timeout)
+    except queue.Empty as error:
+        raise TimeoutError from error
+    if succeeded:
+        return outcome
+    raise outcome
+
+
+def _invoke_lifecycle(method, *args, timeout: float = 5.0) -> None:
+    invoke_compatibility_call(method, *args, timeout=timeout)
 
 
 def exercise_service_lifecycle(
