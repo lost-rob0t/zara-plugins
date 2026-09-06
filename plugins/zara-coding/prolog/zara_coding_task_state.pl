@@ -110,9 +110,13 @@ completion_response(Id, Task, Response) :-
     ).
 
 passing_evidence(Id) :-
+    task_evidence(Id, _),
+    \+ current_failed_evidence(Id).
+
+current_failed_evidence(Id) :-
     task_evidence(Id, Evidence),
     get_dict(kind, Evidence, Kind),
-    latest_evidence_status(Id, Kind, "passed"),
+    latest_evidence_status(Id, Kind, "failed"),
     !.
 
 latest_evidence_status(Id, Kind, Status) :-
