@@ -56,19 +56,49 @@ def validate_zara_source(path: Path) -> Path:
     return source
 
 
-def require_metadata(entry: dict[str, Any], actual: Any) -> None:
+def read_compatibility_attribute(
+    value: Any,
+    name: str,
+    default: Any = None,
+    *,
+    timeout: float = 5.0,
+) -> Any:
+    return invoke_compatibility_call(
+        lambda: getattr(value, name, default),
+        timeout=timeout,
+    )
+
+
+def require_metadata(
+    entry: dict[str, Any],
+    actual: Any,
+    *,
+    timeout: float = 5.0,
+) -> None:
     name = str(entry.get("name", "?"))
     for field in ("name", "version", "api_version", "plugin_type", "description"):
         expected = str(entry.get(field, ""))
-        observed = str(getattr(actual, field, ""))
+        observed = str(
+            read_compatibility_attribute(actual, field, "", timeout=timeout)
+        )
         if observed != expected:
             raise CompatibilityError(
                 f"{name}: metadata {field} mismatch: expected {expected!r}, got {observed!r}"
             )
 
 
-def require_service_activation_contract(name: str, instance: Any) -> None:
-    enabled_by_default = getattr(instance, "enabled_by_default", True)
+def require_service_activation_contract(
+    name: str,
+    instance: Any,
+    *,
+    timeout: float = 5.0,
+) -> None:
+    enabled_by_default = read_compatibility_attribute(
+        instance,
+        "enabled_by_default",
+        True,
+        timeout=timeout,
+    )
     if not isinstance(enabled_by_default, bool):
         raise CompatibilityError(f"{name}: enabled_by_default must be a boolean")
 
@@ -78,16 +108,24 @@ def construct_service_plugin(factory: Any, *, timeout: float = 5.0) -> Any:
 
 
 def collect_service_tools(instance: Any, *, timeout: float = 5.0) -> tuple[Any, ...]:
-    method = getattr(instance, "tools", None)
+    method = read_compatibility_attribute(instance, "tools", None, timeout=timeout)
     if not callable(method):
         return ()
     return tuple(invoke_compatibility_call(method, timeout=timeout))
 
 
-def require_tool_names(name: str, tools: tuple[Any, ...] | list[Any], seen: dict[str, str]) -> None:
+def require_tool_names(
+    name: str,
+    tools: tuple[Any, ...] | list[Any],
+    seen: dict[str, str],
+    *,
+    timeout: float = 5.0,
+) -> None:
     local: set[str] = set()
     for tool in tools:
-        tool_name = str(getattr(tool, "name", ""))
+        tool_name = str(
+            read_compatibility_attribute(tool, "name", "", timeout=timeout)
+        )
         if not tool_name.strip():
             raise CompatibilityError(f"{name}: tool has an empty name")
         if tool_name != tool_name.strip():
@@ -133,7 +171,7 @@ def require_legacy_tool_entrypoint(
         raise CompatibilityError(
             f"{name}: {entrypoint_name}() returned non-BaseTool values: {', '.join(invalid)}"
         )
-    require_tool_names(name, tools, seen_tool_names)
+    require_tool_names(name, tools, seen_tool_names, timeout=timeout)
     return tools
 
 
@@ -284,7 +322,7 @@ def check_registry(
                                 raise CompatibilityError(
                                     f"create_plugin() returned {type(instance).__name__}, not Zara ServicePlugin"
                                 )
-                            metadata = getattr(instance, "metadata", None)
+                            metadata = read_compatibility_attribute(instance, "metadata")
                             if not isinstance(metadata, PluginMetadata):
                                 expected = f"{PluginMetadata.__module__}.{PluginMetadata.__qualname__}"
                                 observed = _qualified_type(metadata)
