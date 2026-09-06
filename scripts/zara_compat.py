@@ -74,10 +74,18 @@ def require_service_activation_contract(name: str, instance: Any) -> None:
 
 
 def collect_service_tools(instance: Any) -> tuple[Any, ...]:
-    result = instance.tools()
-    if inspect.isawaitable(result):
-        result = asyncio.run(result)
-    return tuple(result)
+    method = getattr(instance, "tools", None)
+    if not callable(method):
+        return ()
+
+    async def collect() -> tuple[Any, ...]:
+        if inspect.iscoroutinefunction(method):
+            result = await method()
+        else:
+            result = await asyncio.to_thread(method)
+        return tuple(result)
+
+    return asyncio.run(collect())
 
 
 def require_tool_names(name: str, tools: tuple[Any, ...] | list[Any], seen: dict[str, str]) -> None:
