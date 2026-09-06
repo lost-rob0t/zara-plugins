@@ -31,7 +31,10 @@ def add_detached_worktree(
 
     inspector._git(root, "worktree", "add", "--detach", str(target_path), expected_head)
     try:
-        record = _find_worktree(inspector, root, target_path)
+        try:
+            record = _find_worktree(inspector, root, target_path)
+        except CodingError as exc:
+            raise CodingError("created worktree was not registered") from exc
         if (
             record["detached"] is not True
             or record["branch"] is not None
