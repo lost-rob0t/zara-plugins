@@ -207,6 +207,8 @@ class MemoryService:
         facts = item.get("facts", [])
         if not isinstance(facts, list):
             raise MemoryError("memory backend result has invalid symbolic facts")
+        if len(facts) > self.MAX_FACTS:
+            raise MemoryError(f"memory backend result exceeds {self.MAX_FACTS} symbolic facts")
         validated_facts = [self._validate_fact(schema, fact) for fact in facts]
         result = dict(item)
         result["facts"] = validated_facts
