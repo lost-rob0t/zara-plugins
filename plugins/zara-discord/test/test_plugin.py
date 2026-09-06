@@ -120,6 +120,20 @@ class PluginTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "plugin is not started"):
             inspect.invoke({"context_token": token})
 
+    def test_missing_token_degrades_without_starting_workers(self):
+        environment = {
+            "XDG_CONFIG_HOME": self.temporary.name,
+            "XDG_STATE_HOME": self.temporary.name,
+        }
+        with mock.patch.dict(os.environ, environment, clear=True):
+            runtime = FakeRuntime()
+            plugin = plugin_module.create_plugin()
+            plugin.start(runtime)
+
+        self.assertEqual(runtime.workers, [])
+        self.assertIsNone(plugin._bot)
+        self.assertIsNone(plugin._subscription)
+
     def test_starts_bounded_workers_and_stops_gateway(self):
         environment = {
             "XDG_CONFIG_HOME": self.temporary.name,
