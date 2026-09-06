@@ -20,6 +20,7 @@ class TaskStateSession:
     MAX_LIST_ITEMS = 64
     MAX_DETAIL_CHARS = 4096
     MAX_RESPONSE_CHARS = 131072
+    EVIDENCE_STATUSES = frozenset({"failed", "passed"})
 
     def __init__(
         self,
@@ -103,12 +104,16 @@ class TaskStateSession:
         )
 
     def record_evidence(self, task_id: str, *, kind: str, status: str, detail: str) -> dict[str, object]:
+        evidence_status = self._bounded_string(status, "status", self.MAX_ITEM_CHARS)
+        if evidence_status not in self.EVIDENCE_STATUSES:
+            allowed = ", ".join(sorted(self.EVIDENCE_STATUSES))
+            raise ValueError(f"status must be one of: {allowed}")
         return self._request(
             {
                 "op": "record_evidence",
                 "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS),
                 "kind": self._bounded_string(kind, "kind", self.MAX_ITEM_CHARS),
-                "status": self._bounded_string(status, "status", self.MAX_ITEM_CHARS),
+                "status": evidence_status,
                 "detail": self._bounded_string(detail, "detail", self.MAX_DETAIL_CHARS),
             }
         )
