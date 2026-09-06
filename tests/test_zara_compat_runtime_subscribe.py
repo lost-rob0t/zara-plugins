@@ -31,6 +31,25 @@ class CompatibilityRuntimeSubscribeTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     runtime.subscribe(maxsize=value)
 
+    def test_subscription_limit_matches_zara_runtime(self) -> None:
+        runtime = CompatibilityRuntime("example")
+        for _ in range(16):
+            runtime.subscribe()
+        with self.assertRaises(RuntimeError):
+            runtime.subscribe()
+
+    def test_closed_subscriptions_do_not_consume_limit(self) -> None:
+        runtime = CompatibilityRuntime("example")
+        subscriptions = [runtime.subscribe() for _ in range(16)]
+        subscriptions[0].close()
+        self.assertFalse(runtime.subscribe().closed)
+
+    def test_closed_runtime_rejects_new_subscriptions(self) -> None:
+        runtime = CompatibilityRuntime("example")
+        runtime._shutdown()
+        with self.assertRaises(RuntimeError):
+            runtime.subscribe()
+
 
 if __name__ == "__main__":
     unittest.main()
