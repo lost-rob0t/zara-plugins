@@ -171,6 +171,19 @@ class SymbolicMemoryMCPTests(unittest.TestCase):
         with self.assertRaisesRegex(SymbolicMemoryMCPError, "JSON-RPC version"):
             client.get("mem_1")
 
+    def test_rejects_non_finite_and_boolean_deadlines(self):
+        base = {
+            "executable": "symbolic-memory-mcp",
+            "database": Path("/tmp/memory.db"),
+            "principal": "zara-local",
+            "session_id": "s1",
+            "capabilities": ("memory_read",),
+        }
+        for timeout in (True, float("nan"), float("inf")):
+            with self.subTest(timeout=timeout):
+                with self.assertRaisesRegex(ValueError, "finite positive"):
+                    SymbolicMemoryMCP(timeout_seconds=timeout, **base)
+
     def test_rejects_scopes_current_backend_does_not_support(self):
         client = SymbolicMemoryMCP(
             executable="symbolic-memory-mcp",
