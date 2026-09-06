@@ -13,7 +13,7 @@ class CompatibilityRuntimeWorkerTest(unittest.TestCase):
     def test_valid_worker_is_registered(self) -> None:
         runtime = CompatibilityRuntime("example")
         worker = runtime.start_worker("events", _worker)
-        self.assertEqual(worker.name, "events")
+        self.assertEqual(worker.name, "example-events")
 
     def test_worker_name_must_be_bounded(self) -> None:
         runtime = CompatibilityRuntime("example")
