@@ -163,7 +163,9 @@ class RepositoryInspector:
             "--format=%(refname:short)%09%(objectname)%09%(upstream:short)",
             "refs/heads/",
         )
-        self._parse_branch_inventory(probe, limit=limit)
+        probed_branches = self._parse_branch_inventory(probe, limit=limit)
+        if probed_branches != branches:
+            raise CodingError("git branch inventory changed during inspection")
         return branches
 
     @staticmethod

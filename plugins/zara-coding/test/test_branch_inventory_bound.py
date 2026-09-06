@@ -35,6 +35,31 @@ class BranchInventoryBoundTests(unittest.TestCase):
             with self.assertRaisesRegex(CodingError, "exceeds branch limit of 2"):
                 inspector.branches(repo, limit=2)
 
+    def test_branch_inventory_fails_closed_when_refs_change_between_reads(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = root / "repo"
+            repo.mkdir()
+            reads = 0
+
+            def run(argv, **kwargs):
+                nonlocal reads
+                args = tuple(argv[3:])
+                if args == ("rev-parse", "--show-toplevel"):
+                    output = f"{repo.resolve()}\n"
+                elif args[0] == "for-each-ref":
+                    reads += 1
+                    commit = "a" * 40 if reads == 1 else "b" * 40
+                    output = f"main\t{commit}\torigin/main\n"
+                else:
+                    output = ""
+                return subprocess.CompletedProcess(argv, 0, stdout=output, stderr="")
+
+            inspector = RepositoryInspector((root,), runner=run)
+            with self.assertRaisesRegex(CodingError, "branch inventory changed"):
+                inspector.branches(repo, limit=2)
+            self.assertEqual(reads, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
