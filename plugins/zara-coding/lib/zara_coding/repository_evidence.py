@@ -22,7 +22,7 @@ def build_repository_evidence(
         raise ValueError("repository snapshot root must not contain NUL")
     _require_canonical_absolute_path(root, "repository snapshot root")
     if not isinstance(head, str) or len(head) not in (40, 64) or any(char not in "0123456789abcdef" for char in head):
-        raise ValueError("repository snapshot head must be a canonical lowercase full Git object ID")
+        raise ValueError("repository snapshot head must be a full Git object ID in canonical lowercase")
     if not isinstance(branch, str) or not branch:
         raise ValueError("repository snapshot branch must be a non-empty string")
     if any(character in branch for character in ("\x00", "\n", "\r")):
@@ -88,7 +88,7 @@ def _worktree_lock_value(worktree: Mapping[str, object]) -> dict[str, object]:
         raise ValueError("worktree evidence path must not contain NUL")
     _require_canonical_absolute_path(path, "worktree evidence path")
     if not isinstance(head, str) or len(head) not in (40, 64) or any(char not in "0123456789abcdef" for char in head):
-        raise ValueError("worktree evidence head must be a canonical lowercase full Git object ID")
+        raise ValueError("worktree evidence head must be a full Git object ID in canonical lowercase")
     if locked is not None and not isinstance(locked, str):
         raise ValueError("worktree evidence lock state must be text or null")
     return {"path": path, "head": head, "locked": locked is not None}
