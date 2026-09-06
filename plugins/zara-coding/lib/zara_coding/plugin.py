@@ -107,7 +107,7 @@ class ZaraCodingPlugin(ServicePlugin):
             StructuredTool.from_function(
                 func=self.git_branch_create,
                 name="coding.git.branch.create",
-                description="Create one new local branch at the repository's current HEAD without moving an existing ref.",
+                description="Create one new local branch at the caller-observed HEAD without moving an existing ref.",
                 metadata=APPROVAL_METADATA,
             ),
             StructuredTool.from_function(
@@ -232,13 +232,15 @@ class ZaraCodingPlugin(ServicePlugin):
             raise ValueError("path must be a non-empty string")
         return json.dumps(inspector.branches(Path(path), limit=limit), sort_keys=True)
 
-    def git_branch_create(self, path: str, name: str) -> str:
+    def git_branch_create(self, path: str, name: str, expected_head: str) -> str:
         inspector = self._require_inspector()
         if not isinstance(path, str) or not path:
             raise ValueError("path must be a non-empty string")
         if not isinstance(name, str) or not name:
             raise ValueError("name must be a non-empty string")
-        return json.dumps(inspector.create_branch(Path(path), name), sort_keys=True)
+        if not isinstance(expected_head, str) or not expected_head:
+            raise ValueError("expected_head must be a non-empty string")
+        return json.dumps(inspector.create_branch(Path(path), name, expected_head), sort_keys=True)
 
     def git_branch_delete(self, path: str, name: str, expected_head: str) -> str:
         inspector = self._require_inspector()

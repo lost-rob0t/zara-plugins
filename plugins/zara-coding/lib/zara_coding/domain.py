@@ -181,17 +181,18 @@ class RepositoryInspector:
                 raise CodingError(f"git branch inventory exceeds branch limit of {limit}")
         return branches
 
-    def create_branch(self, path: Path, name: str) -> dict[str, str]:
+    def create_branch(self, path: Path, name: str, expected_head: str) -> dict[str, str]:
         if not isinstance(name, str) or not name:
             raise ValueError("name must be a non-empty string")
+        self._require_full_object_id(expected_head)
         root = self._repository_root(path)
         ref = f"refs/heads/{name}"
         self._git(root, "check-ref-format", ref)
-        head = self._git(root, "rev-parse", "HEAD").strip()
-        if not head:
-            raise CodingError("git returned an empty HEAD")
-        self._git(root, "update-ref", ref, head, "")
-        return {"branch": name, "head": head}
+        actual_head = self._git(root, "rev-parse", "HEAD").strip()
+        if actual_head.lower() != expected_head.lower():
+            raise CodingError("repository HEAD changed since expected_head was observed")
+        self._git(root, "update-ref", ref, expected_head, "")
+        return {"branch": name, "head": expected_head}
 
     def delete_branch(self, path: Path, name: str, expected_head: str) -> dict[str, str]:
         if not isinstance(name, str) or not name:
