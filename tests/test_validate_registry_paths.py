@@ -98,6 +98,12 @@ class RegistryPathConfinementTest(unittest.TestCase):
         with self.assertRaisesRegex(validate_registry.RegistryError, "nix aggregate"):
             validate_registry.validate_entry(entry)
 
+    def test_license_must_match_generated_flake_metadata(self) -> None:
+        entry = self.entry()
+        entry["license"] = "MIT"
+        with self.assertRaisesRegex(validate_registry.RegistryError, "license"):
+            validate_registry.validate_entry(entry)
+
 
 if __name__ == "__main__":
     unittest.main()
