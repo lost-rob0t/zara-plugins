@@ -43,6 +43,7 @@ class MemorySchema:
 
 class MemoryService:
     MAX_FACTS = 64
+    MAX_RECALL_RESULTS = 64
 
     def __init__(self, backend: Any) -> None:
         self.backend = backend
@@ -121,6 +122,10 @@ class MemoryService:
         items = callback(scope=scope, owner=owner, query=query, memory_type=memory_type)
         if not isinstance(items, list):
             raise MemoryError("memory backend returned invalid recall data")
+        if len(items) > self.MAX_RECALL_RESULTS:
+            raise MemoryError(
+                f"memory backend returned more than {self.MAX_RECALL_RESULTS} recall results"
+            )
         return [
             self._validate_memory(item, scope=scope, owner=owner, memory_type=memory_type)
             for item in items
