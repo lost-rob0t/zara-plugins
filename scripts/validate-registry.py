@@ -22,6 +22,7 @@ GENERATED_FLAKE_SOURCE = "github:lost-rob0t/zara-plugins"
 CANONICAL_REGISTRY_URL = "https://github.com/lost-rob0t/zara-plugins"
 CANONICAL_REGISTRY_RAW_URL = "https://raw.githubusercontent.com/lost-rob0t/zara-plugins/main/plugins.json"
 DEFAULT_PLUGIN_API_VERSION = "1"
+DEFAULT_SERVICE_PLUGIN_TYPE = "service"
 REQUIRED_FIELDS = (
     "name", "version", "api_version", "plugin_type", "description",
     "path", "entrypoint", "docs", "license",
@@ -211,6 +212,7 @@ def validate_service_entrypoint(entry: dict, entrypoint: Path) -> None:
     names = set()
     versions = set()
     api_versions = set()
+    plugin_types = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or getattr(node.func, "id", None) != "PluginMetadata":
             continue
@@ -227,6 +229,8 @@ def validate_service_entrypoint(entry: dict, entrypoint: Path) -> None:
                 versions.add(value)
             if keyword.arg == "api_version" and value is not None:
                 api_versions.add(value)
+            if keyword.arg == "plugin_type" and value is not None:
+                plugin_types.add(value)
 
     if names and names != {entry["name"]}:
         raise RegistryError(f"plugin {entry['name']!r} registers PluginMetadata name(s) {sorted(names)!r} which does not match the registry entry")
@@ -243,6 +247,11 @@ def validate_service_entrypoint(entry: dict, entrypoint: Path) -> None:
         api_versions = {DEFAULT_PLUGIN_API_VERSION}
     if api_versions != {entry["api_version"]}:
         raise RegistryError(f"plugin {entry['name']!r} declares api_version(s) {sorted(map(str, api_versions))!r} but the registry publishes {entry['api_version']!r}")
+
+    if not plugin_types:
+        plugin_types = {DEFAULT_SERVICE_PLUGIN_TYPE}
+    if plugin_types != {entry["plugin_type"]}:
+        raise RegistryError(f"plugin {entry['name']!r} declares plugin_type(s) {sorted(map(str, plugin_types))!r} but the registry publishes {entry['plugin_type']!r}")
 
 
 def validate_catalog(document: dict) -> None:
