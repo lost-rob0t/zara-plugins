@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
+from zara_coding.domain import CodingError
 from zara_coding.task_state import TaskStateSession
 
 
@@ -117,6 +118,13 @@ class TaskStateSessionTest(unittest.TestCase):
 
         self.assertEqual(session.status(), {"status": "ok", "state": "ready"})
         self.assertEqual(stdout.readline_sizes, [TaskStateSession.MAX_RESPONSE_CHARS + 1])
+
+    def test_protocol_rejects_unknown_response_status(self) -> None:
+        process = FakeProcess([{"status": "maybe", "state": "ready"}])
+        session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
+
+        with self.assertRaisesRegex(CodingError, "unknown status"):
+            session.status()
 
     def test_stop_terminates_the_owned_process(self) -> None:
         process = FakeProcess([])
