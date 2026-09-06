@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -38,10 +39,14 @@ class ZaraShellPlugin(ServicePlugin):
             allowed_programs=set(programs),
             allowed_roots=tuple(Path(value).expanduser() for value in roots),
             allowed_environment=set(environment),
-            max_runtime_seconds=float(section.get("max_runtime_seconds", 10.0)),
-            max_output_bytes=int(section.get("max_output_bytes", 65536)),
-            max_input_bytes=int(section.get("max_input_bytes", 65536)),
-            max_environment_bytes=int(section.get("max_environment_bytes", 4096)),
+            max_runtime_seconds=self._finite_positive_number(
+                section.get("max_runtime_seconds", 10.0), "max_runtime_seconds"
+            ),
+            max_output_bytes=self._positive_int(section.get("max_output_bytes", 65536), "max_output_bytes"),
+            max_input_bytes=self._positive_int(section.get("max_input_bytes", 65536), "max_input_bytes"),
+            max_environment_bytes=self._positive_int(
+                section.get("max_environment_bytes", 4096), "max_environment_bytes"
+            ),
         )
         self.runner = ShellRunner(policy)
 
@@ -122,6 +127,23 @@ class ZaraShellPlugin(ServicePlugin):
         if any(not item for item in normalized):
             raise ShellError(f"zara-shell {name} contains an empty value")
         return normalized
+
+    @staticmethod
+    def _positive_int(value: object, name: str) -> int:
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ShellError(f"zara-shell {name} must be a positive integer")
+        return value
+
+    @staticmethod
+    def _finite_positive_number(value: object, name: str) -> float:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or value <= 0
+        ):
+            raise ShellError(f"zara-shell {name} must be finite positive")
+        return float(value)
 
     @staticmethod
     def _json(value: Any) -> str:
