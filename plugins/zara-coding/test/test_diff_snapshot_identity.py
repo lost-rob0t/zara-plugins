@@ -62,6 +62,50 @@ class DiffSnapshotIdentityTests(unittest.TestCase):
                 inspector.diff(repo)
             self.assertEqual(diff_reads, 2)
 
+    def test_diff_rejects_malformed_numeric_numstat_as_coding_error(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = root / "repo"
+            repo.mkdir()
+
+            def run(argv, **kwargs):
+                args = tuple(argv[3:])
+                if args == ("rev-parse", "--show-toplevel"):
+                    output = f"{repo.resolve()}\n"
+                elif args == ("rev-parse", "HEAD"):
+                    output = "a" * 40 + "\n"
+                elif args == ("diff", "--numstat", "--no-renames", "HEAD", "--"):
+                    output = "wat\t0\ttracked.txt\n"
+                else:
+                    output = ""
+                return subprocess.CompletedProcess(argv, 0, stdout=output, stderr="")
+
+            inspector = RepositoryInspector((root,), runner=run)
+            with self.assertRaisesRegex(CodingError, "malformed structured output"):
+                inspector.diff(repo)
+
+    def test_diff_rejects_mixed_binary_numstat_markers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = root / "repo"
+            repo.mkdir()
+
+            def run(argv, **kwargs):
+                args = tuple(argv[3:])
+                if args == ("rev-parse", "--show-toplevel"):
+                    output = f"{repo.resolve()}\n"
+                elif args == ("rev-parse", "HEAD"):
+                    output = "a" * 40 + "\n"
+                elif args == ("diff", "--numstat", "--no-renames", "HEAD", "--"):
+                    output = "-\t0\tbroken.dat\n"
+                else:
+                    output = ""
+                return subprocess.CompletedProcess(argv, 0, stdout=output, stderr="")
+
+            inspector = RepositoryInspector((root,), runner=run)
+            with self.assertRaisesRegex(CodingError, "malformed structured output"):
+                inspector.diff(repo)
+
 
 if __name__ == "__main__":
     unittest.main()

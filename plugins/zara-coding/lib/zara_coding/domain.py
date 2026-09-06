@@ -114,12 +114,25 @@ class RepositoryInspector:
             if len(fields) != 3:
                 raise CodingError("git diff returned malformed structured output")
             additions, deletions, changed_path = fields
-            binary = additions == "-" and deletions == "-"
+            if (additions == "-") != (deletions == "-"):
+                raise CodingError("git diff returned malformed structured output")
+            binary = additions == "-"
+            if binary:
+                parsed_additions = None
+                parsed_deletions = None
+            else:
+                try:
+                    parsed_additions = int(additions)
+                    parsed_deletions = int(deletions)
+                except ValueError as exc:
+                    raise CodingError("git diff returned malformed structured output") from exc
+                if parsed_additions < 0 or parsed_deletions < 0:
+                    raise CodingError("git diff returned malformed structured output")
             entries.append(
                 {
                     "path": changed_path,
-                    "additions": None if binary else int(additions),
-                    "deletions": None if binary else int(deletions),
+                    "additions": parsed_additions,
+                    "deletions": parsed_deletions,
                     "binary": binary,
                 }
             )
