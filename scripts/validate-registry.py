@@ -304,7 +304,10 @@ def validate_service_entrypoint(entry: dict, entrypoint: Path) -> None:
             if isinstance(target, ast.Assign)
             and len(target.targets) == 1
             and isinstance(target.targets[0], ast.Name)
-            and target.targets[0].id in {"VERSION", "PLUGIN_VERSION"}
+            and (
+                target.targets[0].id == "VERSION"
+                or target.targets[0].id.endswith("PLUGIN_VERSION")
+            )
             and isinstance(target.value, ast.Constant)
         }
         versions = module_versions
