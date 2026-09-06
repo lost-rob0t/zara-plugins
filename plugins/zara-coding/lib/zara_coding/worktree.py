@@ -109,6 +109,23 @@ def unlock_worktree(
     }
 
 
+def remove_detached_worktree(
+    inspector: RepositoryInspector,
+    repository: Path,
+    target: Path,
+    expected_head: str,
+) -> dict[str, object]:
+    inspector._require_full_object_id(expected_head)
+    root = inspector._repository_root(repository)
+    target_path = _resolve_target(inspector, target)
+    record = _find_worktree(inspector, root, target_path)
+    _require_lockable_detached(root, record, expected_head)
+    if record["locked"] is not None:
+        raise CodingError("worktree is locked; unlock it with the matching coordination reason before removal")
+    _remove_worktree_and_prove_absent(inspector, root, target_path)
+    return {"path": str(target_path), "head": expected_head, "removed": True}
+
+
 def _rollback_created_worktree(
     inspector: RepositoryInspector,
     repository: Path,
@@ -121,12 +138,22 @@ def _rollback_created_worktree(
     _require_lockable_detached(root, record, expected_head)
     if record["locked"] is not None:
         raise CodingError("created worktree became locked before rollback")
+    _remove_worktree_and_prove_absent(inspector, root, target_path, context="created worktree")
+
+
+def _remove_worktree_and_prove_absent(
+    inspector: RepositoryInspector,
+    root: Path,
+    target_path: Path,
+    *,
+    context: str = "worktree",
+) -> None:
     inspector._git(root, "worktree", "remove", str(target_path))
     for remaining in inspector.worktrees(root, limit=100):
         if remaining["path"] == str(target_path):
-            raise CodingError("created worktree remained registered after rollback")
+            raise CodingError(f"{context} remained registered after removal")
     if target_path.exists() or target_path.is_symlink():
-        raise CodingError("created worktree path remained after rollback")
+        raise CodingError(f"{context} path remained after removal")
 
 
 def _require_lock_reason(reason: str) -> str:
