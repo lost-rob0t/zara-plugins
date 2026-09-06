@@ -17,7 +17,13 @@ class RepositoryInspector:
     MAX_COMMIT_MESSAGE_CHARS = 4096
     MAX_CHANGED_PATHS = 100
 
-    def __init__(self, allowed_roots: tuple[Path, ...], *, executable: str = "git", runner: Runner | None = None) -> None:
+    def __init__(
+        self,
+        allowed_roots: tuple[Path, ...],
+        *,
+        executable: str = "git",
+        runner: Runner | None = None,
+    ) -> None:
         if not allowed_roots:
             raise ValueError("allowed_roots must not be empty")
         if not executable:
@@ -38,7 +44,9 @@ class RepositoryInspector:
                 for candidate in sorted(allowed_root.iterdir(), key=lambda path: path.name):
                     scanned += 1
                     if scanned > self.MAX_DISCOVERY_ENTRIES:
-                        raise CodingError(f"repository discovery exceeds scan limit of {self.MAX_DISCOVERY_ENTRIES} entries")
+                        raise CodingError(
+                            f"repository discovery exceeds scan limit of {self.MAX_DISCOVERY_ENTRIES} entries"
+                        )
                     if candidate.is_symlink() or not candidate.is_dir():
                         continue
                     if self._is_git_root(candidate):
@@ -68,7 +76,13 @@ class RepositoryInspector:
             raise CodingError("repository identity changed during inspection")
         if self._changed_paths(root) != changed_paths:
             raise CodingError("repository working tree changed during inspection")
-        return {"root": str(root), "head": head, "branch": branch, "dirty": bool(changed_paths), "changed_paths": changed_paths}
+        return {
+            "root": str(root),
+            "head": head,
+            "branch": branch,
+            "dirty": bool(changed_paths),
+            "changed_paths": changed_paths,
+        }
 
     def _changed_paths(self, root: Path) -> list[str]:
         changed = set(filter(None, self._git(root, "diff", "--name-only", "HEAD").splitlines()))
@@ -114,7 +128,14 @@ class RepositoryInspector:
                     raise CodingError("git diff returned malformed structured output") from exc
                 if parsed_additions < 0 or parsed_deletions < 0:
                     raise CodingError("git diff returned malformed structured output")
-            entries.append({"path": changed_path, "additions": parsed_additions, "deletions": parsed_deletions, "binary": binary})
+            entries.append(
+                {
+                    "path": changed_path,
+                    "additions": parsed_additions,
+                    "deletions": parsed_deletions,
+                    "binary": binary,
+                }
+            )
             if len(entries) > max_files:
                 raise CodingError(f"git diff exceeds file limit of {max_files}")
         return entries
@@ -122,7 +143,12 @@ class RepositoryInspector:
     def log(self, path: Path, *, limit: int = 20) -> list[dict[str, object]]:
         limit = self._bounded_limit(limit)
         root = self._repository_root(path)
-        output = self._git(root, "log", f"--max-count={limit}", "--format=%H%x09%P%x09%an%x09%aI%x09%s")
+        output = self._git(
+            root,
+            "log",
+            f"--max-count={limit}",
+            "--format=%H%x09%P%x09%an%x09%aI%x09%s",
+        )
         history = []
         for line in output.splitlines():
             if not line:
@@ -138,15 +164,37 @@ class RepositoryInspector:
                     self._require_full_object_id(parent)
             except ValueError as exc:
                 raise CodingError("git log returned malformed object ID") from exc
-            history.append({"commit": commit, "parents": parent_ids, "author": author, "authored_at": authored_at, "subject": subject})
+            history.append(
+                {
+                    "commit": commit,
+                    "parents": parent_ids,
+                    "author": author,
+                    "authored_at": authored_at,
+                    "subject": subject,
+                }
+            )
         return history
 
     def branches(self, path: Path, *, limit: int = 50) -> list[dict[str, str]]:
         limit = self._bounded_limit(limit)
         root = self._repository_root(path)
-        output = self._git(root, "for-each-ref", f"--count={limit}", "--sort=refname", "--format=%(refname:short)%09%(objectname)%09%(upstream:short)", "refs/heads/")
+        output = self._git(
+            root,
+            "for-each-ref",
+            f"--count={limit}",
+            "--sort=refname",
+            "--format=%(refname:short)%09%(objectname)%09%(upstream:short)",
+            "refs/heads/",
+        )
         branches = self._parse_branch_inventory(output, limit=limit)
-        probe = self._git(root, "for-each-ref", f"--count={limit + 1}", "--sort=refname", "--format=%(refname:short)%09%(objectname)%09%(upstream:short)", "refs/heads/")
+        probe = self._git(
+            root,
+            "for-each-ref",
+            f"--count={limit + 1}",
+            "--sort=refname",
+            "--format=%(refname:short)%09%(objectname)%09%(upstream:short)",
+            "refs/heads/",
+        )
         probed_branches = self._parse_branch_inventory(probe, limit=limit)
         if probed_branches != branches:
             raise CodingError("git branch inventory changed during inspection")
@@ -178,7 +226,13 @@ class RepositoryInspector:
         root = self._repository_root(path)
         ref = f"refs/heads/{name}"
         self._git(root, "check-ref-format", ref)
-        transaction = "start\n" f"verify HEAD {expected_head}\n" f"create {ref} {expected_head}\n" "prepare\n" "commit\n"
+        transaction = (
+            "start\n"
+            f"verify HEAD {expected_head}\n"
+            f"create {ref} {expected_head}\n"
+            "prepare\n"
+            "commit\n"
+        )
         self._git_input(root, transaction, "update-ref", "--stdin")
         return {"branch": name, "head": expected_head}
 
@@ -223,7 +277,12 @@ class RepositoryInspector:
         except ValueError as exc:
             raise CodingError("git commit-tree returned malformed object ID") from exc
         self._git(root, "update-ref", branch_ref, commit_oid, expected_head)
-        return {"branch": branch_ref.removeprefix("refs/heads/"), "parent": expected_head, "commit": commit_oid, "tree": tree}
+        return {
+            "branch": branch_ref.removeprefix("refs/heads/"),
+            "parent": expected_head,
+            "commit": commit_oid,
+            "tree": tree,
+        }
 
     def worktrees(self, path: Path, *, limit: int = 50) -> list[dict[str, object]]:
         limit = self._bounded_limit(limit)
@@ -273,7 +332,14 @@ class RepositoryInspector:
         detached = bool(record.get("detached", False))
         if detached and branch is not None:
             raise CodingError("git worktree returned contradictory branch state")
-        return {"path": str(worktree_path), "head": head, "branch": branch, "detached": detached, "locked": self._porcelain_reason(record.get("locked")), "prunable": self._porcelain_reason(record.get("prunable"))}
+        return {
+            "path": str(worktree_path),
+            "head": head,
+            "branch": branch,
+            "detached": detached,
+            "locked": self._porcelain_reason(record.get("locked")),
+            "prunable": self._porcelain_reason(record.get("prunable")),
+        }
 
     @staticmethod
     def _porcelain_reason(value: object) -> str | None:
@@ -285,7 +351,11 @@ class RepositoryInspector:
 
     @staticmethod
     def _require_full_object_id(value: str) -> None:
-        if not isinstance(value, str) or len(value) not in {40, 64} or any(character not in "0123456789abcdefABCDEF" for character in value):
+        if (
+            not isinstance(value, str)
+            or len(value) not in {40, 64}
+            or any(character not in "0123456789abcdefABCDEF" for character in value)
+        ):
             raise ValueError("expected_head must be a full hexadecimal Git object ID")
 
     @staticmethod
@@ -309,11 +379,26 @@ class RepositoryInspector:
             raise CodingError("repository path is outside allowed roots")
 
     def _run(self, root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        return self._runner([self._executable, "-C", str(root), *args], check=check, capture_output=True, text=True, timeout=5, shell=False)
+        return self._runner(
+            [self._executable, "-C", str(root), *args],
+            check=check,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            shell=False,
+        )
 
     def _git_input(self, root: Path, input_text: str, *args: str) -> str:
         try:
-            result = self._runner([self._executable, "-C", str(root), *args], input=input_text, check=True, capture_output=True, text=True, timeout=5, shell=False)
+            result = self._runner(
+                [self._executable, "-C", str(root), *args],
+                input=input_text,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                shell=False,
+            )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as exc:
             raise CodingError(f"git operation failed: {' '.join(args)}") from exc
         return result.stdout
@@ -329,11 +414,25 @@ class RepositoryInspector:
 
 
 class PrologRLMBridge:
-    SPEC_CATALOG_GOAL = ("rlm_spec_lang:spec_language_catalog([],O)," "write_canonical(O),nl,halt")
-    SPEC_NORMALIZE_GOAL = ("read_string(user_input,_,S)," "rlm_spec_lang:spec_source_normalize(S,O)," "write_canonical(O),nl,halt")
+    SPEC_CATALOG_GOAL = (
+        "rlm_spec_lang:spec_language_catalog([],O),"
+        "write_canonical(O),nl,halt"
+    )
+    SPEC_NORMALIZE_GOAL = (
+        "read_string(user_input,_,S),"
+        "rlm_spec_lang:spec_source_normalize(S,O),"
+        "write_canonical(O),nl,halt"
+    )
     MAX_SPEC_CHARS = 65536
 
-    def __init__(self, checkout: Path, *, executable: str = "swipl", timeout_seconds: float = 5.0, runner: Runner | None = None) -> None:
+    def __init__(
+        self,
+        checkout: Path,
+        *,
+        executable: str = "swipl",
+        timeout_seconds: float = 5.0,
+        runner: Runner | None = None,
+    ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
         self.checkout = Path(checkout).expanduser()
@@ -346,9 +445,23 @@ class PrologRLMBridge:
         facade = self.checkout / "prolog" / "rlm.pl"
         if self._validate_checkout and not facade.is_file():
             return {"status": "unavailable", "reason": "prolog-rlm-checkout-missing"}
-        argv = [self.executable, "-q", "-s", str(facade), "-g", "rlm:rlm_ready,rlm:rlm_version(V),format('ready\\t~w~n',[V]),halt"]
+        argv = [
+            self.executable,
+            "-q",
+            "-s",
+            str(facade),
+            "-g",
+            "rlm:rlm_ready,rlm:rlm_version(V),format('ready\\t~w~n',[V]),halt",
+        ]
         try:
-            result = self._runner(argv, check=True, capture_output=True, text=True, timeout=self.timeout_seconds, shell=False)
+            result = self._runner(
+                argv,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout_seconds,
+                shell=False,
+            )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
             return {"status": "unavailable", "reason": "prolog-rlm-not-ready"}
         line = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
@@ -374,7 +487,13 @@ class PrologRLMBridge:
         if self._validate_checkout and not module.is_file():
             raise CodingError("Prolog-RLM SPEC language module is unavailable")
         argv = [self.executable, "-q", "-s", str(module), "-g", goal]
-        kwargs = {"check": True, "capture_output": True, "text": True, "timeout": self.timeout_seconds, "shell": False}
+        kwargs = {
+            "check": True,
+            "capture_output": True,
+            "text": True,
+            "timeout": self.timeout_seconds,
+            "shell": False,
+        }
         if input_text is not None:
             kwargs["input"] = input_text
         try:
