@@ -117,7 +117,7 @@ class CodingPluginTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.git_branches("/")
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
-            plugin.git_branch_create("/", "feature")
+            plugin.git_branch_create("/", "feature", "a" * 40)
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
             plugin.git_branch_delete("/", "feature", "a" * 40)
         with self.assertRaisesRegex(RuntimeError, "allowed-roots-not-configured"):
