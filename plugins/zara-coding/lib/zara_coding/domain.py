@@ -104,8 +104,16 @@ class RepositoryInspector:
         max_files = self._bounded_limit(max_files)
         root = self._repository_root(path)
         head = self._git(root, "rev-parse", "HEAD").strip()
+        try:
+            self._require_full_object_id(head)
+        except ValueError as exc:
+            raise CodingError("git diff returned malformed diff HEAD object ID") from exc
         entries = self._diff_entries(root, max_files=max_files)
         final_head = self._git(root, "rev-parse", "HEAD").strip()
+        try:
+            self._require_full_object_id(final_head)
+        except ValueError as exc:
+            raise CodingError("git diff returned malformed diff HEAD object ID") from exc
         if final_head != head:
             raise CodingError("repository identity changed during diff")
         if self._diff_entries(root, max_files=max_files) != entries:
