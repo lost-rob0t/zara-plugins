@@ -26,6 +26,10 @@ class RepositoryInspectorTests(unittest.TestCase):
             args = argv[3:]
             if cwd == self.plain and args[:2] == ["rev-parse", "--show-toplevel"]:
                 raise subprocess.CalledProcessError(128, argv)
+            branch_inventory = (
+                f"feature\t{'b' * 40}\torigin/feature\n"
+                f"main\t{'a' * 40}\torigin/main\n"
+            )
             outputs = {
                 ("rev-parse", "--show-toplevel"): f"{self.repo.resolve()}\n",
                 ("rev-parse", "HEAD"): "a" * 40 + "\n",
@@ -47,10 +51,14 @@ class RepositoryInspectorTests(unittest.TestCase):
                     "--sort=refname",
                     "--format=%(refname:short)%09%(objectname)%09%(upstream:short)",
                     "refs/heads/",
-                ): (
-                    f"feature\t{'b' * 40}\torigin/feature\n"
-                    f"main\t{'a' * 40}\torigin/main\n"
-                ),
+                ): branch_inventory,
+                (
+                    "for-each-ref",
+                    "--count=3",
+                    "--sort=refname",
+                    "--format=%(refname:short)%09%(objectname)%09%(upstream:short)",
+                    "refs/heads/",
+                ): branch_inventory,
                 ("worktree", "list", "--porcelain", "-z"): (
                     f"worktree {self.repo.resolve()}\x00HEAD {'a' * 40}\x00branch refs/heads/main\x00\x00"
                     f"worktree {self.root / 'wt'}\x00HEAD {'b' * 40}\x00detached\x00locked testing\x00prunable stale\x00\x00"
