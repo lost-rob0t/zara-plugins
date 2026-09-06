@@ -66,10 +66,18 @@ class RepositoryInspector:
     def inspect(self, path: Path) -> dict[str, object]:
         root = self._repository_root(path)
         head = self._git(root, "rev-parse", "HEAD").strip()
+        try:
+            self._require_full_object_id(head)
+        except ValueError as exc:
+            raise CodingError("git inspect returned malformed repository HEAD object ID") from exc
         branch_result = self._run(root, "symbolic-ref", "--short", "-q", "HEAD", check=False)
         branch = branch_result.stdout.strip() if branch_result.returncode == 0 else "DETACHED"
         changed_paths = self._changed_paths(root)
         final_head = self._git(root, "rev-parse", "HEAD").strip()
+        try:
+            self._require_full_object_id(final_head)
+        except ValueError as exc:
+            raise CodingError("git inspect returned malformed repository HEAD object ID") from exc
         final_branch_result = self._run(root, "symbolic-ref", "--short", "-q", "HEAD", check=False)
         final_branch = final_branch_result.stdout.strip() if final_branch_result.returncode == 0 else "DETACHED"
         if final_head != head or final_branch != branch:
