@@ -161,25 +161,31 @@ class CompatibilityRuntime:
             subscription.close()
 
 
-def _invoke_lifecycle(method, *args) -> None:
+def _invoke_lifecycle(method, *args, timeout: float = 5.0) -> None:
     async def invoke() -> None:
         if inspect.iscoroutinefunction(method):
-            await method(*args)
+            operation = method(*args)
         else:
-            await asyncio.to_thread(method, *args)
+            operation = asyncio.to_thread(method, *args)
+        await asyncio.wait_for(operation, timeout=timeout)
 
     asyncio.run(invoke())
 
 
-def exercise_service_lifecycle(instance: object, runtime: object) -> None:
+def exercise_service_lifecycle(
+    instance: object,
+    runtime: object,
+    *,
+    timeout: float = 5.0,
+) -> None:
     started = False
     try:
         started = True
-        _invoke_lifecycle(instance.start, runtime)
+        _invoke_lifecycle(instance.start, runtime, timeout=timeout)
     finally:
         try:
             if started:
-                _invoke_lifecycle(instance.stop)
+                _invoke_lifecycle(instance.stop, timeout=timeout)
         finally:
             shutdown = getattr(runtime, "_shutdown", None)
             if callable(shutdown):
