@@ -43,6 +43,56 @@ class PrologTaskStateIntegrationTest(unittest.TestCase):
         self.assertEqual(fetched["task"]["state"], "completed")
         self.assertEqual(len(fetched["task"]["evidence"]), 1)
 
+    def test_task_completion_requires_all_dependencies_completed(self) -> None:
+        self.session.create_task(
+            "dependency",
+            goal="complete prerequisite",
+            completion_criteria=["test-passed"],
+        )
+        self.session.create_task(
+            "dependent",
+            goal="wait for prerequisite",
+            dependencies=["dependency"],
+            completion_criteria=["test-passed"],
+        )
+        self.session.record_evidence(
+            "dependent",
+            kind="test",
+            status="passed",
+            detail="dependent verifier passed",
+        )
+
+        blocked = self.session.complete_task("dependent")
+        self.session.record_evidence(
+            "dependency",
+            kind="test",
+            status="passed",
+            detail="dependency verifier passed",
+        )
+        self.session.complete_task("dependency")
+        completed = self.session.complete_task("dependent")
+
+        self.assertEqual(blocked, {"status": "rejected", "reason": "dependencies-incomplete"})
+        self.assertEqual(completed["task"]["state"], "completed")
+
+    def test_missing_dependency_fails_closed_at_completion(self) -> None:
+        self.session.create_task(
+            "dependent-missing",
+            goal="reject unknown prerequisite",
+            dependencies=["does-not-exist"],
+            completion_criteria=["test-passed"],
+        )
+        self.session.record_evidence(
+            "dependent-missing",
+            kind="test",
+            status="passed",
+            detail="dependent verifier passed",
+        )
+
+        rejected = self.session.complete_task("dependent-missing")
+
+        self.assertEqual(rejected, {"status": "rejected", "reason": "dependencies-incomplete"})
+
     def test_failed_only_evidence_cannot_complete_task(self) -> None:
         self.session.create_task(
             "task-failed-evidence",
