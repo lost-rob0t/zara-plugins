@@ -75,12 +75,12 @@ class TaskStateCodingPlugin(ZaraCodingPlugin):
             StructuredTool.from_function(
                 func=self.task_record_evidence,
                 name="coding.task.record-evidence",
-                description="Record bounded structured verification evidence against one symbolic coding task.",
+                description="Record bounded failed verification observations. Passing evidence is verifier-owned and cannot be caller-authored through this public tool.",
             ),
             StructuredTool.from_function(
                 func=self.task_complete,
                 name="coding.task.complete",
-                description="Complete one symbolic coding task only when Prolog state contains verification evidence.",
+                description="Complete one symbolic coding task only when Prolog state contains verifier-owned passing verification evidence.",
             ),
         )
 
@@ -130,6 +130,8 @@ class TaskStateCodingPlugin(ZaraCodingPlugin):
         return json.dumps(self._require_task_state().get_task(task_id), sort_keys=True)
 
     def task_record_evidence(self, task_id: str, kind: str, status: str, detail: str) -> str:
+        if status == "passed":
+            raise ValueError("passing task evidence is verifier-owned")
         return json.dumps(
             self._require_task_state().record_evidence(task_id, kind=kind, status=status, detail=detail),
             sort_keys=True,
