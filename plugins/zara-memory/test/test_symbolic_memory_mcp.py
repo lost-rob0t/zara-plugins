@@ -123,6 +123,30 @@ class SymbolicMemoryMCPTests(unittest.TestCase):
         with self.assertRaisesRegex(SymbolicMemoryMCPError, "denied"):
             client.get("mem_private")
 
+    def test_rejects_mismatched_jsonrpc_response_identity(self):
+        def run(argv, **kwargs):
+            request = json.loads(kwargs["input"])
+            response = {
+                "jsonrpc": "2.0",
+                "id": request["id"] + 1,
+                "result": {
+                    "structuredContent": {"id": "mem_stale", "source_text": "stale"},
+                    "isError": False,
+                },
+            }
+            return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(response) + "\n", stderr="")
+
+        client = SymbolicMemoryMCP(
+            executable="symbolic-memory-mcp",
+            database=Path("/tmp/memory.db"),
+            principal="zara-local",
+            session_id="s1",
+            capabilities=("memory_read",),
+            runner=run,
+        )
+        with self.assertRaisesRegex(SymbolicMemoryMCPError, "response identity"):
+            client.get("mem_1")
+
     def test_rejects_scopes_current_backend_does_not_support(self):
         client = SymbolicMemoryMCP(
             executable="symbolic-memory-mcp",
