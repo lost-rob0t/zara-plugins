@@ -113,7 +113,9 @@ class ZaraShellPlugin(ServicePlugin):
     def _string_list(value: object, name: str) -> tuple[str, ...]:
         if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
             raise ShellError(f"zara-shell {name} must be a list")
-        normalized = tuple(str(item).strip() for item in value)
+        if any(not isinstance(item, str) for item in value):
+            raise ShellError(f"zara-shell {name} must contain strings")
+        normalized = tuple(item.strip() for item in value)
         if any(not item for item in normalized):
             raise ShellError(f"zara-shell {name} contains an empty value")
         return normalized
