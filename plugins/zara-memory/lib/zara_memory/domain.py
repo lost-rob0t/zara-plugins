@@ -80,6 +80,8 @@ class MemoryService:
         memory_type: str | None = None,
     ) -> list[dict[str, Any]]:
         self._validate_scope_owner(scope, owner)
+        if query is not None and not isinstance(query, str):
+            raise MemoryError("memory query must be text")
         if memory_type is not None:
             schema = self._schema(memory_type)
             if scope not in schema.allowed_scopes:
