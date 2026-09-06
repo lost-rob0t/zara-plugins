@@ -99,6 +99,13 @@ class GitHubClient:
             "failed": failed,
         }
 
+    def _result_limit(self, limit: int | None) -> int:
+        if limit is None:
+            return self.config.max_results
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+            raise GitHubError("limit must be a positive integer")
+        return min(limit, self.config.max_results)
+
     def repo_get(self, repository: str) -> Any:
         return self._request("GET", f"/repos/{self._repo_path(repository)}")
 
@@ -130,7 +137,7 @@ class GitHubClient:
         )
 
     def pr_list(self, repository: str, *, state: str = "open", limit: int | None = None) -> Any:
-        count = min(limit or self.config.max_results, self.config.max_results)
+        count = self._result_limit(limit)
         encoded_state = urllib.parse.quote(state, safe="")
         return self._request(
             "GET",
@@ -140,7 +147,7 @@ class GitHubClient:
     def latest_prs(self, *, limit: int | None = None) -> list[dict[str, Any]]:
         if not self.config.owner:
             raise GitHubError("owner must be configured for latest PRs")
-        count = min(limit or self.config.max_results, self.config.max_results)
+        count = self._result_limit(limit)
         query = urllib.parse.quote(f"is:pr author:{self.config.owner}", safe="")
         search = self._request(
             "GET", f"/search/issues?q={query}&sort=updated&order=desc&per_page={count}"
@@ -175,7 +182,7 @@ class GitHubClient:
         return results
 
     def issue_list(self, repository: str, *, state: str = "open", limit: int | None = None) -> Any:
-        count = min(limit or self.config.max_results, self.config.max_results)
+        count = self._result_limit(limit)
         encoded_state = urllib.parse.quote(state, safe="")
         return self._request(
             "GET", f"/repos/{self._repo_path(repository)}/issues?state={encoded_state}&per_page={count}"
