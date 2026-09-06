@@ -39,6 +39,14 @@ class ShellRunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(ShellError, "not allowed"):
             self.runner.run(["sh", "-c", "echo pwned"], cwd=self.root)
 
+    def test_argv_must_be_non_string_sequence_before_execution(self):
+        for argv in ("printf", b"printf", 0, False, object()):
+            with self.subTest(argv=argv):
+                with patch("zara_shell.domain.subprocess.Popen") as popen:
+                    with self.assertRaisesRegex(ShellError, "argv must contain non-empty strings"):
+                        self.runner.run(argv, cwd=self.root)
+                    popen.assert_not_called()
+
     def test_refuses_cwd_outside_allowed_roots(self):
         with self.assertRaisesRegex(ShellError, "cwd"):
             self.runner.run(["pwd"], cwd=Path("/"))
