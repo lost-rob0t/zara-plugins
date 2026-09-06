@@ -53,6 +53,16 @@ class ServiceMetadataAgreementTest(unittest.TestCase):
 
         validate_registry.validate_service_entrypoint(self.entry, self.entrypoint)
 
+    def test_fallback_accepts_plugin_scoped_version_constant(self) -> None:
+        self.write(
+            "EXAMPLE_PLUGIN_VERSION = '0.1.0'\n"
+            "EXAMPLE_API_VERSION = '1'\n"
+            "def create_plugin(): return None\n"
+            "metadata = PluginMetadata(name='example', version=EXAMPLE_PLUGIN_VERSION)\n"
+        )
+
+        validate_registry.validate_service_entrypoint(self.entry, self.entrypoint)
+
 
 if __name__ == "__main__":
     unittest.main()
