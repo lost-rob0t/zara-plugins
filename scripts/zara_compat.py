@@ -65,6 +65,12 @@ def require_metadata(entry: dict[str, Any], actual: Any) -> None:
             )
 
 
+def require_service_activation_contract(name: str, instance: Any) -> None:
+    enabled_by_default = getattr(instance, "enabled_by_default", True)
+    if not isinstance(enabled_by_default, bool):
+        raise CompatibilityError(f"{name}: enabled_by_default must be a boolean")
+
+
 def require_tool_names(name: str, tools: tuple[Any, ...] | list[Any], seen: dict[str, str]) -> None:
     local: set[str] = set()
     for tool in tools:
@@ -271,6 +277,7 @@ def check_registry(
                                     f"(expected {expected}, observed {observed})"
                                 )
                             require_metadata(entry, metadata)
+                            require_service_activation_contract(name, instance)
                             tools = tuple(instance.tools())
                             invalid = [type(tool).__name__ for tool in tools if not isinstance(tool, BaseTool)]
                             if invalid:

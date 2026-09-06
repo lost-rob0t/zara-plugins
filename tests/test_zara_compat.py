@@ -16,6 +16,7 @@ from scripts.zara_compat import (
     plugin_paths,
     require_metadata,
     require_search_path_discovery,
+    require_service_activation_contract,
     require_tool_names,
     temporary_runtime_environment,
     validate_zara_source,
@@ -55,6 +56,19 @@ class ZaraCompatibilityGateTest(unittest.TestCase):
                 },
                 actual,
             )
+
+    def test_service_enabled_by_default_must_match_zara_boolean_contract(self) -> None:
+        with self.assertRaisesRegex(
+            CompatibilityError,
+            "zara-example.*enabled_by_default.*boolean",
+        ):
+            require_service_activation_contract(
+                "zara-example",
+                SimpleNamespace(enabled_by_default="yes"),
+            )
+
+    def test_service_enabled_by_default_defaults_to_true_when_absent(self) -> None:
+        require_service_activation_contract("zara-example", SimpleNamespace())
 
     def test_tool_names_must_be_unique_within_plugin(self) -> None:
         tools = [SimpleNamespace(name="example.read"), SimpleNamespace(name="example.read")]
