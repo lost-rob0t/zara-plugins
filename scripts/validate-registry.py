@@ -176,13 +176,9 @@ def validate_entry(entry: dict) -> None:
             f"{GENERATED_FLAKE_SOURCE!r}"
         )
     if nix.get("package") != name:
-        raise RegistryError(
-            f"plugin {name!r} nix package must match the registry name"
-        )
+        raise RegistryError(f"plugin {name!r} nix package must match the registry name")
     if nix.get("aggregate") != "zara-plugins":
-        raise RegistryError(
-            f"plugin {name!r} nix aggregate must be 'zara-plugins'"
-        )
+        raise RegistryError(f"plugin {name!r} nix aggregate must be 'zara-plugins'")
 
     install = entry.get("install")
     if not isinstance(install, dict):
@@ -228,9 +224,7 @@ def validate_entry(entry: dict) -> None:
     has_installer = installer.is_file()
     uses_run_installer = install_argv[1] == "run"
     if has_installer != uses_run_installer:
-        raise RegistryError(
-            f"plugin {name!r} install.nix does not match packaged installer layout"
-        )
+        raise RegistryError(f"plugin {name!r} install.nix does not match packaged installer layout")
     if has_installer:
         expected_tool = f"python3 plugins/{name}/tools/{name} install"
         if install.get("tool") != expected_tool:
@@ -238,9 +232,7 @@ def validate_entry(entry: dict) -> None:
                 f"plugin {name!r} install.tool does not match packaged installer layout"
             )
     elif "tool" in install:
-        raise RegistryError(
-            f"plugin {name!r} advertises install.tool without a packaged installer"
-        )
+        raise RegistryError(f"plugin {name!r} advertises install.tool without a packaged installer")
 
     plugin_root = plugin_dir.resolve()
     entrypoint = (plugin_dir / entry["entrypoint"]).resolve()
@@ -300,7 +292,7 @@ def validate_service_entrypoint(entry: dict, entrypoint: Path) -> None:
             if keyword.arg == "version" and isinstance(keyword.value, ast.Constant):
                 versions.add(keyword.value.value)
 
-    if names and entry["name"] not in names:
+    if names and names != {entry["name"]}:
         raise RegistryError(
             f"plugin {entry['name']!r} registers PluginMetadata name(s) {sorted(names)!r} "
             "which does not match the registry entry"
@@ -316,7 +308,7 @@ def validate_service_entrypoint(entry: dict, entrypoint: Path) -> None:
             and isinstance(target.value, ast.Constant)
         }
         versions = module_versions
-    if versions and entry["version"] not in versions:
+    if versions and versions != {entry["version"]}:
         raise RegistryError(
             f"plugin {entry['name']!r} declares version(s) {sorted(map(str, versions))!r} "
             f"but the registry publishes {entry['version']!r}"
