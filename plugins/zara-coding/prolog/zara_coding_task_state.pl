@@ -6,6 +6,9 @@
 :- dynamic task_state/2.
 :- dynamic task_evidence/2.
 
+max_tasks(64).
+max_evidence_per_task(64).
+
 serve :-
     read_line_to_string(user_input, Line),
     serve_line(Line).
@@ -39,6 +42,8 @@ dispatch_op("create", Command, Response) :-
     get_dict(task_id, Command, Id),
     ( task_state(Id, _) ->
         Response = _{status:"rejected", reason:"task-already-exists"}
+    ; task_limit_reached ->
+        Response = _{status:"rejected", reason:"task-limit-reached"}
     ; get_dict(goal, Command, Goal),
       get_dict(constraints, Command, Constraints),
       get_dict(dependencies, Command, Dependencies),
@@ -67,12 +72,15 @@ dispatch_op("get", Command, Response) :-
 dispatch_op("record_evidence", Command, Response) :-
     get_dict(task_id, Command, Id),
     ( task_state(Id, _) ->
-        get_dict(kind, Command, Kind),
-        get_dict(status, Command, Status),
-        get_dict(detail, Command, Detail),
-        Evidence = _{kind:Kind, status:Status, detail:Detail},
-        assertz(task_evidence(Id, Evidence)),
-        Response = _{status:"ok", evidence:Evidence}
+        ( evidence_limit_reached(Id) ->
+            Response = _{status:"rejected", reason:"evidence-limit-reached"}
+        ; get_dict(kind, Command, Kind),
+          get_dict(status, Command, Status),
+          get_dict(detail, Command, Detail),
+          Evidence = _{kind:Kind, status:Status, detail:Detail},
+          assertz(task_evidence(Id, Evidence)),
+          Response = _{status:"ok", evidence:Evidence}
+        )
     ; Response = _{status:"rejected", reason:"task-not-found"}
     ).
 
@@ -88,3 +96,15 @@ dispatch_op("complete", Command, Response) :-
         )
     ; Response = _{status:"rejected", reason:"task-not-found"}
     ).
+
+task_limit_reached :-
+    max_tasks(Max),
+    findall(Id, task_state(Id, _), Tasks),
+    length(Tasks, Count),
+    Count >= Max.
+
+evidence_limit_reached(Id) :-
+    max_evidence_per_task(Max),
+    findall(Evidence, task_evidence(Id, Evidence), EvidenceList),
+    length(EvidenceList, Count),
+    Count >= Max.
