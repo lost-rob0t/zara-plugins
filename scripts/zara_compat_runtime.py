@@ -94,11 +94,17 @@ class CompatibilityRuntime:
         return registration_id
 
     def start_worker(self, name, target):
+        if not name or len(name) > 64:
+            raise ValueError("worker name must contain 1 to 64 characters")
         if not callable(target):
             raise TypeError("worker target must be callable")
-        self.workers.append(str(name))
+        if name in self.workers:
+            raise ValueError(f"managed worker {name!r} is already registered")
+        if len(self.workers) >= 8:
+            raise RuntimeError("managed worker limit reached")
+        self.workers.append(name)
         return SimpleNamespace(
-            name=str(name),
+            name=name,
             is_alive=False,
             request_stop=lambda: None,
             join=lambda timeout=None: None,
