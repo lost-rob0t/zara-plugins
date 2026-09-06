@@ -39,6 +39,9 @@ class GitHubConfig:
     @classmethod
     def load(cls, mapping: dict | None) -> "GitHubConfig":
         source = dict(mapping or {})
+        for key in ("timeout_seconds", "max_response_bytes", "max_results"):
+            if isinstance(source.get(key), bool):
+                raise GitHubConfigError(f"{key} must not be boolean")
         xdg = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
         configured_file = source.get("token_file")
         token_file = Path(str(configured_file)).expanduser() if configured_file else None
