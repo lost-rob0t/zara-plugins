@@ -7,7 +7,7 @@ import os
 import queue
 from contextlib import contextmanager
 from pathlib import Path
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 
 
 @contextmanager
@@ -66,7 +66,7 @@ class CompatibilitySubscription:
 class CompatibilityRuntime:
     def __init__(self, plugin_name: str) -> None:
         self.plugin_name = plugin_name
-        self.configuration = {}
+        self.configuration = MappingProxyType({})
         self.status = SimpleNamespace(state="running", alive=True, thread_id=None)
         self.closed = False
         self.subscriptions: list[CompatibilitySubscription] = []
