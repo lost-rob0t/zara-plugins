@@ -37,6 +37,8 @@ def build_repository_evidence(
         raise ValueError("repository changed path evidence must be non-empty text without NUL")
     if any(PurePosixPath(path).is_absolute() or ".." in PurePosixPath(path).parts for path in changed_paths):
         raise ValueError("repository changed path evidence must stay repository-relative")
+    if any(path == "." or str(PurePosixPath(path)) != path for path in changed_paths):
+        raise ValueError("repository changed path evidence must use canonical repository-relative paths")
     if len(set(changed_paths)) != len(changed_paths):
         raise ValueError("repository changed path evidence contains duplicate changed paths")
     if dirty is not bool(changed_paths):
