@@ -29,6 +29,7 @@ PLUGINS_DIR = ROOT / "plugins"
 
 SUPPORTED_SCHEMA_VERSIONS = {1}
 ALLOWED_PLUGIN_TYPES = {"service", "tool"}
+GENERATED_FLAKE_LICENSE = "GPL-3.0-or-later"
 REQUIRED_FIELDS = (
     "name",
     "version",
@@ -100,6 +101,11 @@ def validate_entry(entry: dict) -> None:
         )
     if len(entry["description"]) > 256:
         raise RegistryError(f"plugin {name!r} description exceeds 256 characters")
+    if entry["license"] != GENERATED_FLAKE_LICENSE:
+        raise RegistryError(
+            f"plugin {name!r} license must match generated flake metadata "
+            f"{GENERATED_FLAKE_LICENSE!r}"
+        )
 
     nix = entry.get("nix")
     if not isinstance(nix, dict):
