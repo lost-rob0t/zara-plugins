@@ -12,6 +12,21 @@ from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
 
 
+LIVE_OPTIONAL_DEPENDENCY_ENVIRONMENT = (
+    "BRAVE_SEARCH_API_KEY",
+    "ZARA_AGENT_ZERO_API_KEY",
+    "ZARA_AGENT_ZERO_URL",
+    "ZARA_AVATAR_RENDERER",
+    "ZARA_DISCORD_TOKEN",
+    "ZARA_GITHUB_TOKEN",
+    "ZARA_STARINTEL_API_KEY",
+    "ZARA_STARINTEL_API_KEY_FILE",
+    "ZARA_STARINTEL_BOOTSTRAP_SECRET",
+    "ZARA_STARINTEL_BOOTSTRAP_SECRET_FILE",
+    "ZARA_STARINTEL_URL",
+)
+
+
 @contextmanager
 def temporary_runtime_environment(home: Path):
     home = home.resolve()
@@ -23,13 +38,24 @@ def temporary_runtime_environment(home: Path):
         "XDG_STATE_HOME": home / ".local" / "state",
     }
     previous = {name: os.environ.get(name) for name in locations}
+    previous_dependencies = {
+        name: os.environ.get(name)
+        for name in LIVE_OPTIONAL_DEPENDENCY_ENVIRONMENT
+    }
     try:
         for name, path in locations.items():
             path.mkdir(parents=True, exist_ok=True)
             os.environ[name] = str(path)
+        for name in LIVE_OPTIONAL_DEPENDENCY_ENVIRONMENT:
+            os.environ.pop(name, None)
         yield
     finally:
         for name, value in previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+        for name, value in previous_dependencies.items():
             if value is None:
                 os.environ.pop(name, None)
             else:
