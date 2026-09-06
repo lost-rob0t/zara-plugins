@@ -32,6 +32,16 @@ class FakeProcess:
         return 0
 
 
+class RecordingStdout:
+    def __init__(self, response: dict[str, object]) -> None:
+        self._line = json.dumps(response) + "\n"
+        self.readline_sizes: list[int] = []
+
+    def readline(self, size: int = -1) -> str:
+        self.readline_sizes.append(size)
+        return self._line[:size] if size >= 0 else self._line
+
+
 class TaskStateSessionTest(unittest.TestCase):
     def test_one_process_persists_across_task_operations(self) -> None:
         process = FakeProcess(
@@ -89,6 +99,15 @@ class TaskStateSessionTest(unittest.TestCase):
             session.create_task("task-1", goal="x" * 4097)
 
         self.assertEqual(process.stdin.getvalue(), "")
+
+    def test_protocol_bounds_stdout_read_before_allocating_response(self) -> None:
+        process = FakeProcess([])
+        stdout = RecordingStdout({"status": "ok", "state": "ready"})
+        process.stdout = stdout
+        session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
+
+        self.assertEqual(session.status(), {"status": "ok", "state": "ready"})
+        self.assertEqual(stdout.readline_sizes, [TaskStateSession.MAX_RESPONSE_CHARS + 1])
 
     def test_stop_terminates_the_owned_process(self) -> None:
         process = FakeProcess([])
