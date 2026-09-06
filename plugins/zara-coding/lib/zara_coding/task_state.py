@@ -43,8 +43,12 @@ class TaskStateSession:
         response_timeout_seconds: float = 5.0,
         readiness_waiter: ReadinessWaiter | None = None,
     ) -> None:
-        if not executable:
-            raise ValueError("executable must be non-empty")
+        if (
+            not isinstance(executable, str)
+            or not executable.strip()
+            or any(character in executable for character in ("\x00", "\n", "\r"))
+        ):
+            raise ValueError("executable must be non-empty single-line text without NUL")
         if (
             isinstance(response_timeout_seconds, bool)
             or not isinstance(response_timeout_seconds, (int, float))
