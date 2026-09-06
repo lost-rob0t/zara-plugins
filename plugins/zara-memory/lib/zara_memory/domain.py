@@ -113,7 +113,6 @@ class MemoryService:
     def observe_context(self, context: dict[str, Any]) -> None:
         if not isinstance(context, dict):
             raise MemoryError("transient context must be structured data")
-        # Context is deliberately not persisted. Explicit remember() is the only write path.
         return None
 
     def _schema(self, memory_type: str) -> MemorySchema:
@@ -144,8 +143,8 @@ class MemoryService:
             raise MemoryError("memory fact contains executable control syntax")
         return normalized
 
-    @staticmethod
     def _validate_memory(
+        self,
         item: Any,
         *,
         scope: str,
@@ -162,9 +161,15 @@ class MemoryService:
             raise MemoryError("memory backend violated requested scope isolation")
         if memory_type is not None and item["type"] != memory_type:
             raise MemoryError("memory backend violated requested memory type isolation")
+        schema = self._schema(item["type"])
+        if scope not in schema.allowed_scopes:
+            raise MemoryError("memory backend violated registered schema scope isolation")
         if not isinstance(item.get("provenance"), dict):
             raise MemoryError("memory backend result is missing provenance")
         facts = item.get("facts", [])
-        if not isinstance(facts, list) or any(not isinstance(fact, str) for fact in facts):
+        if not isinstance(facts, list):
             raise MemoryError("memory backend result has invalid symbolic facts")
-        return dict(item)
+        validated_facts = [self._validate_fact(schema, fact) for fact in facts]
+        result = dict(item)
+        result["facts"] = validated_facts
+        return result
