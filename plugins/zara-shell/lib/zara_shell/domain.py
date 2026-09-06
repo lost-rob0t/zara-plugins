@@ -48,6 +48,7 @@ class CommandPolicy:
             raise ValueError("allowed_environment must contain non-empty strings")
         if (
             isinstance(self.max_runtime_seconds, bool)
+            or not isinstance(self.max_runtime_seconds, (int, float))
             or not math.isfinite(self.max_runtime_seconds)
             or self.max_runtime_seconds <= 0
         ):
