@@ -31,6 +31,12 @@ class GitHubConfigTest(unittest.TestCase):
         with self.assertRaisesRegex(GitHubConfigError, "https"):
             GitHubConfig.load({"api_base": "http://github.example/api/v3", "token": "x"})
 
+    def test_boolean_numeric_limits_fail_closed(self):
+        for key in ("timeout_seconds", "max_response_bytes", "max_results"):
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(GitHubConfigError, "boolean"):
+                    GitHubConfig.load({key: True})
+
 
 if __name__ == "__main__":
     unittest.main()
