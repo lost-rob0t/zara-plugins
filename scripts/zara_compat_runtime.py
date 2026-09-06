@@ -84,6 +84,15 @@ class CompatibilityRuntime:
             raise TypeError("event queue size must be an integer")
         if not 1 <= queue_size <= 4096:
             raise ValueError("event queue size must be between 1 and 4096")
+        if self.closed:
+            raise RuntimeError("plugin runtime is closed")
+        self.subscriptions = [
+            subscription
+            for subscription in self.subscriptions
+            if not subscription.closed
+        ]
+        if len(self.subscriptions) >= 16:
+            raise RuntimeError("plugin subscription limit reached")
         subscription = CompatibilitySubscription()
         self.subscriptions.append(subscription)
         return subscription
