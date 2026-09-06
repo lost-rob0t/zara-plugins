@@ -36,6 +36,18 @@ def _numeric_config(source: dict, key: str, default: int | float, converter):
         raise GitHubConfigError(f"{key} must be numeric") from error
 
 
+def _integer_config(source: dict, key: str, default: int) -> int:
+    value = source.get(key, default)
+    if isinstance(value, bool):
+        raise GitHubConfigError(f"{key} must not be boolean")
+    if isinstance(value, float):
+        raise GitHubConfigError(f"{key} must be an integer")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as error:
+        raise GitHubConfigError(f"{key} must be an integer") from error
+
+
 @dataclass(frozen=True)
 class GitHubConfig:
     token: str = ""
@@ -50,8 +62,8 @@ class GitHubConfig:
     def load(cls, mapping: dict | None) -> "GitHubConfig":
         source = dict(mapping or {})
         timeout_seconds = _numeric_config(source, "timeout_seconds", 30.0, float)
-        max_response_bytes = _numeric_config(source, "max_response_bytes", 2 * 1024 * 1024, int)
-        max_results = _numeric_config(source, "max_results", 20, int)
+        max_response_bytes = _integer_config(source, "max_response_bytes", 2 * 1024 * 1024)
+        max_results = _integer_config(source, "max_results", 20)
         xdg = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
         configured_file = source.get("token_file")
         token_file = Path(str(configured_file)).expanduser() if configured_file else None
