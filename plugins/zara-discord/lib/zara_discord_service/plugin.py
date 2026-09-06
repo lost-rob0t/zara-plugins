@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import queue
 
-from .config import PolicyStore, config_directory, load_token
+from .config import ConfigError, PolicyStore, config_directory, load_token
 from .controller import ConversationController
 from .moderation import ModerationContextStore
 from .moderation_acknowledgements import ModerationAcknowledgementStore
@@ -44,7 +44,11 @@ class ZaraDiscordPlugin:
 
     def start(self, runtime) -> None:
         directory = config_directory()
-        token = load_token(directory)
+        try:
+            token = load_token(directory)
+        except ConfigError as error:
+            logger.warning("Discord integration is disabled: %s", error)
+            return
         policies = PolicyStore(directory)
         acknowledgements = ModerationAcknowledgementStore(directory)
         audit = ModerationAudit()
