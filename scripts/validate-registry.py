@@ -101,11 +101,16 @@ def load_registry() -> dict:
     if (
         not isinstance(search_paths, list)
         or not search_paths
-        or any(not isinstance(path, str) or not path.strip() for path in search_paths)
+        or any(
+            not isinstance(path, str)
+            or not path.strip()
+            or path != path.strip()
+            for path in search_paths
+        )
         or len(search_paths) != len(set(search_paths))
     ):
         raise RegistryError(
-            "plugins.json plugin_search_paths must be a non-empty list of unique non-empty strings"
+            "plugins.json plugin_search_paths must be a non-empty list of unique canonical strings"
         )
     if not isinstance(document.get("plugins"), list):
         raise RegistryError("plugins.json must contain a 'plugins' array")
