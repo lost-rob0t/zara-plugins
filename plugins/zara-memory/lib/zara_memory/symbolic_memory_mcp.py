@@ -84,9 +84,10 @@ class SymbolicMemoryMCP:
 
     def _call(self, tool_name: str, arguments: dict[str, object]) -> dict[str, object]:
         self._request_id += 1
+        request_id = self._request_id
         request = {
             "jsonrpc": "2.0",
-            "id": self._request_id,
+            "id": request_id,
             "method": "tools/call",
             "params": {
                 "name": tool_name,
@@ -123,7 +124,7 @@ class SymbolicMemoryMCP:
             )
         except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             raise SymbolicMemoryMCPError("symbolic-memory MCP invocation failed") from exc
-        response = self._parse_response(completed.stdout)
+        response = self._parse_response(completed.stdout, request_id)
         result = response.get("result")
         if not isinstance(result, dict):
             error = response.get("error")
@@ -144,7 +145,7 @@ class SymbolicMemoryMCP:
         return dict(structured)
 
     @staticmethod
-    def _parse_response(stdout: str) -> dict[str, object]:
+    def _parse_response(stdout: str, request_id: int) -> dict[str, object]:
         lines = [line for line in stdout.splitlines() if line.strip()]
         if not lines:
             raise SymbolicMemoryMCPError("symbolic-memory MCP returned empty output")
@@ -154,4 +155,8 @@ class SymbolicMemoryMCP:
             raise SymbolicMemoryMCPError("symbolic-memory MCP returned invalid JSON") from exc
         if not isinstance(response, dict):
             raise SymbolicMemoryMCPError("symbolic-memory MCP returned invalid response")
+        if response.get("jsonrpc") != "2.0":
+            raise SymbolicMemoryMCPError("symbolic-memory MCP returned invalid JSON-RPC version")
+        if response.get("id") != request_id:
+            raise SymbolicMemoryMCPError("symbolic-memory MCP returned mismatched response identity")
         return response
