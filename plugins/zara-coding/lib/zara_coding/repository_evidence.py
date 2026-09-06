@@ -20,8 +20,7 @@ def build_repository_evidence(
         raise ValueError("repository snapshot root must be a non-empty string")
     if "\x00" in root:
         raise ValueError("repository snapshot root must not contain NUL")
-    if not PurePosixPath(root).is_absolute():
-        raise ValueError("repository snapshot root must be absolute")
+    _require_canonical_absolute_path(root, "repository snapshot root")
     if not isinstance(head, str) or len(head) not in (40, 64) or any(char not in "0123456789abcdefABCDEF" for char in head):
         raise ValueError("repository snapshot head must be a full Git object ID")
     if not isinstance(branch, str) or not branch:
@@ -82,10 +81,17 @@ def _worktree_lock_value(worktree: Mapping[str, object]) -> dict[str, object]:
         raise ValueError("worktree evidence path must be a non-empty string")
     if "\x00" in path:
         raise ValueError("worktree evidence path must not contain NUL")
-    if not PurePosixPath(path).is_absolute():
-        raise ValueError("worktree evidence path must be absolute")
+    _require_canonical_absolute_path(path, "worktree evidence path")
     if not isinstance(head, str) or len(head) not in (40, 64) or any(char not in "0123456789abcdefABCDEF" for char in head):
         raise ValueError("worktree evidence head must be a full Git object ID")
     if locked is not None and not isinstance(locked, str):
         raise ValueError("worktree evidence lock state must be text or null")
     return {"path": path, "head": head, "locked": locked is not None}
+
+
+def _require_canonical_absolute_path(value: str, label: str) -> None:
+    path = PurePosixPath(value)
+    if not path.is_absolute():
+        raise ValueError(f"{label} must be absolute")
+    if str(path) != value or ".." in path.parts:
+        raise ValueError(f"{label} must be canonical")
