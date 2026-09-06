@@ -21,7 +21,7 @@ class RegistryPythonDependencyMetadataTest(unittest.TestCase):
         self.plugin = self.plugins / "example"
         self.plugin.mkdir(parents=True)
         (self.plugin / "entrypoint.py").write_text(
-            "VERSION = '0.1.0'\ndef create_plugin(): return None\n",
+            "VERSION = '0.1.0'\nAPI_VERSION = '1'\ndef create_plugin(): return None\n",
             encoding="utf-8",
         )
         (self.plugin / "README.md").write_text("# Example\n", encoding="utf-8")
