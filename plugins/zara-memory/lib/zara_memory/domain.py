@@ -44,6 +44,8 @@ class MemorySchema:
 class MemoryService:
     MAX_FACTS = 64
     MAX_RECALL_RESULTS = 64
+    MAX_PROJECTION_IDS = 64
+    MAX_PROJECTION_ID_CHARS = 128
 
     def __init__(self, backend: Any) -> None:
         self.backend = backend
@@ -142,8 +144,21 @@ class MemoryService:
         if not isinstance(result, dict) or not isinstance(result.get("removed"), bool):
             raise MemoryError("memory backend returned invalid forget evidence")
         projections = result.get("projection_ids", [])
-        if not isinstance(projections, list) or any(not isinstance(item, str) for item in projections):
+        if not isinstance(projections, list):
             raise MemoryError("memory backend returned invalid projection cleanup evidence")
+        if len(projections) > self.MAX_PROJECTION_IDS:
+            raise MemoryError(
+                f"memory backend returned more than {self.MAX_PROJECTION_IDS} projection ids"
+            )
+        if any(
+            not isinstance(item, str)
+            or not item
+            or len(item) > self.MAX_PROJECTION_ID_CHARS
+            for item in projections
+        ):
+            raise MemoryError(
+                f"memory backend projection ids must contain 1 to {self.MAX_PROJECTION_ID_CHARS} characters"
+            )
         return {"removed": result["removed"], "projection_ids": list(projections)}
 
     def observe_context(self, context: dict[str, Any]) -> None:
