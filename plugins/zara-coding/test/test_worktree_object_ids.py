@@ -16,7 +16,7 @@ class WorktreeObjectIdTests(unittest.TestCase):
             worktree = root / "repo"
             worktree.mkdir()
             inspector = RepositoryInspector((root,))
-            for object_id in ("", "a" * 39, "a" * 41, "g" * 40, "not-an-object-id"):
+            for object_id in ("a" * 39, "a" * 41, "g" * 40, "not-an-object-id"):
                 with self.subTest(object_id=object_id):
                     with self.assertRaisesRegex(CodingError, "malformed worktree HEAD object ID"):
                         inspector._normalize_worktree_record(
@@ -26,6 +26,21 @@ class WorktreeObjectIdTests(unittest.TestCase):
                                 "branch": "refs/heads/main",
                             }
                         )
+
+    def test_worktree_record_keeps_missing_head_as_malformed_structure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            worktree = root / "repo"
+            worktree.mkdir()
+            inspector = RepositoryInspector((root,))
+            with self.assertRaisesRegex(CodingError, "malformed structured output"):
+                inspector._normalize_worktree_record(
+                    {
+                        "worktree": str(worktree),
+                        "HEAD": "",
+                        "branch": "refs/heads/main",
+                    }
+                )
 
     def test_worktree_record_accepts_sha1_and_sha256_head_object_ids(self):
         with tempfile.TemporaryDirectory() as temporary:
