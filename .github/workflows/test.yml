@@ -42,6 +42,30 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@v31
 
+      - name: Capture source compatibility diagnostics
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          nix build .#checks.x86_64-linux.compatibility --print-build-logs 2>&1 | tee source-compatibility.log
+
+      - name: Capture installed compatibility diagnostics
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          nix build .#checks.x86_64-linux.installed-compatibility --print-build-logs 2>&1 | tee installed-compatibility.log
+
+      - name: Upload compatibility diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compatibility-diagnostics
+          path: |
+            source-compatibility.log
+            installed-compatibility.log
+          if-no-files-found: error
+
       - name: Run registry and plugin tests
         run: nix flake check --print-build-logs
 

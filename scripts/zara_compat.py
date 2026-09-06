@@ -73,7 +73,7 @@ def require_service_activation_contract(name: str, instance: Any) -> None:
         raise CompatibilityError(f"{name}: enabled_by_default must be a boolean")
 
 
-def collect_service_tools(instance: Any) -> tuple[Any, ...]:
+def collect_service_tools(instance: Any, *, timeout: float = 5.0) -> tuple[Any, ...]:
     method = getattr(instance, "tools", None)
     if not callable(method):
         return ()
@@ -85,7 +85,10 @@ def collect_service_tools(instance: Any) -> tuple[Any, ...]:
             result = await asyncio.to_thread(method)
         return tuple(result)
 
-    return asyncio.run(collect())
+    async def bounded_collect() -> tuple[Any, ...]:
+        return await asyncio.wait_for(collect(), timeout=timeout)
+
+    return asyncio.run(bounded_collect())
 
 
 def require_tool_names(name: str, tools: tuple[Any, ...] | list[Any], seen: dict[str, str]) -> None:
