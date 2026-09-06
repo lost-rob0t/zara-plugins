@@ -30,6 +30,7 @@ PLUGINS_DIR = ROOT / "plugins"
 SUPPORTED_SCHEMA_VERSIONS = {1}
 ALLOWED_PLUGIN_TYPES = {"service", "tool"}
 GENERATED_FLAKE_LICENSE = "GPL-3.0-or-later"
+GENERATED_FLAKE_SOURCE = "github:lost-rob0t/zara-plugins"
 REQUIRED_FIELDS = (
     "name",
     "version",
@@ -110,6 +111,11 @@ def validate_entry(entry: dict) -> None:
     nix = entry.get("nix")
     if not isinstance(nix, dict):
         raise RegistryError(f"plugin {name!r} is missing nix metadata")
+    if nix.get("flake") != GENERATED_FLAKE_SOURCE:
+        raise RegistryError(
+            f"plugin {name!r} nix flake must match generated registry source "
+            f"{GENERATED_FLAKE_SOURCE!r}"
+        )
     if nix.get("package") != name:
         raise RegistryError(
             f"plugin {name!r} nix package must match the registry name"
