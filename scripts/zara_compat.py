@@ -33,6 +33,9 @@ class CompatibilityError(RuntimeError):
     pass
 
 
+_MISSING = object()
+
+
 def load_registry(path: Path) -> list[dict[str, Any]]:
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
@@ -152,13 +155,22 @@ def require_legacy_tool_entrypoint(
     *,
     timeout: float = 5.0,
 ) -> tuple[Any, ...]:
-    if hasattr(module, "register_tools"):
-        entrypoint_name = "register_tools"
-        entrypoint = getattr(module, entrypoint_name)
-    elif hasattr(module, "register_skills"):
+    entrypoint_name = "register_tools"
+    entrypoint = read_compatibility_attribute(
+        module,
+        entrypoint_name,
+        _MISSING,
+        timeout=timeout,
+    )
+    if entrypoint is _MISSING:
         entrypoint_name = "register_skills"
-        entrypoint = getattr(module, entrypoint_name)
-    else:
+        entrypoint = read_compatibility_attribute(
+            module,
+            entrypoint_name,
+            _MISSING,
+            timeout=timeout,
+        )
+    if entrypoint is _MISSING:
         raise CompatibilityError(
             "tool entrypoint defines neither register_tools() nor register_skills()"
         )
@@ -314,8 +326,12 @@ def check_registry(
                     with plugin_import_environment(root, entry, runtime_root=runtime_root):
                         module = load_plugin_module(entrypoint)
                         if entry.get("plugin_type") == "service":
-                            factory = getattr(module, "create_plugin", None)
-                            if not callable(factory):
+                            factory = read_compatibility_attribute(
+                                module,
+                                "create_plugin",
+                                _MISSING,
+                            )
+                            if factory is _MISSING or not callable(factory):
                                 raise CompatibilityError("service entrypoint has no create_plugin()")
                             instance = construct_service_plugin(factory)
                             if not isinstance(instance, ServicePlugin):
