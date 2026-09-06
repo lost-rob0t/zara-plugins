@@ -196,12 +196,18 @@ def validate_entry(entry: dict) -> None:
         raise RegistryError(f"plugin {name!r} install.nix is invalid: {error}") from error
     expected_target = f"{GENERATED_FLAKE_SOURCE}#{name}"
     supported_install_commands = (
-        ["nix", "build", expected_target],
-        ["nix", "run", expected_target, "--", "install"],
+        (f"nix build {expected_target}", ["nix", "build", expected_target]),
+        (
+            f"nix run {expected_target} -- install",
+            ["nix", "run", expected_target, "--", "install"],
+        ),
     )
-    if install_argv not in supported_install_commands:
+    if not any(
+        install_nix == command_text and install_argv == command_argv
+        for command_text, command_argv in supported_install_commands
+    ):
         raise RegistryError(
-            f"plugin {name!r} install.nix must be a supported generated install command "
+            f"plugin {name!r} install.nix must be a supported canonical generated install command "
             f"for {expected_target!r}"
         )
 
