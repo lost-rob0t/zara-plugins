@@ -190,10 +190,14 @@ class RepositoryInspector:
         root = self._repository_root(path)
         ref = f"refs/heads/{name}"
         self._git(root, "check-ref-format", ref)
-        actual_head = self._git(root, "rev-parse", "HEAD").strip()
-        if actual_head.lower() != expected_head.lower():
-            raise CodingError("repository HEAD changed since expected_head was observed")
-        self._git(root, "update-ref", ref, expected_head, "")
+        transaction = (
+            "start\n"
+            f"verify HEAD {expected_head}\n"
+            f"create {ref} {expected_head}\n"
+            "prepare\n"
+            "commit\n"
+        )
+        self._git_input(root, transaction, "update-ref", "--stdin")
         return {"branch": name, "head": expected_head}
 
     def delete_branch(self, path: Path, name: str, expected_head: str) -> dict[str, str]:
