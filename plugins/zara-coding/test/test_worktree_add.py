@@ -54,6 +54,11 @@ class WorktreeAddTests(unittest.TestCase):
                     output = f"{repo.resolve()}\n"
                 elif args == ("rev-parse", "--verify", f"{'a' * 40}^{{commit}}"):
                     output = f"{'a' * 40}\n"
+                elif args == ("worktree", "list", "--porcelain", "-z"):
+                    output = (
+                        f"worktree {repo.resolve()}\x00HEAD {'a' * 40}\x00branch refs/heads/main\x00\x00"
+                        f"worktree {target.resolve()}\x00HEAD {'a' * 40}\x00detached\x00\x00"
+                    )
                 else:
                     output = ""
                 return subprocess.CompletedProcess(argv, 0, stdout=output, stderr="")
@@ -65,6 +70,7 @@ class WorktreeAddTests(unittest.TestCase):
             argv_calls = [call[0][3:] for call in calls]
             self.assertIn(["rev-parse", "--verify", f"{'a' * 40}^{{commit}}"], argv_calls)
             self.assertIn(["worktree", "add", "--detach", str(target.resolve()), "a" * 40], argv_calls)
+            self.assertIn(["worktree", "list", "--porcelain", "-z"], argv_calls)
             self.assertTrue(all(call[1]["shell"] is False for call in calls))
 
     def test_domain_rejects_existing_or_out_of_boundary_target(self):
