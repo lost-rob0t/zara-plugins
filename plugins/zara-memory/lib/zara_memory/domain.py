@@ -69,7 +69,7 @@ class MemoryService:
             provenance=dict(provenance),
             memory_type=memory_type,
         )
-        return self._validate_memory(result, scope=scope, owner=owner)
+        return self._validate_memory(result, scope=scope, owner=owner, memory_type=memory_type)
 
     def recall(
         self,
@@ -90,7 +90,10 @@ class MemoryService:
         items = callback(scope=scope, owner=owner, query=query, memory_type=memory_type)
         if not isinstance(items, list):
             raise MemoryError("memory backend returned invalid recall data")
-        return [self._validate_memory(item, scope=scope, owner=owner) for item in items]
+        return [
+            self._validate_memory(item, scope=scope, owner=owner, memory_type=memory_type)
+            for item in items
+        ]
 
     def forget(self, memory_id: str, *, scope: str, owner: str) -> dict[str, Any]:
         self._validate_scope_owner(scope, owner)
@@ -142,7 +145,13 @@ class MemoryService:
         return normalized
 
     @staticmethod
-    def _validate_memory(item: Any, *, scope: str, owner: str) -> dict[str, Any]:
+    def _validate_memory(
+        item: Any,
+        *,
+        scope: str,
+        owner: str,
+        memory_type: str | None = None,
+    ) -> dict[str, Any]:
         if not isinstance(item, dict):
             raise MemoryError("memory backend returned an invalid memory")
         required_strings = ("id", "scope", "owner", "text", "type", "created_at")
@@ -151,6 +160,8 @@ class MemoryService:
                 raise MemoryError(f"memory backend result is missing {field}")
         if item["scope"] != scope or item["owner"] != owner:
             raise MemoryError("memory backend violated requested scope isolation")
+        if memory_type is not None and item["type"] != memory_type:
+            raise MemoryError("memory backend violated requested memory type isolation")
         if not isinstance(item.get("provenance"), dict):
             raise MemoryError("memory backend result is missing provenance")
         facts = item.get("facts", [])
