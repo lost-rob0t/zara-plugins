@@ -91,6 +91,15 @@ class TaskStateSessionTest(unittest.TestCase):
         self.assertEqual(evidence["status"], "ok")
         self.assertEqual(completed["task"]["state"], "completed")
 
+    def test_evidence_status_rejects_unsupported_values_before_writing(self) -> None:
+        process = FakeProcess([])
+        session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
+
+        with self.assertRaisesRegex(ValueError, "status must be one of"):
+            session.record_evidence("task-1", kind="test", status="unknown", detail="ambiguous")
+
+        self.assertEqual(process.stdin.getvalue(), "")
+
     def test_protocol_rejects_oversized_fields_before_writing(self) -> None:
         process = FakeProcess([])
         session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
