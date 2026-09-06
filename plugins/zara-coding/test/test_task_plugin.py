@@ -50,6 +50,38 @@ class TaskPluginTest(unittest.TestCase):
             }.issubset(tools)
         )
 
+    def test_public_tool_cannot_self_author_passing_evidence(self) -> None:
+        class Session:
+            def record_evidence(self, *args, **kwargs):
+                self.fail("untrusted passing evidence reached task state")
+
+        plugin = TaskStateCodingPlugin()
+        plugin.task_state = Session()
+
+        with self.assertRaisesRegex(ValueError, "verifier-owned"):
+            plugin.task_record_evidence("task-1", "tests", "passed", "looks good")
+
+    def test_public_tool_can_record_failed_observation(self) -> None:
+        calls = []
+
+        class Session:
+            def record_evidence(self, task_id, **kwargs):
+                calls.append((task_id, kwargs))
+                return {"status": "ok"}
+
+        plugin = TaskStateCodingPlugin()
+        plugin.task_state = Session()
+
+        result = json.loads(
+            plugin.task_record_evidence("task-1", "tests", "failed", "1 failed")
+        )
+
+        self.assertEqual(result, {"status": "ok"})
+        self.assertEqual(
+            calls,
+            [("task-1", {"kind": "tests", "status": "failed", "detail": "1 failed"})],
+        )
+
     def test_task_creation_binds_fresh_repository_identity(self) -> None:
         calls: list[Path] = []
 
