@@ -102,6 +102,8 @@ class ShellRunner:
             raise ShellError("argv must contain non-empty strings")
         if not argv or not all(isinstance(item, str) and item for item in argv):
             raise ShellError("argv must contain non-empty strings")
+        if any("\0" in item for item in argv):
+            raise ShellError("argv must not contain NUL bytes")
         requested = argv[0]
         if requested not in self.policy.allowed_programs:
             raise ShellError(f"program is not allowed: {requested}")
@@ -131,6 +133,8 @@ class ShellRunner:
     def _validate_env(self, env: Mapping[str, str]) -> dict[str, str]:
         if not all(isinstance(key, str) and isinstance(value, str) for key, value in env.items()):
             raise ShellError("environment must contain string keys and values")
+        if any("\0" in key or "\0" in value or "=" in key for key, value in env.items()):
+            raise ShellError("environment contains invalid variable names or values")
         for key in env:
             if key not in self.policy.allowed_environment:
                 raise ShellError(f"environment variable is not allowed: {key}")
