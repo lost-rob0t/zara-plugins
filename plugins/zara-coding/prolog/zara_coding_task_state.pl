@@ -87,15 +87,25 @@ dispatch_op("record_evidence", Command, Response) :-
 dispatch_op("complete", Command, Response) :-
     get_dict(task_id, Command, Id),
     ( task_state(Id, Task) ->
-        ( task_evidence(Id, _) ->
-            put_dict(state, Task, "completed", Completed),
-            retractall(task_state(Id, _)),
-            assertz(task_state(Id, Completed)),
-            Response = _{status:"ok", task:Completed}
-        ; Response = _{status:"rejected", reason:"verification-evidence-required"}
-        )
+        completion_response(Id, Task, Response)
     ; Response = _{status:"rejected", reason:"task-not-found"}
     ).
+
+completion_response(Id, Task, Response) :-
+    ( passing_evidence(Id) ->
+        put_dict(state, Task, "completed", Completed),
+        retractall(task_state(Id, _)),
+        assertz(task_state(Id, Completed)),
+        Response = _{status:"ok", task:Completed}
+    ; task_evidence(Id, _) ->
+        Response = _{status:"rejected", reason:"passing-verification-required"}
+    ; Response = _{status:"rejected", reason:"verification-evidence-required"}
+    ).
+
+passing_evidence(Id) :-
+    task_evidence(Id, Evidence),
+    get_dict(status, Evidence, "passed"),
+    !.
 
 task_limit_reached :-
     max_tasks(Max),
