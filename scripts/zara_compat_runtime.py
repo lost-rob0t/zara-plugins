@@ -38,13 +38,14 @@ def temporary_runtime_environment(home: Path):
 
 @contextmanager
 def fake_dependency_environment(plugin_name: str):
-    variables = {}
+    removed = []
     if plugin_name == "zara-discord":
-        variables["ZARA_DISCORD_TOKEN"] = "compatibility-fixture-not-a-secret"
+        removed.append("ZARA_DISCORD_TOKEN")
 
-    previous = {name: os.environ.get(name) for name in variables}
+    previous = {name: os.environ.get(name) for name in removed}
     try:
-        os.environ.update(variables)
+        for name in removed:
+            os.environ.pop(name, None)
         yield
     finally:
         for name, value in previous.items():
