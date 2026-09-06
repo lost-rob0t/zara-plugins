@@ -13,10 +13,27 @@ def _worker(_stop_event) -> None:
 
 
 class CompatibilityRuntimeWorkerTest(unittest.TestCase):
-    def test_discord_compatibility_never_enables_live_credentials(self) -> None:
-        with mock.patch.dict(os.environ, {}, clear=True):
-            with fake_dependency_environment("zara-discord"):
-                self.assertNotIn("ZARA_DISCORD_TOKEN", os.environ)
+    def test_fake_dependency_environment_strips_live_provider_credentials(self) -> None:
+        cases = (
+            ("zara-discord", "ZARA_DISCORD_TOKEN"),
+            ("zara-github", "ZARA_GITHUB_TOKEN"),
+            ("zara-knowledge", "BRAVE_SEARCH_API_KEY"),
+        )
+        for plugin_name, variable in cases:
+            with self.subTest(plugin_name=plugin_name), mock.patch.dict(
+                os.environ,
+                {variable: "existing-secret"},
+                clear=True,
+            ):
+                with fake_dependency_environment(plugin_name):
+                    self.assertNotIn(variable, os.environ)
+                self.assertEqual(os.environ.get(variable), "existing-secret")
+
+    def test_fake_dependency_environment_does_not_strip_unrelated_credentials(self) -> None:
+        variable = "UNRELATED_PROVIDER_TOKEN"
+        with mock.patch.dict(os.environ, {variable: "existing-secret"}, clear=True):
+            with fake_dependency_environment("zara-browser"):
+                self.assertEqual(os.environ.get(variable), "existing-secret")
 
     def test_valid_worker_is_registered(self) -> None:
         runtime = CompatibilityRuntime("example")
