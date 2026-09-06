@@ -22,6 +22,7 @@ import json
 import re
 import shlex
 import sys
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -77,6 +78,17 @@ def load_registry() -> dict:
             f"unsupported schema_version {schema_version!r}; "
             f"supported: {sorted(SUPPORTED_SCHEMA_VERSIONS)}"
         )
+    updated = document.get("updated")
+    if not isinstance(updated, str) or updated != updated.strip():
+        raise RegistryError("plugins.json updated must be an exact YYYY-MM-DD calendar date")
+    try:
+        parsed_updated = date.fromisoformat(updated)
+    except ValueError as error:
+        raise RegistryError(
+            "plugins.json updated must be an exact YYYY-MM-DD calendar date"
+        ) from error
+    if parsed_updated.isoformat() != updated:
+        raise RegistryError("plugins.json updated must be an exact YYYY-MM-DD calendar date")
     if document.get("registry") != CANONICAL_REGISTRY_URL:
         raise RegistryError(
             f"plugins.json registry URL must be {CANONICAL_REGISTRY_URL!r}"
