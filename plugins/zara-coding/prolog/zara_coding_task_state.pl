@@ -33,6 +33,8 @@ dispatch(Command, Response) :-
     dispatch_op(Op, Command, Response), !.
 dispatch(_, _{status:"rejected", reason:"unsupported-operation"}).
 
+dispatch_op("status", _, _{status:"ok", state:"ready"}).
+
 dispatch_op("create", Command, Response) :-
     get_dict(task_id, Command, Id),
     ( task_state(Id, _) ->
