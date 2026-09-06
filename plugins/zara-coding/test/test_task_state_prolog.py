@@ -43,6 +43,26 @@ class PrologTaskStateIntegrationTest(unittest.TestCase):
         self.assertEqual(fetched["task"]["state"], "completed")
         self.assertEqual(len(fetched["task"]["evidence"]), 1)
 
+    def test_failed_only_evidence_does_not_complete_task(self) -> None:
+        self.session.create_task(
+            "task-failed",
+            goal="do not false-green",
+            completion_criteria=["tests-green"],
+        )
+        self.session.record_evidence(
+            "task-failed",
+            kind="test",
+            status="failed",
+            detail="suite failed",
+        )
+
+        rejected = self.session.complete_task("task-failed")
+        fetched = self.session.get_task("task-failed")
+
+        self.assertEqual(rejected, {"status": "rejected", "reason": "passing-verification-evidence-required"})
+        self.assertEqual(fetched["task"]["state"], "open")
+        self.assertEqual(fetched["task"]["evidence"][0]["status"], "failed")
+
     def test_session_rejects_more_than_64_tasks(self) -> None:
         for index in range(64):
             created = self.session.create_task(
