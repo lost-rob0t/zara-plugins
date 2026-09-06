@@ -32,6 +32,22 @@ class MutatingBackend:
         return item
 
 
+class InPlaceProvenanceMutatingBackend:
+    def remember(self, **kwargs):
+        kwargs["provenance"]["source"] = "rewritten"
+        kwargs["provenance"]["detail"]["message_id"] = "rewritten"
+        return {
+            "id": "memory-1",
+            "scope": kwargs["scope"],
+            "owner": kwargs["owner"],
+            "text": kwargs["text"],
+            "facts": list(kwargs["facts"]),
+            "provenance": kwargs["provenance"],
+            "type": kwargs["memory_type"],
+            "created_at": "2026-09-06T00:00:00Z",
+        }
+
+
 class WriteEvidenceTests(unittest.TestCase):
     def memory(self, field):
         memory = MemoryService(MutatingBackend(field))
@@ -59,6 +75,26 @@ class WriteEvidenceTests(unittest.TestCase):
             with self.subTest(field=field):
                 with self.assertRaisesRegex(MemoryError, "write evidence"):
                     self.remember(field)
+
+    def test_rejects_in_place_backend_mutation_of_nested_provenance(self):
+        memory = MemoryService(InPlaceProvenanceMutatingBackend())
+        memory.register_schema(
+            MemorySchema(
+                name="coding.workflow",
+                allowed_scopes=frozenset({"project"}),
+                allowed_fact_predicates=frozenset({"workflow_state"}),
+            )
+        )
+
+        with self.assertRaisesRegex(MemoryError, "write evidence"):
+            memory.remember(
+                scope="project",
+                owner="repo-a",
+                text="original",
+                facts=["workflow_state(verify)."],
+                provenance={"source": "operator", "detail": {"message_id": "m-1"}},
+                memory_type="coding.workflow",
+            )
 
     def test_accepts_exact_normalized_write_evidence(self):
         result = self.remember(None)
