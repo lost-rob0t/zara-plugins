@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import re
 from dataclasses import dataclass
 from typing import Any, Iterable
@@ -61,13 +62,13 @@ class MemoryService:
         if not isinstance(provenance, dict) or not provenance:
             raise MemoryError("memory provenance is required")
         normalized_facts = tuple(self._validate_fact(schema, fact) for fact in facts)
-        expected_provenance = dict(provenance)
+        expected_provenance = copy.deepcopy(provenance)
         result = self.backend.remember(
             scope=scope,
             owner=owner,
             text=text,
             facts=normalized_facts,
-            provenance=expected_provenance,
+            provenance=copy.deepcopy(expected_provenance),
             memory_type=memory_type,
         )
         validated = self._validate_memory(result, scope=scope, owner=owner, memory_type=memory_type)
