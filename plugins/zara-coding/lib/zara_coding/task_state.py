@@ -75,6 +75,9 @@ class TaskStateSession:
                 process.kill()
                 process.wait(timeout=2)
 
+    def status(self) -> dict[str, object]:
+        return self._request({"op": "status"})
+
     def create_task(
         self,
         task_id: str,
