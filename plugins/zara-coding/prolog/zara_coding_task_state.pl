@@ -36,9 +36,9 @@ dispatch(Command, Response) :-
     dispatch_op(Op, Command, Response), !.
 dispatch(_, _{status:"rejected", reason:"unsupported-operation"}).
 
-dispatch_op("status", _, _{status:"ok", state:"ready"}).
+dispatch_op(status, _, _{status:"ok", state:"ready"}).
 
-dispatch_op("create", Command, Response) :-
+dispatch_op(create, Command, Response) :-
     get_dict(task_id, Command, Id),
     ( task_state(Id, _) ->
         Response = _{status:"rejected", reason:"task-already-exists"}
@@ -60,7 +60,7 @@ dispatch_op("create", Command, Response) :-
       Response = _{status:"ok", task:Task}
     ).
 
-dispatch_op("get", Command, Response) :-
+dispatch_op(get, Command, Response) :-
     get_dict(task_id, Command, Id),
     ( task_state(Id, Task) ->
         findall(Evidence, task_evidence(Id, Evidence), EvidenceList),
@@ -69,7 +69,7 @@ dispatch_op("get", Command, Response) :-
     ; Response = _{status:"rejected", reason:"task-not-found"}
     ).
 
-dispatch_op("record_evidence", Command, Response) :-
+dispatch_op(record_evidence, Command, Response) :-
     get_dict(task_id, Command, Id),
     ( task_state(Id, _) ->
         ( evidence_limit_reached(Id) ->
@@ -84,7 +84,7 @@ dispatch_op("record_evidence", Command, Response) :-
     ; Response = _{status:"rejected", reason:"task-not-found"}
     ).
 
-dispatch_op("complete", Command, Response) :-
+dispatch_op(complete, Command, Response) :-
     get_dict(task_id, Command, Id),
     ( task_state(Id, Task) ->
         ( task_evidence(Id, _) ->
