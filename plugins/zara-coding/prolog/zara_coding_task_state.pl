@@ -120,8 +120,8 @@ latest_evidence_status(Id, Kind, Status) :-
     reverse(EvidenceList, LatestFirst),
     member(Evidence, LatestFirst),
     get_dict(kind, Evidence, Kind),
-    get_dict(status, Evidence, Status),
-    !.
+    !,
+    get_dict(status, Evidence, Status).
 
 task_completed(Task) :-
     get_dict(state, Task, "completed").
