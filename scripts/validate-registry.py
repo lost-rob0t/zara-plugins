@@ -113,14 +113,21 @@ def validate_entry(entry: dict) -> None:
     if not plugin_dir.is_dir():
         raise RegistryError(f"plugin {name!r} directory {entry['path']!r} does not exist")
 
-    entrypoint = plugin_dir / entry["entrypoint"]
+    plugin_root = plugin_dir.resolve()
+    entrypoint = (plugin_dir / entry["entrypoint"]).resolve()
+    if not entrypoint.is_relative_to(plugin_root):
+        raise RegistryError(f"plugin {name!r} entrypoint must stay inside its plugin directory")
     if not entrypoint.is_file():
         raise RegistryError(
             f"plugin {name!r} entrypoint {entry['entrypoint']!r} does not exist"
         )
     docs = entry.get("docs")
-    if docs and not (ROOT / docs).is_file():
-        raise RegistryError(f"plugin {name!r} docs {docs!r} does not exist")
+    if docs:
+        docs_path = (ROOT / docs).resolve()
+        if not docs_path.is_relative_to(plugin_root):
+            raise RegistryError(f"plugin {name!r} docs must stay inside its plugin directory")
+        if not docs_path.is_file():
+            raise RegistryError(f"plugin {name!r} docs {docs!r} does not exist")
 
     tags = entry.get("tags", [])
     if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
