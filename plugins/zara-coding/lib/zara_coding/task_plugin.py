@@ -138,7 +138,6 @@ class TaskStateCodingPlugin(ZaraCodingPlugin):
                 kind=kind,
                 status=status,
                 detail=detail,
-                provenance="caller",
             ),
             sort_keys=True,
         )
