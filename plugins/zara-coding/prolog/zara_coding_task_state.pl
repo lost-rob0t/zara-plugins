@@ -130,7 +130,7 @@ completion_response(Id, Task, Response) :-
     ).
 
 completion_evidence_response(Id, Task, Response) :-
-    ( passing_evidence(Id) ->
+    ( completion_criteria_verified(Id, Task) ->
         put_dict(state, Task, "completed", Completed),
         retractall(task_state(Id, _)),
         assertz(task_state(Id, Completed)),
@@ -149,25 +149,24 @@ dependencies_completed(Task) :-
         )
     ).
 
-passing_evidence(Id) :-
-    task_evidence(Id, Evidence),
+completion_criteria_verified(Id, Task) :-
+    get_dict(completion_criteria, Task, Criteria),
+    ( Criteria = [] ->
+        current_verifier_pass(Id, _)
+    ; forall(member(Criterion, Criteria), current_verifier_pass(Id, Criterion))
+    ).
+
+current_verifier_pass(Id, Kind) :-
+    latest_evidence(Id, Kind, Evidence),
     get_dict(status, Evidence, "passed"),
-    get_dict(provenance, Evidence, "verifier"),
-    \+ current_failed_evidence(Id).
+    get_dict(provenance, Evidence, "verifier").
 
-current_failed_evidence(Id) :-
-    task_evidence(Id, Evidence),
-    get_dict(kind, Evidence, Kind),
-    latest_evidence_status(Id, Kind, "failed"),
-    !.
-
-latest_evidence_status(Id, Kind, Status) :-
-    findall(Evidence, task_evidence(Id, Evidence), EvidenceList),
+latest_evidence(Id, Kind, Evidence) :-
+    findall(Item, task_evidence(Id, Item), EvidenceList),
     reverse(EvidenceList, LatestFirst),
     member(Evidence, LatestFirst),
     get_dict(kind, Evidence, Kind),
-    !,
-    get_dict(status, Evidence, Status).
+    !.
 
 task_completed(Task) :-
     get_dict(state, Task, "completed").
