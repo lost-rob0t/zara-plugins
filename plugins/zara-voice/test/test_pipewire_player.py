@@ -62,6 +62,30 @@ class StubbornBlockingStdin(FakeStdin):
         self.closed = True
 
 
+class LockOwnedBlockingStdin(FakeStdin):
+    """Model a buffered pipe whose close waits for an in-flight write lock."""
+
+    def __init__(self):
+        super().__init__()
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.close_started = threading.Event()
+        self._io_lock = threading.Lock()
+
+    def write(self, data):
+        with self._io_lock:
+            self.started.set()
+            self.release.wait(timeout=5.0)
+            if self.closed:
+                raise ValueError("closed")
+            return super().write(data)
+
+    def close(self):
+        self.close_started.set()
+        with self._io_lock:
+            self.closed = True
+
+
 class FakeProcess:
     def __init__(self, *, returncode=None, wait_timeout=False, stdin=None):
         self.stdin = stdin or FakeStdin()
@@ -88,6 +112,12 @@ class FakeProcess:
         if self.returncode is None:
             self.returncode = -15 if self.terminated else 0
         return self.returncode
+
+
+class ReleaseWriterOnTerminateProcess(FakeProcess):
+    def terminate(self):
+        super().terminate()
+        self.stdin.release.set()
 
 
 class StuckProcess(FakeProcess):
@@ -259,6 +289,45 @@ class PipeWirePlayerTests(unittest.TestCase):
         self.assertTrue(player.cancel("opaque-blocked"))
         self.assertTrue(stdin.closed)
         self.assertFalse(any(thread.name.startswith("zara-voice-pw-play-opaque-b") for thread in threading.enumerate()))
+
+    def test_cancel_does_not_block_on_pipe_close_before_process_timeout_budget(self):
+        stdin = LockOwnedBlockingStdin()
+        process = ReleaseWriterOnTerminateProcess(stdin=stdin)
+        player = PipeWirePlayer(
+            locator=lambda name: "/usr/bin/pw-play",
+            process_factory=lambda *args, **kwargs: process,
+            id_factory=lambda: "opaque-lock-close",
+            terminate_timeout=0.05,
+            kill_timeout=0.05,
+            writer_timeout=0.1,
+        )
+        player.play(self.artifact())
+        self.assertTrue(stdin.started.wait(timeout=0.5))
+
+        result = []
+        errors = []
+        done = threading.Event()
+
+        def cancel():
+            try:
+                result.append(player.cancel("opaque-lock-close"))
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                done.set()
+
+        thread = threading.Thread(target=cancel, daemon=True)
+        thread.start()
+        completed_within_bound = done.wait(timeout=0.25)
+        if not completed_within_bound:
+            stdin.release.set()
+            thread.join(timeout=1.0)
+
+        self.assertTrue(completed_within_bound, "cancel blocked in stdin.close() before bounded process teardown")
+        self.assertEqual(errors, [])
+        self.assertEqual(result, [True])
+        self.assertTrue(process.terminated)
+        self.assertTrue(stdin.closed)
 
     def test_double_process_timeout_still_checks_writer_teardown_before_error(self):
         stdin = BlockingStdin()
