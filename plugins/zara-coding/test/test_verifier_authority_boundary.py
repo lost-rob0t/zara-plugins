@@ -42,6 +42,20 @@ class VerifierAuthorityBoundaryTest(unittest.TestCase):
         self.assertFalse(hasattr(session, "_verifier_capability_id"))
         self.assertFalse(hasattr(session, "record_verifier_evidence"))
 
+    def test_generic_session_does_not_retain_recoverable_protocol_owner(self) -> None:
+        process = FakeProcess([])
+        session, _verifier = create_task_state_interfaces(
+            Path("/tmp/driver.pl"),
+            process_factory=lambda *args, **kwargs: process,
+        )
+
+        for value in vars(session).values():
+            self.assertIsNone(getattr(value, "__self__", None))
+            closure = getattr(value, "__closure__", None)
+            if closure is None:
+                continue
+            self.assertFalse(any(cell.cell_contents.__class__.__name__ == "_TaskStateProtocol" for cell in closure))
+
     def test_generic_session_rejects_verifier_authority_before_protocol_io(self) -> None:
         process = FakeProcess([])
         session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
