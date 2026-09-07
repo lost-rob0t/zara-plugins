@@ -249,11 +249,8 @@ class MediaDomain:
     def queue_move(self, player_id: str, source_index: int, destination_index: int) -> dict[str, object]:
         player_id = self._require_player(player_id)
         before = self.queue(player_id)
-        try:
-            source_index = int(source_index)
-            destination_index = int(destination_index)
-        except (TypeError, ValueError) as error:
-            raise MediaError("queue index is invalid") from error
+        if type(source_index) is not int or type(destination_index) is not int:
+            raise MediaError("queue index must be an integer")
         if not 0 <= source_index < len(before) or not 0 <= destination_index < len(before):
             raise MediaError("queue index is out of range")
         expected = list(before)
@@ -275,7 +272,12 @@ class MediaDomain:
 
     def search(self, query: str, *, limit: int | None = None) -> dict[str, object]:
         query = self._bounded(query, name="catalog query", limit=4096)
-        selected_limit = self.max_search_results if limit is None else int(limit)
+        if limit is None:
+            selected_limit = self.max_search_results
+        else:
+            if type(limit) is not int:
+                raise MediaError("search result limit must be an integer")
+            selected_limit = limit
         if not 1 <= selected_limit <= self.max_search_results:
             raise MediaError("search result limit is out of range")
         values = self.backend.catalog_search(query, selected_limit)
