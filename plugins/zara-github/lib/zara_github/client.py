@@ -164,11 +164,17 @@ class GitHubClient:
         results: list[dict[str, Any]] = []
         for item in list((search or {}).get("items", []))[:count]:
             repository = self._repository_from_api_url(str(item.get("repository_url", "")))
-            number = int(item["number"])
+            number = self._object_number(item.get("number"))
             pull = self.pr_get(repository, number)
             head_sha = str(pull.get("head", {}).get("sha", ""))
             if not head_sha:
                 raise GitHubError(f"{repository}#{number} has no current head SHA")
+            draft = pull.get("draft", False)
+            if type(draft) is not bool:
+                raise GitHubError("pull request draft must be boolean")
+            mergeable = pull.get("mergeable")
+            if mergeable is not None and type(mergeable) is not bool:
+                raise GitHubError("pull request mergeable must be boolean or null")
             checks = self._request(
                 "GET",
                 f"/repos/{self._repo_path(repository)}/commits/{urllib.parse.quote(head_sha, safe='')}/check-runs?per_page=100",
@@ -181,8 +187,8 @@ class GitHubClient:
                     "number": number,
                     "title": str(pull.get("title", item.get("title", ""))),
                     "head_sha": head_sha,
-                    "draft": bool(pull.get("draft", False)),
-                    "mergeable": pull.get("mergeable"),
+                    "draft": draft,
+                    "mergeable": mergeable,
                     "checks": self._check_summary(runs, head_sha),
                     "updated_at": pull.get("updated_at", item.get("updated_at")),
                     "url": pull.get("html_url", item.get("html_url")),
