@@ -1,3 +1,4 @@
+import subprocess
 import sys
 import threading
 import unittest
@@ -66,12 +67,19 @@ class FakeProcess:
     def wait(self, timeout=None):
         self.wait_calls.append(timeout)
         if self.wait_timeout and not self.killed:
-            import subprocess
-
             raise subprocess.TimeoutExpired("pw-play", timeout)
         if self.returncode is None:
             self.returncode = -15 if self.terminated else 0
         return self.returncode
+
+
+class StuckProcess(FakeProcess):
+    def kill(self):
+        self.killed = True
+
+    def wait(self, timeout=None):
+        self.wait_calls.append(timeout)
+        raise subprocess.TimeoutExpired("pw-play", timeout)
 
 
 class PipeWirePlayerTests(unittest.TestCase):
@@ -192,6 +200,44 @@ class PipeWirePlayerTests(unittest.TestCase):
         self.assertTrue(player.cancel("opaque-blocked"))
         self.assertTrue(stdin.closed)
         self.assertFalse(any(thread.name.startswith("zara-voice-pw-play-opaque-b") for thread in threading.enumerate()))
+
+    def test_double_process_timeout_still_checks_writer_teardown_before_error(self):
+        stdin = BlockingStdin()
+        process = StuckProcess(stdin=stdin)
+        player = PipeWirePlayer(
+            locator=lambda name: "/usr/bin/pw-play",
+            process_factory=lambda *args, **kwargs: process,
+            id_factory=lambda: "opaque-stuck",
+            terminate_timeout=0.05,
+            kill_timeout=0.05,
+            writer_timeout=0.25,
+        )
+        player.play(self.artifact())
+        self.assertTrue(stdin.started.wait(timeout=0.5))
+
+        with self.assertRaisesRegex(VoiceError, "cancellation exceeded"):
+            player.cancel("opaque-stuck")
+
+        self.assertTrue(stdin.closed)
+        self.assertFalse(any(thread.name.startswith("zara-voice-pw-play-opaque-s") for thread in threading.enumerate()))
+        self.assertEqual(process.wait_calls, [0.05, 0.05])
+        self.assertIn("opaque-stuck", player._playbacks)
+
+    def test_close_surfaces_incomplete_cleanup_and_keeps_failed_resource_tracked(self):
+        process = StuckProcess()
+        player = PipeWirePlayer(
+            locator=lambda name: "/usr/bin/pw-play",
+            process_factory=lambda *args, **kwargs: process,
+            id_factory=lambda: "opaque-close",
+            terminate_timeout=0.05,
+            kill_timeout=0.05,
+        )
+        player.play(self.artifact())
+
+        with self.assertRaisesRegex(VoiceError, "close.*incomplete|cleanup.*incomplete"):
+            player.close()
+
+        self.assertIn("opaque-close", player._playbacks)
 
     def test_active_playback_count_is_bounded(self):
         spawned = []
