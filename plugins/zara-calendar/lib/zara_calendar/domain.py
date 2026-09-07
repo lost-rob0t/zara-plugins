@@ -92,6 +92,29 @@ class CalendarDomain:
             "version": cls._text(event["version"], "version", 256),
         }
 
+    @classmethod
+    def _busy_interval(cls, interval, requested_calendar_ids):
+        if not isinstance(interval, dict):
+            raise CalendarError("calendar backend returned invalid free/busy interval")
+        required = {"calendar_id", "start", "end"}
+        if not required.issubset(interval):
+            raise CalendarError("free/busy interval is missing required fields")
+        calendar_id = cls._text(interval["calendar_id"], "calendar id", 256)
+        if calendar_id not in requested_calendar_ids:
+            raise CalendarError("free/busy interval belongs to an unrequested calendar")
+        start_dt = cls._time(interval["start"], "busy start")
+        end_dt = cls._time(interval["end"], "busy end")
+        if end_dt <= start_dt:
+            raise CalendarError("free/busy interval end must be after start")
+        normalized = {
+            "calendar_id": calendar_id,
+            "start": interval["start"],
+            "end": interval["end"],
+        }
+        if "event_id" in interval:
+            normalized["event_id"] = cls._text(interval["event_id"], "event id", 256)
+        return normalized
+
     def search(self, start, end, *, text=None, calendar_id=None, limit=None):
         self._window(start, end)
         if text is not None:
@@ -124,7 +147,8 @@ class CalendarDomain:
         values = self.backend.free_busy(start, end, ids)
         if not isinstance(values, list):
             raise CalendarError("calendar backend returned invalid free/busy data")
-        return values[: self.max_results]
+        requested = set(ids)
+        return [self._busy_interval(value, requested) for value in values[: self.max_results]]
 
     def explain_conflicts(self, start, end, calendar_ids):
         conflicts = self.free_busy(start, end, calendar_ids)
