@@ -31,13 +31,17 @@ _RULES = {
 
 class SysadminExpert:
     def __init__(self, backend, *, max_log_lines: int = 200, max_processes: int = 100) -> None:
-        if not 1 <= int(max_log_lines) <= 2000:
+        if type(max_log_lines) is not int:
+            raise SysadminError("max_log_lines must be an integer")
+        if type(max_processes) is not int:
+            raise SysadminError("max_processes must be an integer")
+        if not 1 <= max_log_lines <= 2000:
             raise SysadminError("max_log_lines is out of range")
-        if not 1 <= int(max_processes) <= 1000:
+        if not 1 <= max_processes <= 1000:
             raise SysadminError("max_processes is out of range")
         self.backend = backend
-        self.max_log_lines = int(max_log_lines)
-        self.max_processes = int(max_processes)
+        self.max_log_lines = max_log_lines
+        self.max_processes = max_processes
 
     @staticmethod
     def _bounded(value: str, *, name: str, limit: int = 256) -> str:
@@ -49,12 +53,18 @@ class SysadminExpert:
             raise SysadminError(f"{name} contains control characters")
         return value
 
+    @staticmethod
+    def _integer(value: int, *, name: str) -> int:
+        if type(value) is not int:
+            raise SysadminError(f"{name} must be an integer")
+        return value
+
     def rule_inventory(self) -> dict[str, dict[str, object]]:
         return {name: dict(rule) for name, rule in _RULES.items()}
 
     def journal(self, unit: str, limit: int = 50) -> dict[str, object]:
         unit = self._bounded(unit, name="unit")
-        limit = int(limit)
+        limit = self._integer(limit, name="journal line limit")
         if not 1 <= limit <= self.max_log_lines:
             raise SysadminError("journal line limit is out of range")
         lines = self.backend.journal(unit, limit)
@@ -93,10 +103,11 @@ class SysadminExpert:
         }
 
     def diagnose_service_port(self, unit: str, port: int) -> dict[str, object]:
-        if not 1 <= int(port) <= 65535:
+        port = self._integer(port, name="port")
+        if not 1 <= port <= 65535:
             raise SysadminError("port is out of range")
         status = self.service_status(unit)
-        listener = self.backend.listener(int(port))
+        listener = self.backend.listener(port)
         if not isinstance(listener, dict):
             raise SysadminError("listener backend returned invalid evidence")
         active = bool(status.get("active"))
@@ -140,7 +151,7 @@ class SysadminExpert:
         }
 
     def processes(self, limit: int = 25) -> dict[str, object]:
-        limit = int(limit)
+        limit = self._integer(limit, name="process limit")
         if not 1 <= limit <= self.max_processes:
             raise SysadminError("process limit is out of range")
         processes = self.backend.process_summary(limit)
@@ -161,7 +172,7 @@ class SysadminExpert:
         return result
 
     def nix_generations(self, limit: int = 20) -> dict[str, object]:
-        limit = int(limit)
+        limit = self._integer(limit, name="generation limit")
         if not 1 <= limit <= 100:
             raise SysadminError("generation limit is out of range")
         generations = self.backend.nix_generations(limit)
