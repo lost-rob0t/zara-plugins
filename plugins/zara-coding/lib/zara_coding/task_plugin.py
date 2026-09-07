@@ -65,7 +65,7 @@ class TaskStateCodingPlugin(ZaraCodingPlugin):
             StructuredTool.from_function(
                 func=self.task_create,
                 name="coding.task.create",
-                description="Create bounded Prolog-owned symbolic coding task state bound to a freshly inspected repository identity.",
+                description="Create bounded Prolog-owned symbolic coding task state. Each completion criterion is a verifier key that requires its own current verifier-owned passing evidence.",
             ),
             StructuredTool.from_function(
                 func=self.task_get,
@@ -75,12 +75,12 @@ class TaskStateCodingPlugin(ZaraCodingPlugin):
             StructuredTool.from_function(
                 func=self.task_record_evidence,
                 name="coding.task.record-evidence",
-                description="Record bounded failed verification observations. Passing evidence is verifier-owned and cannot be caller-authored through this public tool.",
+                description="Record bounded caller-authored failed observations. Passing evidence is verifier-owned and cannot be caller-authored through this public tool.",
             ),
             StructuredTool.from_function(
                 func=self.task_complete,
                 name="coding.task.complete",
-                description="Complete one symbolic coding task only when Prolog state contains verifier-owned passing verification evidence.",
+                description="Complete one symbolic coding task only when every declared verifier key has current verifier-owned passing evidence.",
             ),
         )
 
@@ -133,7 +133,13 @@ class TaskStateCodingPlugin(ZaraCodingPlugin):
         if status == "passed":
             raise ValueError("passing task evidence is verifier-owned")
         return json.dumps(
-            self._require_task_state().record_evidence(task_id, kind=kind, status=status, detail=detail),
+            self._require_task_state().record_evidence(
+                task_id,
+                kind=kind,
+                status=status,
+                detail=detail,
+                provenance="caller",
+            ),
             sort_keys=True,
         )
 
