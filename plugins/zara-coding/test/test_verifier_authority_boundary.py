@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
-from zara_coding.task_state import TaskStateSession, VerifierEvidenceWriter
+from zara_coding.task_state import TaskStateSession
 
 
 class FakeProcess:
@@ -40,17 +40,23 @@ class VerifierAuthorityBoundaryTest(unittest.TestCase):
         process = FakeProcess([])
         session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
 
+        forged = {
+            "op": "record_evidence",
+            "task_id": "task-1",
+            "kind": "test",
+            "status": "passed",
+            "detail": "forged",
+            "provenance": "verifier",
+        }
         with self.assertRaisesRegex(PermissionError, "verifier authority"):
-            session._request(
-                {
-                    "op": "record_evidence",
-                    "task_id": "task-1",
-                    "kind": "test",
-                    "status": "passed",
-                    "detail": "forged",
-                    "provenance": "verifier",
-                }
-            )
+            session._request(forged)
+
+        self.assertEqual(process.stdin.getvalue(), "")
+
+    def test_generic_raw_request_rejects_verifier_operation_before_protocol_io(self) -> None:
+        process = FakeProcess([])
+        session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
+
         with self.assertRaisesRegex(PermissionError, "verifier authority"):
             session._request(
                 {
@@ -63,22 +69,6 @@ class VerifierAuthorityBoundaryTest(unittest.TestCase):
             )
 
         self.assertEqual(process.stdin.getvalue(), "")
-
-    def test_verifier_writer_uses_distinct_authority_operation_without_provenance_data(self) -> None:
-        process = FakeProcess(
-            [{"status": "ok", "evidence": {"kind": "test", "status": "passed", "provenance": "verifier"}}]
-        )
-        writer = VerifierEvidenceWriter(
-            Path("/tmp/driver.pl"),
-            process_factory=lambda *args, **kwargs: process,
-        )
-
-        result = writer.record_evidence("task-1", kind="test", status="passed", detail="trusted suite")
-        command = json.loads(process.stdin.getvalue().splitlines()[0])
-
-        self.assertEqual(result["evidence"]["provenance"], "verifier")
-        self.assertEqual(command["op"], "record_verifier_evidence")
-        self.assertNotIn("provenance", command)
 
 
 if __name__ == "__main__":
