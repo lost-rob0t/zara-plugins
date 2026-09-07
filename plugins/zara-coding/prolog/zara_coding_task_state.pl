@@ -9,6 +9,11 @@
 max_tasks(64).
 max_evidence_per_task(64).
 
+evidence_provenance("caller").
+evidence_provenance("verifier").
+evidence_status("failed").
+evidence_status("passed").
+
 serve :-
     read_line_to_string(user_input, Line),
     serve_line(Line).
@@ -49,15 +54,8 @@ dispatch_op("create", Command, Response) :-
       get_dict(constraints, Command, Constraints),
       get_dict(dependencies, Command, Dependencies),
       get_dict(completion_criteria, Command, Criteria),
-      Task = _{
-          id:Id,
-          goal:Goal,
-          repository:Repository,
-          constraints:Constraints,
-          dependencies:Dependencies,
-          completion_criteria:Criteria,
-          state:"open"
-      },
+      Task = _{id:Id, goal:Goal, repository:Repository, constraints:Constraints,
+               dependencies:Dependencies, completion_criteria:Criteria, state:"open"},
       assertz(task_state(Id, Task)),
       Response = _{status:"ok", task:Task}
     ).
@@ -78,15 +76,35 @@ dispatch_op("record_evidence", Command, Response) :-
             Response = _{status:"rejected", reason:"task-already-completed"}
         ; evidence_limit_reached(Id) ->
             Response = _{status:"rejected", reason:"evidence-limit-reached"}
-        ; get_dict(kind, Command, Kind),
-          get_dict(status, Command, Status),
-          get_dict(detail, Command, Detail),
-          Evidence = _{kind:Kind, status:Status, detail:Detail},
-          assertz(task_evidence(Id, Evidence)),
-          Response = _{status:"ok", evidence:Evidence}
+        ; evidence_response(Command, Id, Response)
         )
     ; Response = _{status:"rejected", reason:"task-not-found"}
     ).
+
+evidence_response(Command, Id, Response) :-
+    get_dict(provenance, Command, Provenance),
+    ( evidence_provenance(Provenance) ->
+        evidence_status_response(Command, Id, Provenance, Response)
+    ; Response = _{status:"rejected", reason:"unsupported-evidence-provenance"}
+    ).
+
+evidence_status_response(Command, Id, Provenance, Response) :-
+    get_dict(status, Command, Status),
+    ( evidence_status(Status) ->
+        passing_evidence_provenance_response(Command, Id, Provenance, Status, Response)
+    ; Response = _{status:"rejected", reason:"unsupported-evidence-status"}
+    ).
+
+passing_evidence_provenance_response(_, _, Provenance, "passed", Response) :-
+    Provenance \= "verifier",
+    !,
+    Response = _{status:"rejected", reason:"passing-evidence-requires-verifier"}.
+passing_evidence_provenance_response(Command, Id, Provenance, Status, Response) :-
+    get_dict(kind, Command, Kind),
+    get_dict(detail, Command, Detail),
+    Evidence = _{kind:Kind, status:Status, detail:Detail, provenance:Provenance},
+    assertz(task_evidence(Id, Evidence)),
+    Response = _{status:"ok", evidence:Evidence}.
 
 dispatch_op("complete", Command, Response) :-
     get_dict(task_id, Command, Id),
@@ -105,7 +123,7 @@ completion_response(Id, Task, Response) :-
     ).
 
 completion_evidence_response(Id, Task, Response) :-
-    ( passing_evidence(Id) ->
+    ( completion_criteria_verified(Id, Task) ->
         put_dict(state, Task, "completed", Completed),
         retractall(task_state(Id, _)),
         assertz(task_state(Id, Completed)),
@@ -117,30 +135,27 @@ completion_evidence_response(Id, Task, Response) :-
 
 dependencies_completed(Task) :-
     get_dict(dependencies, Task, Dependencies),
-    forall(
-        member(DependencyId, Dependencies),
-        ( task_state(DependencyId, Dependency),
-          task_completed(Dependency)
-        )
+    forall(member(DependencyId, Dependencies),
+           (task_state(DependencyId, Dependency), task_completed(Dependency))).
+
+completion_criteria_verified(Id, Task) :-
+    get_dict(completion_criteria, Task, Criteria),
+    ( Criteria = [] ->
+        current_verifier_pass(Id, _)
+    ; forall(member(Criterion, Criteria), current_verifier_pass(Id, Criterion))
     ).
 
-passing_evidence(Id) :-
-    task_evidence(Id, _),
-    \+ current_failed_evidence(Id).
+current_verifier_pass(Id, Kind) :-
+    latest_evidence(Id, Kind, Evidence),
+    get_dict(status, Evidence, "passed"),
+    get_dict(provenance, Evidence, "verifier").
 
-current_failed_evidence(Id) :-
-    task_evidence(Id, Evidence),
-    get_dict(kind, Evidence, Kind),
-    latest_evidence_status(Id, Kind, "failed"),
-    !.
-
-latest_evidence_status(Id, Kind, Status) :-
-    findall(Evidence, task_evidence(Id, Evidence), EvidenceList),
+latest_evidence(Id, Kind, Evidence) :-
+    findall(Item, task_evidence(Id, Item), EvidenceList),
     reverse(EvidenceList, LatestFirst),
     member(Evidence, LatestFirst),
     get_dict(kind, Evidence, Kind),
-    !,
-    get_dict(status, Evidence, Status).
+    !.
 
 task_completed(Task) :-
     get_dict(state, Task, "completed").
