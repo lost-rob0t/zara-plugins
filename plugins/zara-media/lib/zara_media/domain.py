@@ -20,13 +20,17 @@ _MEDIA_KEYS = (
 
 class MediaDomain:
     def __init__(self, backend, *, max_queue_items: int = 100, max_search_results: int = 25) -> None:
-        if not 1 <= int(max_queue_items) <= 1000:
+        if type(max_queue_items) is not int:
+            raise MediaError("max_queue_items must be an integer")
+        if type(max_search_results) is not int:
+            raise MediaError("max_search_results must be an integer")
+        if not 1 <= max_queue_items <= 1000:
             raise MediaError("max_queue_items is out of range")
-        if not 1 <= int(max_search_results) <= 100:
+        if not 1 <= max_search_results <= 100:
             raise MediaError("max_search_results is out of range")
         self.backend = backend
-        self.max_queue_items = int(max_queue_items)
-        self.max_search_results = int(max_search_results)
+        self.max_queue_items = max_queue_items
+        self.max_search_results = max_search_results
 
     @staticmethod
     def _bounded(value: str, *, name: str, limit: int = 512) -> str:
