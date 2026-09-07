@@ -25,7 +25,7 @@ class PrologTaskStateIntegrationTest(unittest.TestCase):
             goal="verify persistent state",
             constraints=["bounded"],
             dependencies=[],
-            completion_criteria=["test-passed"],
+            completion_criteria=["test"],
         )
         rejected = self.session.complete_task("task-integration")
         self.session.record_evidence(
@@ -47,13 +47,13 @@ class PrologTaskStateIntegrationTest(unittest.TestCase):
         self.session.create_task(
             "dependency",
             goal="complete prerequisite",
-            completion_criteria=["test-passed"],
+            completion_criteria=["test"],
         )
         self.session.create_task(
             "dependent",
             goal="wait for prerequisite",
             dependencies=["dependency"],
-            completion_criteria=["test-passed"],
+            completion_criteria=["test"],
         )
         self.session.record_evidence(
             "dependent",
@@ -80,7 +80,7 @@ class PrologTaskStateIntegrationTest(unittest.TestCase):
             "dependent-missing",
             goal="reject unknown prerequisite",
             dependencies=["does-not-exist"],
-            completion_criteria=["test-passed"],
+            completion_criteria=["test"],
         )
         self.session.record_evidence(
             "dependent-missing",
@@ -97,7 +97,7 @@ class PrologTaskStateIntegrationTest(unittest.TestCase):
         self.session.create_task(
             "task-failed-evidence",
             goal="reject false completion",
-            completion_criteria=["test-passed"],
+            completion_criteria=["test"],
         )
         self.session.record_evidence(
             "task-failed-evidence",
@@ -117,7 +117,7 @@ class PrologTaskStateIntegrationTest(unittest.TestCase):
         self.session.create_task(
             "task-terminal",
             goal="freeze terminal state",
-            completion_criteria=["test-passed"],
+            completion_criteria=["test"],
         )
         self.session.record_evidence(
             "task-terminal",
@@ -164,7 +164,7 @@ class PrologTaskStateIntegrationTest(unittest.TestCase):
         self.session.create_task(
             "task-evidence",
             goal="bound evidence",
-            completion_criteria=["verified"],
+            completion_criteria=["test"],
         )
         for index in range(64):
             recorded = self.session.record_evidence(
