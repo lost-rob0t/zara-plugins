@@ -44,6 +44,18 @@ class PluginSettingsTests(unittest.TestCase):
         self.assertEqual(settings.visual_timeout_seconds, 8.0)
         self.assertEqual(settings.cli_timeout_seconds, 15.0)
 
+    def test_boolean_numeric_settings_use_safe_defaults(self) -> None:
+        settings = PluginSettings.from_configuration(
+            {
+                "visual_maximum_records": True,
+                "visual_timeout_seconds": True,
+                "cli_timeout_seconds": True,
+            }
+        )
+        self.assertEqual(settings.visual_maximum_records, 3)
+        self.assertEqual(settings.visual_timeout_seconds, 8.0)
+        self.assertEqual(settings.cli_timeout_seconds, 15.0)
+
     def test_valid_values_pass_through(self) -> None:
         settings = PluginSettings.from_configuration(
             {
