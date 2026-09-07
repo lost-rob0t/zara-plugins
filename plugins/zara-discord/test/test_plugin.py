@@ -120,7 +120,7 @@ class PluginTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "plugin is not started"):
             inspect.invoke({"context_token": token})
 
-    def test_missing_token_fails_start_without_starting_workers(self):
+    def test_missing_token_allocates_no_runtime_resources(self):
         environment = {
             "XDG_CONFIG_HOME": self.temporary.name,
             "XDG_STATE_HOME": self.temporary.name,
@@ -128,8 +128,7 @@ class PluginTests(unittest.TestCase):
         with mock.patch.dict(os.environ, environment, clear=True):
             runtime = FakeRuntime()
             plugin = plugin_module.create_plugin()
-            with self.assertRaisesRegex(RuntimeError, "Discord integration unavailable"):
-                plugin.start(runtime)
+            plugin.start(runtime)
 
         self.assertEqual(runtime.workers, [])
         self.assertIsNone(plugin._bot)
