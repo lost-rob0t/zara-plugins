@@ -18,6 +18,24 @@ class ChannelInspectionPolicyTests(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
+    def test_chance_requires_a_typed_finite_number(self):
+        for chance in (True, "0.5", None, float("nan"), float("inf")):
+            with self.subTest(scope="guild", chance=chance):
+                with self.assertRaises(ValueError):
+                    self.store.set_random_reply_chance(10, chance)
+            with self.subTest(scope="channel", chance=chance):
+                with self.assertRaises(ValueError):
+                    self.store.set_channel_inspection_policy(
+                        10,
+                        30,
+                        enabled=True,
+                        chance=chance,
+                        trigger_prompt="",
+                        response_style_prompt="",
+                        moderation_enabled=False,
+                    )
+        self.assertFalse(self.store.path.exists())
+
     def test_channel_without_override_inherits_guild_inspection_defaults(self):
         self.store.set_random_mode(10, True)
         self.store.set_random_reply_chance(10, 0.25)
