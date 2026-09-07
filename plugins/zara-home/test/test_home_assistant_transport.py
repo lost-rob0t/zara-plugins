@@ -18,6 +18,24 @@ class _State:
     refreshes = 0
     requests = []
     mode = "ok"
+    redirect_target = None
+
+
+class _ForeignState:
+    requests = []
+
+
+class ForeignHandler(BaseHTTPRequestHandler):
+    def log_message(self, *_args):
+        return
+
+    def do_GET(self):
+        _ForeignState.requests.append((self.path, self.headers.get("Authorization")))
+        raw = json.dumps({"entity_id": "light.foreign", "state": "on", "attributes": {}}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(raw)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -36,6 +54,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         _State.requests.append((self.path, self.headers.get("Authorization")))
+        if _State.mode == "redirect-foreign":
+            self.send_response(302)
+            self.send_header("Location", _State.redirect_target)
+            self.end_headers()
+            return
+        if _State.mode == "redirect-same":
+            self.send_response(302)
+            self.send_header("Location", "/api/states/light.redirected")
+            self.end_headers()
+            return
         if _State.mode == "401-once" and len(_State.requests) == 1:
             self._send(401, {"message": "unauthorized"})
             return
@@ -65,6 +93,11 @@ class Handler(BaseHTTPRequestHandler):
 class HomeAssistantHTTPTransportTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.foreign_server = ThreadingHTTPServer(("127.0.0.1", 0), ForeignHandler)
+        cls.foreign_thread = threading.Thread(target=cls.foreign_server.serve_forever, daemon=True)
+        cls.foreign_thread.start()
+        cls.foreign_url = f"http://127.0.0.1:{cls.foreign_server.server_port}/capture"
+
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
@@ -74,11 +107,15 @@ class HomeAssistantHTTPTransportTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.server.shutdown()
         cls.server.server_close()
+        cls.foreign_server.shutdown()
+        cls.foreign_server.server_close()
 
     def setUp(self):
         _State.token = "token-a"
         _State.requests = []
         _State.mode = "ok"
+        _State.redirect_target = self.foreign_url
+        _ForeignState.requests = []
 
     def test_injects_bearer_without_secret_in_evidence(self):
         transport = HomeAssistantHTTPTransport(self.base_url, "token-a")
@@ -122,6 +159,21 @@ class HomeAssistantHTTPTransportTests(unittest.TestCase):
         with self.assertRaisesRegex(HomeAssistantHTTPError, "reauth-required") as caught:
             transport.request("GET", "/api/states/light.office")
         self.assertNotIn(secret, str(caught.exception))
+        self.assertEqual(len(_State.requests), 1)
+
+    def test_cross_origin_redirect_is_rejected_without_forwarding_authorization(self):
+        _State.mode = "redirect-foreign"
+        transport = HomeAssistantHTTPTransport(self.base_url, "token-a")
+        with self.assertRaisesRegex(HomeAssistantHTTPError, "redirect-not-allowed") as caught:
+            transport.request("GET", "/api/states/light.office")
+        self.assertEqual(_ForeignState.requests, [])
+        self.assertNotIn("token-a", str(caught.exception))
+
+    def test_same_origin_redirect_is_rejected_by_transport_policy(self):
+        _State.mode = "redirect-same"
+        transport = HomeAssistantHTTPTransport(self.base_url, "token-a")
+        with self.assertRaisesRegex(HomeAssistantHTTPError, "redirect-not-allowed"):
+            transport.request("GET", "/api/states/light.office")
         self.assertEqual(len(_State.requests), 1)
 
     def test_rejects_path_escape(self):
