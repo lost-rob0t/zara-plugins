@@ -146,7 +146,7 @@ class ContactsDomain:
         candidate = self.normalize_contact({"contact_id": None, **contact})
         candidate.pop("contact_id")
         evidence = self.backend.create_contact(candidate)
-        accepted = isinstance(evidence, dict) and bool(evidence.get("accepted"))
+        accepted = isinstance(evidence, dict) and evidence.get("accepted") is True
         observed = self.get(evidence.get("contact_id")) if accepted and evidence.get("contact_id") else None
         verified = accepted and observed is not None
         return {"status": "verified" if verified else "verification_failed", "accepted": accepted, "verified": verified, "contact": observed, "evidence": evidence}
@@ -165,7 +165,7 @@ class ContactsDomain:
         merged.update(patch)
         expected = self.normalize_contact(merged)
         evidence = self.backend.update_contact(contact_id, patch)
-        accepted = isinstance(evidence, dict) and bool(evidence.get("accepted"))
+        accepted = isinstance(evidence, dict) and evidence.get("accepted") is True
         observed = self.get(contact_id) if accepted else current
         verified = accepted and observed == expected
         return {"status": "verified" if verified else "verification_failed", "accepted": accepted, "verified": verified, "contact": observed, "evidence": evidence}
