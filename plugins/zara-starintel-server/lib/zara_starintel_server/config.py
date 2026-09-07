@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import math
 import os
 import stat
 from dataclasses import dataclass, field
@@ -23,6 +24,18 @@ def _bool(value: object) -> bool:
     if text in {"0", "false", "no", "off", ""}:
         return False
     raise StarIntelConfigError(f"invalid boolean value: {value!r}")
+
+
+def _number(value: object, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise StarIntelConfigError(f"{name} must be a finite number")
+    return float(value)
+
+
+def _integer(value: object, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise StarIntelConfigError(f"{name} must be an integer")
+    return value
 
 
 def _config_directory() -> Path:
@@ -103,13 +116,9 @@ class StarIntelConfig:
             allow_insecure_http=_bool(
                 source.get("allow_insecure_http", False)
             ),
-            timeout_seconds=float(source.get("timeout_seconds", 30.0)),
-            max_request_bytes=int(
-                source.get("max_request_bytes", 2097152)
-            ),
-            max_response_bytes=int(
-                source.get("max_response_bytes", 8388608)
-            ),
+            timeout_seconds=_number(source.get("timeout_seconds", 30.0), "timeout_seconds"),
+            max_request_bytes=_integer(source.get("max_request_bytes", 2097152), "max_request_bytes"),
+            max_response_bytes=_integer(source.get("max_response_bytes", 8388608), "max_response_bytes"),
         )
         config.validate()
         return config
