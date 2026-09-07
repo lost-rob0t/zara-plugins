@@ -106,6 +106,8 @@ class WebDriverBrowserBackend:
             raise BrowserError("WebDriver returned invalid window handles")
         if len(handles) > _MAX_WINDOW_HANDLES:
             raise BrowserError("WebDriver window handle limit exceeded")
+        if len(set(handles)) != len(handles):
+            raise BrowserError("WebDriver returned duplicate window handles")
         if any(len(handle.encode("utf-8")) > 256 for handle in handles):
             raise BrowserError("WebDriver returned oversized window handle")
 
@@ -199,11 +201,18 @@ class WebDriverBrowserBackend:
 
     def type_text(self, selector: str, text: str) -> dict[str, object]:
         element = self._element(selector)
+        before_value = self._request("GET", f"/element/{element}/property/value")
         self._request("POST", f"/element/{element}/value", {"text": text})
         observed_value = self._request("GET", f"/element/{element}/property/value")
         active = self.active_tab_id
         url = self._request("GET", "/url")
-        observed = isinstance(observed_value, str) and observed_value.endswith(text)
+        observed = (
+            bool(text)
+            and isinstance(before_value, str)
+            and isinstance(observed_value, str)
+            and observed_value != before_value
+            and observed_value.endswith(text)
+        )
         return {
             "action": "type",
             "selector": selector,
@@ -214,7 +223,7 @@ class WebDriverBrowserBackend:
             "acknowledged": True,
             "observed": observed,
             "observed_value": observed_value if isinstance(observed_value, str) else None,
-            "observation": "element-value-readback" if observed else "element-value-not-verified",
+            "observation": "element-value-before-after" if observed else "element-value-not-verified",
         }
 
     def select(self, selector: str, value: str) -> dict[str, object]:
