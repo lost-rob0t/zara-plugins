@@ -40,6 +40,30 @@ class ExpertHostTests(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
+    def test_query_policy_is_typed_before_state_root_creation(self):
+        for value in (True, "1", None, float("nan"), float("inf")):
+            root = self.root / f"timeout-{repr(value)}"
+            with self.subTest(field="query_timeout_seconds", value=value):
+                with self.assertRaises(ValueError):
+                    ExpertHost(
+                        self.backend,
+                        state_root=root,
+                        query_timeout_seconds=value,
+                        max_results=4,
+                    )
+                self.assertFalse(root.exists())
+        for value in (True, 1.5, "4", None):
+            root = self.root / f"results-{repr(value)}"
+            with self.subTest(field="max_results", value=value):
+                with self.assertRaises(ValueError):
+                    ExpertHost(
+                        self.backend,
+                        state_root=root,
+                        query_timeout_seconds=1.0,
+                        max_results=value,
+                    )
+                self.assertFalse(root.exists())
+
     def test_two_plugins_are_namespace_isolated(self):
         self.host.register("alpha", [self.root / "alpha.pl"])
         self.host.register("beta", [self.root / "beta.pl"])
