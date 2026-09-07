@@ -110,33 +110,55 @@ class PipeWirePlayer:
                 raise VoiceError("unknown or stale playback id")
 
             process = playback.process
+            if process.poll() is not None:
+                self._close_input(playback.stdin)
+                playback.writer.join(timeout=self.writer_timeout)
+                if not playback.writer.is_alive():
+                    self._playbacks.pop(playback_id, None)
+                raise VoiceError("unknown or stale playback id")
+
             self._close_input(playback.stdin)
-            if process.poll() is None:
-                process.terminate()
+            process_error: VoiceError | None = None
+            writer_error: VoiceError | None = None
+
+            process.terminate()
+            try:
+                process.wait(timeout=self.terminate_timeout)
+            except subprocess.TimeoutExpired:
+                process.kill()
                 try:
-                    process.wait(timeout=self.terminate_timeout)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    try:
-                        process.wait(timeout=self.kill_timeout)
-                    except subprocess.TimeoutExpired as exc:
-                        raise VoiceError("playback cancellation exceeded configured time bound") from exc
+                    process.wait(timeout=self.kill_timeout)
+                except subprocess.TimeoutExpired as exc:
+                    process_error = VoiceError("playback cancellation exceeded configured time bound")
+                    process_error.__cause__ = exc
 
             playback.writer.join(timeout=self.writer_timeout)
             if playback.writer.is_alive():
-                raise VoiceError("playback writer cleanup exceeded configured time bound")
+                writer_error = VoiceError("playback writer cleanup exceeded configured time bound")
 
-            self._playbacks.pop(playback_id, None)
-        return True
+            if process_error is None and writer_error is None:
+                self._playbacks.pop(playback_id, None)
+                return True
+
+            if process_error is not None:
+                if writer_error is not None:
+                    raise process_error from writer_error
+                raise process_error
+            raise writer_error
 
     def close(self) -> None:
         with self._lock:
             playback_ids = list(self._playbacks)
+
+        failures = 0
         for playback_id in playback_ids:
             try:
                 self.cancel(playback_id)
             except VoiceError:
-                continue
+                failures += 1
+
+        if failures:
+            raise VoiceError(f"player cleanup incomplete for {failures} playback(s)")
 
     def _reap_finished_locked(self) -> None:
         finished = [
