@@ -23,6 +23,14 @@ class TurnOutcome:
     message: str
 
 
+def _history_bound(value: int, *, name: str, minimum: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{name} must be an integer")
+    if value < minimum:
+        raise ValueError(f"{name} is out of range")
+    return value
+
+
 class ConversationHistory:
     def __init__(
         self,
@@ -30,8 +38,16 @@ class ConversationHistory:
         *,
         max_conversations: int = MAX_HISTORY_CONVERSATIONS,
     ) -> None:
-        self._budget_chars = max(0, int(budget_chars))
-        self._max_conversations = max(1, int(max_conversations))
+        self._budget_chars = _history_bound(
+            budget_chars,
+            name="budget_chars",
+            minimum=0,
+        )
+        self._max_conversations = _history_bound(
+            max_conversations,
+            name="max_conversations",
+            minimum=1,
+        )
         self._entries: OrderedDict[str, deque[str]] = OrderedDict()
         self._lock = threading.RLock()
 
