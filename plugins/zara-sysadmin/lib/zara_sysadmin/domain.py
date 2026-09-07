@@ -83,7 +83,7 @@ class SysadminExpert:
     def diagnose_service(self, unit: str) -> dict[str, object]:
         status = self.service_status(unit)
         facts = {
-            "service_active": bool(status.get("active")),
+            "service_active": status.get("active") is True,
             "service_result": str(status.get("result", "unknown")),
             "service_substate": str(status.get("substate", "unknown")),
         }
@@ -110,8 +110,8 @@ class SysadminExpert:
         listener = self.backend.listener(port)
         if not isinstance(listener, dict):
             raise SysadminError("listener backend returned invalid evidence")
-        active = bool(status.get("active"))
-        listening = bool(listener.get("listening"))
+        active = status.get("active") is True
+        listening = listener.get("listening") is True
         hypotheses: list[str] = []
         next_diagnostics: list[str] = []
         if active and not listening:
@@ -130,11 +130,11 @@ class SysadminExpert:
         dns = network.get("dns", {})
         routes = network.get("routes", [])
         facts = {
-            "resolver_configured": bool(dns.get("resolver_configured")) if isinstance(dns, dict) else False,
+            "resolver_configured": dns.get("resolver_configured") is True if isinstance(dns, dict) else False,
             "default_route_present": any(
                 isinstance(route, dict) and route.get("destination") == "default" for route in routes
             ),
-            "dns_upstream_reachable": bool(dns.get("upstream_reachable")) if isinstance(dns, dict) else False,
+            "dns_upstream_reachable": dns.get("upstream_reachable") is True if isinstance(dns, dict) else False,
         }
         hypotheses: list[str] = []
         if facts["resolver_configured"] and facts["default_route_present"] and not facts["dns_upstream_reachable"]:
@@ -189,9 +189,10 @@ class SysadminExpert:
         if not isinstance(result, dict):
             raise SysadminError("service backend returned invalid action evidence")
         after = self.service_status(unit)
-        accepted = bool(result.get("accepted"))
+        accepted = result.get("accepted") is True
         expected_active = action in {"start", "restart"}
-        verified = accepted and (bool(after.get("active")) is expected_active)
+        observed_active = after.get("active")
+        verified = accepted and type(observed_active) is bool and observed_active is expected_active
         return {
             "status": "verified" if verified else "verification_failed",
             "accepted": accepted,
@@ -214,15 +215,16 @@ class SysadminExpert:
             raise SysadminError("Nix backend returned invalid operation evidence")
         after = self.backend.nix_generations(1)
         after_generation = after[0].get("generation") if after else None
+        accepted = evidence.get("accepted") is True
         if operation == "switch":
-            verified = bool(evidence.get("accepted")) and after_generation != before_generation
+            verified = accepted and after_generation != before_generation
         else:
-            verified = bool(evidence.get("accepted"))
+            verified = accepted
         return {
             "status": "verified" if verified else "verification_failed",
             "operation": operation,
             "target": target,
-            "accepted": bool(evidence.get("accepted")),
+            "accepted": accepted,
             "verified": verified,
             "before_generation": before_generation,
             "after_generation": after_generation,
