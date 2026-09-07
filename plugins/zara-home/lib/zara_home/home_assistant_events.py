@@ -165,10 +165,19 @@ class HomeAssistantEventStream:
             raise HomeAssistantEventError("reconcile-failed") from None
         if not isinstance(states, list):
             raise HomeAssistantEventError("reconcile-failed")
+
+        present: set[str] = set()
         for state in states:
             if not isinstance(state, dict):
                 continue
+            entity_id = state.get("entity_id")
+            if isinstance(entity_id, str) and self._supported_entity(entity_id):
+                present.add(entity_id)
             self._apply_state(state)
+
+        for entity_id in tuple(self._observations):
+            if self._supported_entity(entity_id) and entity_id not in present:
+                self._observations.pop(entity_id, None)
 
     def _apply_event(self, frame: dict[str, Any]) -> None:
         event = frame.get("event")
@@ -179,21 +188,28 @@ class HomeAssistantEventStream:
             return
         entity_id = data.get("entity_id")
         new_state = data.get("new_state")
-        if not isinstance(entity_id, str) or not isinstance(new_state, dict):
+        if not isinstance(entity_id, str) or not self._supported_entity(entity_id):
             return
-        if new_state.get("entity_id") != entity_id:
+        if new_state is None:
+            self._apply_removal(entity_id, event.get("time_fired"))
+            return
+        if not isinstance(new_state, dict) or new_state.get("entity_id") != entity_id:
             return
         self._apply_state(new_state)
 
+    def _apply_removal(self, entity_id: str, time_fired: Any) -> None:
+        removed_at = self._timestamp(time_fired)
+        if removed_at is None:
+            return
+        current = self._timestamps.get(entity_id)
+        if current is not None and removed_at <= current:
+            return
+        self._observations.pop(entity_id, None)
+        self._timestamps[entity_id] = removed_at
+
     def _apply_state(self, raw: dict[str, Any]) -> None:
         entity_id = raw.get("entity_id")
-        if not isinstance(entity_id, str):
-            return
-        try:
-            domain = HomeAssistantAdapter._domain(entity_id)
-        except HomeAssistantError:
-            return
-        if domain not in HomeAssistantAdapter._DEVICE_DOMAINS:
+        if not isinstance(entity_id, str) or not self._supported_entity(entity_id):
             return
         updated = self._timestamp(raw.get("last_updated"))
         if updated is None:
@@ -211,6 +227,14 @@ class HomeAssistantEventStream:
             observation["last_changed"] = raw["last_changed"]
         self._observations[entity_id] = observation
         self._timestamps[entity_id] = updated
+
+    @staticmethod
+    def _supported_entity(entity_id: str) -> bool:
+        try:
+            domain = HomeAssistantAdapter._domain(entity_id)
+        except HomeAssistantError:
+            return False
+        return domain in HomeAssistantAdapter._DEVICE_DOMAINS
 
     @staticmethod
     def _timestamp(value: Any) -> datetime | None:
