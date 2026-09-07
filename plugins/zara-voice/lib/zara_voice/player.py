@@ -117,14 +117,17 @@ class PipeWirePlayer:
 
             process = playback.process
             if process.poll() is not None:
-                self._close_input(playback.stdin)
                 writer_error = self._join_writer(playback.writer)
                 if writer_error is not None:
                     raise writer_error
                 self._playbacks.pop(playback_id, None)
                 raise VoiceError("unknown or stale playback id")
 
-            self._close_input(playback.stdin)
+            # Terminate the reader before waiting for the writer. Calling
+            # BufferedWriter.close() concurrently with an in-flight write can
+            # block on the stream lock with no timeout at all. Process teardown
+            # is bounded; once the reader is gone, the writer observes EOF/
+            # BrokenPipe and closes its own stream in its finally block.
             process_error = self._terminate_process(process)
             writer_error = self._join_writer(playback.writer)
 
@@ -160,7 +163,6 @@ class PipeWirePlayer:
         ]
         for playback_id in finished:
             playback = self._playbacks[playback_id]
-            self._close_input(playback.stdin)
             if self._join_writer(playback.writer) is None:
                 self._playbacks.pop(playback_id, None)
 
@@ -183,15 +185,6 @@ class PipeWirePlayer:
                 stdin.close()
             except (OSError, ValueError):
                 pass
-
-    @staticmethod
-    def _close_input(stdin: Any | None) -> None:
-        if stdin is None:
-            return
-        try:
-            stdin.close()
-        except (OSError, ValueError):
-            pass
 
     def _join_writer(self, writer: threading.Thread | None) -> VoiceError | None:
         if writer is None:
