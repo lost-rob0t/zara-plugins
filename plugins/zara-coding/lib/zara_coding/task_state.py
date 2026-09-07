@@ -43,16 +43,24 @@ class TaskStateSession:
         readiness_waiter: ReadinessWaiter | None = None,
         verifier_capability: object | None = None,
     ) -> None:
-        if not isinstance(executable, str) or not executable.strip() or any(c in executable for c in ("\x00", "\n", "\r")):
+        if not isinstance(executable, str) or not executable.strip() or any(
+            character in executable for character in ("\x00", "\n", "\r")
+        ):
             raise ValueError("executable must be non-empty single-line text without NUL")
-        if isinstance(response_timeout_seconds, bool) or not isinstance(response_timeout_seconds, (int, float)) or not 0 < response_timeout_seconds <= self.MAX_RESPONSE_TIMEOUT_SECONDS:
-            raise ValueError(f"response_timeout_seconds must be greater than zero and at most {self.MAX_RESPONSE_TIMEOUT_SECONDS}")
+        if (
+            isinstance(response_timeout_seconds, bool)
+            or not isinstance(response_timeout_seconds, (int, float))
+            or not 0 < response_timeout_seconds <= self.MAX_RESPONSE_TIMEOUT_SECONDS
+        ):
+            raise ValueError(
+                f"response_timeout_seconds must be greater than zero and at most {self.MAX_RESPONSE_TIMEOUT_SECONDS}"
+            )
         self.driver = Path(driver).expanduser().resolve()
         self.executable = executable
         self.response_timeout_seconds = float(response_timeout_seconds)
         self._process_factory = process_factory or subprocess.Popen
         self._readiness_waiter = readiness_waiter or _default_readiness_waiter
-        self._verifier_capability = verifier_capability
+        self._verifier_capability_id = id(verifier_capability) if verifier_capability is not None else None
         self._process: subprocess.Popen[str] | None = None
         self._lock = threading.RLock()
 
@@ -68,7 +76,15 @@ class TaskStateSession:
             if self._process is not None:
                 raise CodingError("zara-coding task-state Prolog process exited unexpectedly")
             try:
-                process = self._process_factory([self.executable, "-q", "-s", str(self.driver), "-g", "zara_coding_task_state:serve"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1, shell=False)
+                process = self._process_factory(
+                    [self.executable, "-q", "-s", str(self.driver), "-g", "zara_coding_task_state:serve"],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                    shell=False,
+                )
             except (FileNotFoundError, OSError) as exc:
                 raise CodingError("zara-coding task-state Prolog process could not start") from exc
             if process.stdin is None or process.stdout is None:
@@ -87,32 +103,45 @@ class TaskStateSession:
     def status(self) -> dict[str, object]:
         return self._request({"op": "status"})
 
-    def create_task(self, task_id: str, *, goal: str, repository: Mapping[str, str] | None = None,
-                    constraints: Sequence[str] = (), dependencies: Sequence[str] = (),
-                    completion_criteria: Sequence[str] = ()) -> dict[str, object]:
-        return self._request({
-            "op": "create",
-            "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS),
-            "goal": self._bounded_string(goal, "goal", self.MAX_GOAL_CHARS),
-            "repository": self._bounded_repository(repository),
-            "constraints": self._bounded_strings(constraints, "constraints"),
-            "dependencies": self._bounded_strings(dependencies, "dependencies"),
-            "completion_criteria": self._bounded_strings(completion_criteria, "completion_criteria"),
-        })
+    def create_task(
+        self,
+        task_id: str,
+        *,
+        goal: str,
+        repository: Mapping[str, str] | None = None,
+        constraints: Sequence[str] = (),
+        dependencies: Sequence[str] = (),
+        completion_criteria: Sequence[str] = (),
+    ) -> dict[str, object]:
+        return self._request(
+            {
+                "op": "create",
+                "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS),
+                "goal": self._bounded_string(goal, "goal", self.MAX_GOAL_CHARS),
+                "repository": self._bounded_repository(repository),
+                "constraints": self._bounded_strings(constraints, "constraints"),
+                "dependencies": self._bounded_strings(dependencies, "dependencies"),
+                "completion_criteria": self._bounded_strings(completion_criteria, "completion_criteria"),
+            }
+        )
 
     def get_task(self, task_id: str) -> dict[str, object]:
-        return self._request({"op": "get", "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS)})
+        return self._request(
+            {"op": "get", "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS)}
+        )
 
     def record_evidence(self, task_id: str, *, kind: str, status: str, detail: str) -> dict[str, object]:
         evidence_status = self._bounded_evidence_status(status)
         if evidence_status == "passed":
             raise ValueError("passing task evidence is verifier-owned")
-        return self._record_evidence(
-            task_id,
-            kind=kind,
-            status=evidence_status,
-            detail=detail,
-            provenance="caller",
+        return self._request(
+            {
+                "op": "record_evidence",
+                "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS),
+                "kind": self._bounded_string(kind, "kind", self.MAX_ITEM_CHARS),
+                "status": evidence_status,
+                "detail": self._bounded_string(detail, "detail", self.MAX_DETAIL_CHARS),
+            }
         )
 
     def record_verifier_evidence(
@@ -124,33 +153,17 @@ class TaskStateSession:
         detail: str,
         capability: object,
     ) -> dict[str, object]:
-        if self._verifier_capability is None or capability is not self._verifier_capability:
+        if self._verifier_capability_id is None or id(capability) != self._verifier_capability_id:
             raise PermissionError("verifier capability required")
-        return self._record_evidence(
-            task_id,
-            kind=kind,
-            status=self._bounded_evidence_status(status),
-            detail=detail,
-            provenance="verifier",
+        return self._request_protocol(
+            {
+                "op": "record_verifier_evidence",
+                "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS),
+                "kind": self._bounded_string(kind, "kind", self.MAX_ITEM_CHARS),
+                "status": self._bounded_evidence_status(status),
+                "detail": self._bounded_string(detail, "detail", self.MAX_DETAIL_CHARS),
+            }
         )
-
-    def _record_evidence(
-        self,
-        task_id: str,
-        *,
-        kind: str,
-        status: str,
-        detail: str,
-        provenance: str,
-    ) -> dict[str, object]:
-        return self._request({
-            "op": "record_evidence",
-            "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS),
-            "kind": self._bounded_string(kind, "kind", self.MAX_ITEM_CHARS),
-            "status": status,
-            "detail": self._bounded_string(detail, "detail", self.MAX_DETAIL_CHARS),
-            "provenance": provenance,
-        })
 
     def complete_task(
         self,
@@ -195,6 +208,11 @@ class TaskStateSession:
         raise CodingError("zara-coding task-state could not invalidate stale completion")
 
     def _request(self, command: dict[str, object]) -> dict[str, object]:
+        if command.get("op") == "record_verifier_evidence" or command.get("provenance") == "verifier":
+            raise PermissionError("verifier authority is not available through the generic task-state protocol")
+        return self._request_protocol(command)
+
+    def _request_protocol(self, command: dict[str, object]) -> dict[str, object]:
         with self._lock:
             self.start()
             process = self._process
@@ -229,7 +247,12 @@ class TaskStateSession:
             return response
 
     @classmethod
-    def _fail_protocol(cls, process: subprocess.Popen[str], message: str, cause: BaseException | None = None) -> None:
+    def _fail_protocol(
+        cls,
+        process: subprocess.Popen[str],
+        message: str,
+        cause: BaseException | None = None,
+    ) -> None:
         cls._terminate_process(process)
         error = CodingError(message)
         if cause is not None:
