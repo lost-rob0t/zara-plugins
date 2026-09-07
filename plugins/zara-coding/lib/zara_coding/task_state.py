@@ -112,8 +112,22 @@ class TaskStateSession:
             "provenance": evidence_provenance,
         })
 
-    def complete_task(self, task_id: str) -> dict[str, object]:
-        return self._request({"op": "complete", "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS)})
+    def complete_task(
+        self,
+        task_id: str,
+        *,
+        expected_repository: Mapping[str, str] | None = None,
+        repository_validator: Callable[[Mapping[str, str]], bool] | None = None,
+    ) -> dict[str, object]:
+        bounded_task_id = self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS)
+        with self._lock:
+            if expected_repository is not None or repository_validator is not None:
+                if expected_repository is None or repository_validator is None:
+                    raise ValueError("expected_repository and repository_validator must be provided together")
+                bounded_repository = self._bounded_repository(expected_repository)
+                if bounded_repository is None or not repository_validator(bounded_repository):
+                    return {"status": "rejected", "reason": "repository-snapshot-stale"}
+            return self._request({"op": "complete", "task_id": bounded_task_id})
 
     def _request(self, command: dict[str, object]) -> dict[str, object]:
         with self._lock:
