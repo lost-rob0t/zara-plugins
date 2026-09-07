@@ -217,6 +217,7 @@
                   }
                   ''
                     export HOME=$(mktemp -d)
+                    export PYTHONPATH=${zaraSource}
                     cp -r $src ./tree
                     chmod -R u+w ./tree
                     cd ./tree/plugins/${entry.name}
@@ -259,32 +260,12 @@
             };
           };
 
-          checks = checks;
-
           devShells.default = pkgs.mkShell {
-            name = "zara-plugins-dev-shell";
-
-            packages = [
-              developmentPython
-              developmentPython.pkgs.pytest
-              pkgs.nodejs
-            ];
-
-            shellHook = ''
-              echo "Zara plugin registry dev shell (Python + pytest + node for renderer work)"
-              echo ""
-              echo "Commands:"
-              echo "  python3 scripts/validate-registry.py                          # validate registry"
-              echo "  python3 -m unittest discover -s plugins/<name>/test -t plugins/<name>/test"
-              echo "  nix flake check                                               # registry + plugin suites"
-            '';
+            packages = [ developmentPython pkgs.git pkgs.jq ];
           };
+
+          inherit checks;
         };
     in
-    {
-      packages = nixpkgs.lib.mapAttrs (_: v: v.packages) (eachSystem mkSystem);
-      apps = nixpkgs.lib.mapAttrs (_: v: v.apps) (eachSystem mkSystem);
-      checks = nixpkgs.lib.mapAttrs (_: v: v.checks) (eachSystem mkSystem);
-      devShells = nixpkgs.lib.mapAttrs (_: v: v.devShells) (eachSystem mkSystem);
-    };
+    eachSystem mkSystem;
 }
