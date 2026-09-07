@@ -21,6 +21,7 @@ class FakeTransport:
         self.elements = {"body": "body-1", "#search": "search-1"}
         self.text = {"body-1": "hello world"}
         self.values = {"search-1": ""}
+        self.property_unavailable = set()
         self.fail_title_for = None
 
     def request(self, method, path, payload=None):
@@ -61,6 +62,8 @@ class FakeTransport:
             return None
         if "/element/" in path and path.endswith("/property/value"):
             element_id = path.split("/element/", 1)[1].split("/", 1)[0]
+            if element_id in self.property_unavailable:
+                return None
             return self.values.get(element_id)
         if path.endswith("/back") or path.endswith("/forward") or path.endswith("/refresh"):
             return None
@@ -147,7 +150,7 @@ class WebDriverBrowserBackendTest(unittest.TestCase):
         self.assertTrue(any(path.endswith("/element/search-1/property/value") for _, path, _ in self.transport.calls))
 
     def test_type_does_not_claim_observation_when_value_readback_is_unavailable(self):
-        self.transport.values["search-1"] = None
+        self.transport.property_unavailable.add("search-1")
         typed = self.backend.type_text("#search", "hello")
         self.assertTrue(typed["acknowledged"])
         self.assertFalse(typed["observed"])
