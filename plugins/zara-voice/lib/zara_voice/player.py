@@ -13,6 +13,7 @@ from .domain import VoiceError
 @dataclass
 class _Playback:
     process: Any
+    stdin: Any
     writer: threading.Thread
 
 
@@ -26,18 +27,20 @@ class PipeWirePlayer:
         max_active_playbacks: int = 8,
         terminate_timeout: float = 1.0,
         kill_timeout: float = 0.5,
+        writer_timeout: float = 1.0,
         locator: Callable[[str], str | None] = shutil.which,
         process_factory: Callable[..., Any] = subprocess.Popen,
         id_factory: Callable[[], str] | None = None,
     ) -> None:
         if max_audio_bytes <= 0 or max_active_playbacks <= 0:
             raise ValueError("PipeWire player limits must be positive")
-        if terminate_timeout <= 0 or kill_timeout <= 0:
+        if terminate_timeout <= 0 or kill_timeout <= 0 or writer_timeout <= 0:
             raise ValueError("PipeWire cancellation timeouts must be positive")
         self.max_audio_bytes = max_audio_bytes
         self.max_active_playbacks = max_active_playbacks
         self.terminate_timeout = terminate_timeout
         self.kill_timeout = kill_timeout
+        self.writer_timeout = writer_timeout
         self._locator = locator
         self._process_factory = process_factory
         self._id_factory = id_factory or (lambda: secrets.token_urlsafe(18))
@@ -63,6 +66,7 @@ class PipeWirePlayer:
             if len(self._playbacks) >= self.max_active_playbacks:
                 raise VoiceError("active playback limit reached")
 
+            playback_id = self._new_playback_id_locked()
             try:
                 process = self._process_factory(
                     [executable, "-"],
@@ -80,14 +84,13 @@ class PipeWirePlayer:
                 self._terminate_untracked(process)
                 raise VoiceError("PipeWire audio player did not provide an input stream")
 
-            playback_id = self._new_playback_id_locked()
             writer = threading.Thread(
                 target=self._write_audio,
                 args=(stdin, audio),
                 name=f"zara-voice-pw-play-{playback_id[:8]}",
                 daemon=True,
             )
-            self._playbacks[playback_id] = _Playback(process=process, writer=writer)
+            self._playbacks[playback_id] = _Playback(process=process, stdin=stdin, writer=writer)
             writer.start()
 
         return {
@@ -105,23 +108,25 @@ class PipeWirePlayer:
             playback = self._playbacks.get(playback_id)
             if playback is None:
                 raise VoiceError("unknown or stale playback id")
-            process = playback.process
-            if process.poll() is not None:
-                self._playbacks.pop(playback_id, None)
-                raise VoiceError("unknown or stale playback id")
 
-            process.terminate()
-            try:
-                process.wait(timeout=self.terminate_timeout)
-            except subprocess.TimeoutExpired:
-                process.kill()
+            process = playback.process
+            self._close_input(playback.stdin)
+            if process.poll() is None:
+                process.terminate()
                 try:
-                    process.wait(timeout=self.kill_timeout)
-                except subprocess.TimeoutExpired as exc:
-                    self._playbacks.pop(playback_id, None)
-                    raise VoiceError("playback cancellation exceeded configured time bound") from exc
-            finally:
-                self._playbacks.pop(playback_id, None)
+                    process.wait(timeout=self.terminate_timeout)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    try:
+                        process.wait(timeout=self.kill_timeout)
+                    except subprocess.TimeoutExpired as exc:
+                        raise VoiceError("playback cancellation exceeded configured time bound") from exc
+
+            playback.writer.join(timeout=self.writer_timeout)
+            if playback.writer.is_alive():
+                raise VoiceError("playback writer cleanup exceeded configured time bound")
+
+            self._playbacks.pop(playback_id, None)
         return True
 
     def close(self) -> None:
@@ -140,7 +145,11 @@ class PipeWirePlayer:
             if playback.process.poll() is not None
         ]
         for playback_id in finished:
-            self._playbacks.pop(playback_id, None)
+            playback = self._playbacks[playback_id]
+            self._close_input(playback.stdin)
+            playback.writer.join(timeout=self.writer_timeout)
+            if not playback.writer.is_alive():
+                self._playbacks.pop(playback_id, None)
 
     def _new_playback_id_locked(self) -> str:
         for _ in range(8):
@@ -161,6 +170,13 @@ class PipeWirePlayer:
                 stdin.close()
             except (OSError, ValueError):
                 pass
+
+    @staticmethod
+    def _close_input(stdin: Any) -> None:
+        try:
+            stdin.close()
+        except (OSError, ValueError):
+            pass
 
     def _terminate_untracked(self, process: Any) -> None:
         try:
