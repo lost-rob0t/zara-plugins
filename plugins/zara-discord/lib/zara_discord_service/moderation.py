@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import dataclass
+import math
 import secrets
 import threading
 import time
@@ -30,12 +31,15 @@ class ModerationContextStore:
         clock: Callable[[], float] = time.monotonic,
         token_factory: Callable[[int], str] = secrets.token_urlsafe,
     ) -> None:
-        self.ttl_seconds = float(ttl_seconds)
-        self.max_contexts = int(max_contexts)
-        if self.ttl_seconds <= 0:
-            raise ValueError("ttl_seconds must be greater than zero")
-        if self.max_contexts <= 0:
-            raise ValueError("max_contexts must be greater than zero")
+        if isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, (int, float)):
+            raise ValueError("ttl_seconds must be a finite positive number")
+        ttl_seconds = float(ttl_seconds)
+        if not math.isfinite(ttl_seconds) or ttl_seconds <= 0:
+            raise ValueError("ttl_seconds must be a finite positive number")
+        if type(max_contexts) is not int or max_contexts <= 0:
+            raise ValueError("max_contexts must be a positive integer")
+        self.ttl_seconds = ttl_seconds
+        self.max_contexts = max_contexts
         self._clock = clock
         self._token_factory = token_factory
         self._contexts: OrderedDict[str, ModerationContext] = OrderedDict()
