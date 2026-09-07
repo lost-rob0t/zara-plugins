@@ -24,6 +24,60 @@ def _ignore_bytecode(_directory: str, names: list[str]) -> set[str]:
     return {name for name in names if name == "__pycache__" or name.endswith(".pyc")}
 
 
+def _remove_path(path: Path) -> None:
+    if path.is_dir():
+        shutil.rmtree(path)
+    elif path.exists():
+        path.unlink()
+
+
+def _publish_install(
+    *,
+    staging: Path,
+    library_dir: Path,
+    wrapper_staging: Path,
+    plugin_entry: Path,
+) -> None:
+    library_backup = library_dir.with_name(".lib.backup")
+    wrapper_backup = plugin_entry.with_name(".zara_discord.py.backup")
+    _remove_path(library_backup)
+    _remove_path(wrapper_backup)
+
+    library_backed_up = False
+    wrapper_backed_up = False
+    library_published = False
+    wrapper_published = False
+    try:
+        if library_dir.exists():
+            os.replace(library_dir, library_backup)
+            library_backed_up = True
+        os.replace(staging, library_dir)
+        library_published = True
+
+        if plugin_entry.exists():
+            os.replace(plugin_entry, wrapper_backup)
+            wrapper_backed_up = True
+        os.replace(wrapper_staging, plugin_entry)
+        wrapper_published = True
+    except BaseException:
+        if wrapper_published:
+            _remove_path(plugin_entry)
+        if wrapper_backed_up:
+            os.replace(wrapper_backup, plugin_entry)
+        if library_published:
+            _remove_path(library_dir)
+        if library_backed_up:
+            os.replace(library_backup, library_dir)
+        _remove_path(staging)
+        _remove_path(wrapper_staging)
+        _remove_path(library_backup)
+        _remove_path(wrapper_backup)
+        raise
+
+    _remove_path(library_backup)
+    _remove_path(wrapper_backup)
+
+
 def install(
     *,
     home: Path | None = None,
@@ -43,8 +97,9 @@ def install(
     plugin_dir.mkdir(parents=True, exist_ok=True)
 
     staging = config_dir / ".lib.tmp"
-    if staging.exists():
-        shutil.rmtree(staging)
+    wrapper_staging = plugin_entry.with_name(".zara_discord.py.tmp")
+    _remove_path(staging)
+    _remove_path(wrapper_staging)
     staging.mkdir()
     source_package = Path(__file__).resolve().parent
     plugin_root = source_package.parents[1]
@@ -78,12 +133,15 @@ def install(
     for path in staging.rglob("*"):
         os.chmod(path, 0o755 if path.is_dir() else 0o644)
 
-    if library_dir.exists():
-        shutil.rmtree(library_dir)
-    staging.replace(library_dir)
-
     wrapper_source = plugin_root / "zara-plugin" / "zara_discord.py"
-    shutil.copy2(wrapper_source, plugin_entry)
+    shutil.copy2(wrapper_source, wrapper_staging)
+    _publish_install(
+        staging=staging,
+        library_dir=library_dir,
+        wrapper_staging=wrapper_staging,
+        plugin_entry=plugin_entry,
+    )
+
     readme = config_dir / "README.txt"
     readme.write_text(
         "Zara Discord plugin configuration\n\n"
