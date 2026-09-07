@@ -75,6 +75,18 @@ class HealthDomainTest(unittest.TestCase):
         self.assertEqual(len(domain.history("cpu")), 3)
         self.assertEqual(domain.history("cpu")[-1]["value"], 9)
 
+    def test_policy_bounds_require_exact_integers_before_probe_use(self):
+        values = (True, False, 3.0, "3", None)
+        fields = ("history_limit", "hysteresis_count", "max_evidence_bytes")
+        for field in fields:
+            for value in values:
+                with self.subTest(field=field, value=value):
+                    probe = SequenceProbe("cpu", [])
+                    kwargs = {field: value}
+                    with self.assertRaises(HealthError):
+                        HealthDomain({"cpu": probe}, **kwargs)
+                    self.assertEqual(probe.values, [])
+
     def test_export_facts_preserves_unknown_and_evidence(self):
         probe = SequenceProbe("http-api", [{"status": "degraded", "value": 800, "unit": "ms", "evidence": {"target_id": "api-main", "code": 200}}])
         domain = HealthDomain({"http-api": probe}, clock=FakeClock(), hysteresis_count=1)
