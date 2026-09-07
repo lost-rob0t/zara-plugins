@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime
 from typing import Any, Callable
 from urllib.parse import urlsplit, urlunsplit
@@ -28,6 +29,9 @@ class HomeAssistantEventStream:
         connect: Callable[[str], Any],
         reconcile: Callable[[], list[dict[str, Any]]],
         max_frame_bytes: int = 1024 * 1024,
+        io_timeout_seconds: float = 10.0,
+        reconnect_backoff: tuple[float, ...] = (1.0, 2.0, 5.0, 10.0),
+        wait: Callable[[float], bool] | None = None,
     ) -> None:
         parsed = urlsplit(base_url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
@@ -40,21 +44,93 @@ class HomeAssistantEventStream:
             raise HomeAssistantEventError("invalid-access-token")
         if not isinstance(max_frame_bytes, int) or max_frame_bytes < 256 or max_frame_bytes > 4 * 1024 * 1024:
             raise HomeAssistantEventError("invalid-frame-limit")
+        if not isinstance(io_timeout_seconds, (int, float)) or isinstance(io_timeout_seconds, bool) or io_timeout_seconds <= 0 or io_timeout_seconds > 60:
+            raise HomeAssistantEventError("invalid-io-timeout")
+        if (
+            not isinstance(reconnect_backoff, tuple)
+            or not reconnect_backoff
+            or len(reconnect_backoff) > 8
+            or any(
+                not isinstance(delay, (int, float))
+                or isinstance(delay, bool)
+                or delay <= 0
+                or delay > 60
+                for delay in reconnect_backoff
+            )
+        ):
+            raise HomeAssistantEventError("invalid-reconnect-backoff")
 
         scheme = "wss" if parsed.scheme == "https" else "ws"
-        netloc = parsed.netloc
-        self.websocket_url = urlunsplit((scheme, netloc, "/api/websocket", "", ""))
+        self.websocket_url = urlunsplit((scheme, parsed.netloc, "/api/websocket", "", ""))
         self._access_token = access_token
         self._connect = connect
         self._reconcile = reconcile
         self._max_frame_bytes = max_frame_bytes
+        self._io_timeout_seconds = float(io_timeout_seconds)
+        self._reconnect_backoff = tuple(float(delay) for delay in reconnect_backoff)
+        self._stop_event = threading.Event()
+        self._wait = wait or self._stop_event.wait
         self._socket = None
         self._subscription_id: int | None = None
         self._next_id = 1
         self._observations: dict[str, dict[str, Any]] = {}
         self._timestamps: dict[str, datetime] = {}
         self._stopped = False
+        self._thread: threading.Thread | None = None
         self.fresh = False
+
+    @classmethod
+    def from_transport(cls, transport: HomeAssistantHTTPTransport) -> "HomeAssistantEventStream":
+        def connect(url: str):
+            try:
+                import websocket
+            except ImportError:
+                raise HomeAssistantEventError("websocket-client-unavailable") from None
+            try:
+                return websocket.create_connection(
+                    url,
+                    timeout=transport.timeout,
+                    enable_multithread=True,
+                )
+            except Exception:
+                raise HomeAssistantEventError("provider-unavailable") from None
+
+        return cls(
+            transport.base_url,
+            transport._access_token,
+            connect=connect,
+            reconcile=lambda: transport.request("GET", "/api/states"),
+            io_timeout_seconds=transport.timeout,
+        )
+
+    def start(self) -> None:
+        if self._stopped:
+            raise HomeAssistantEventError("stopped")
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._thread = threading.Thread(
+            target=self.run_forever,
+            name="zara-home-ha-events",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def run_forever(self) -> None:
+        backoff_index = 0
+        while not self._stopped:
+            try:
+                self.connect_once()
+                while not self._stopped:
+                    self.poll_once()
+            except HomeAssistantEventError:
+                self.mark_disconnected()
+                if self._stopped:
+                    break
+                delay = self._reconnect_backoff[min(backoff_index, len(self._reconnect_backoff) - 1)]
+                backoff_index = min(backoff_index + 1, len(self._reconnect_backoff) - 1)
+                if self._wait(delay):
+                    break
+        self.mark_disconnected()
 
     def connect_once(self) -> None:
         if self._stopped:
@@ -63,6 +139,9 @@ class HomeAssistantEventStream:
         self._subscription_id = None
         try:
             sock = self._connect(self.websocket_url)
+            settimeout = getattr(sock, "settimeout", None)
+            if callable(settimeout):
+                settimeout(self._io_timeout_seconds)
             first = self._read_frame(sock)
             if first.get("type") != "auth_required":
                 raise HomeAssistantEventError("invalid-auth-phase")
@@ -75,15 +154,7 @@ class HomeAssistantEventStream:
 
             subscription_id = self._next_id
             self._next_id += 1
-            sock.send(
-                json.dumps(
-                    {
-                        "id": subscription_id,
-                        "type": "subscribe_events",
-                        "event_type": "state_changed",
-                    }
-                )
-            )
+            sock.send(json.dumps({"id": subscription_id, "type": "subscribe_events", "event_type": "state_changed"}))
             self._socket = sock
             self._subscription_id = subscription_id
         except HomeAssistantEventError:
@@ -132,6 +203,7 @@ class HomeAssistantEventStream:
 
     def stop(self) -> None:
         self._stopped = True
+        self._stop_event.set()
         self.mark_disconnected()
 
     def observation(self, entity_id: str) -> dict[str, Any] | None:
