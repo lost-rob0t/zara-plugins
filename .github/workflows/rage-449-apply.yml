@@ -1,0 +1,53 @@
+name: RAGE 449 apply
+
+on:
+  push:
+    branches:
+      - rage/449-avatar-renderer-command-config
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rage/449-avatar-renderer-command-config
+      - name: Apply exact renderer command policy patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("plugins/zara-avatar/zara-plugin/zara_avatar.py")
+          text = path.read_text(encoding="utf-8")
+          marker = '''        if (
+                      not isinstance(explicit, list)
+                      or not explicit
+                      or not all(isinstance(part, str) for part in explicit)
+                  ):
+                      raise ValueError("renderer_command must be a list of strings")
+          '''
+          replacement = '''        if (
+                      not isinstance(explicit, list)
+                      or not explicit
+                      or not all(isinstance(part, str) and part for part in explicit)
+                  ):
+                      raise ValueError(
+                          "renderer_command must be a non-empty list of non-empty strings"
+                      )
+          '''
+          if text.count(marker) != 1:
+              raise SystemExit("renderer_command policy insertion point drifted")
+          path.write_text(text.replace(marker, replacement, 1), encoding="utf-8")
+          Path(".github/workflows/rage-449-apply.yml").unlink()
+          PY
+      - name: Commit implementation
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add plugins/zara-avatar/zara-plugin/zara_avatar.py .github/workflows/rage-449-apply.yml
+          git diff --cached --check
+          git commit -m 'fix: validate configured renderer argv elements'
+          git push origin HEAD:rage/449-avatar-renderer-command-config
