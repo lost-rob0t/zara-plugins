@@ -159,7 +159,7 @@ class MediaDomain:
         evidence = self.backend.set_active_player(player_id)
         if not isinstance(evidence, dict):
             raise MediaError("media backend returned invalid selection evidence")
-        accepted = bool(evidence.get("accepted"))
+        accepted = evidence.get("accepted") is True
         after = self.backend.active_player_id()
         verified = accepted and after == player_id
         return {
@@ -246,7 +246,7 @@ class MediaDomain:
         if not isinstance(evidence, dict):
             raise MediaError("media backend returned invalid queue evidence")
         after = self.queue(player_id)
-        accepted = bool(evidence.get("accepted"))
+        accepted = evidence.get("accepted") is True
         verified = accepted and len(after) == len(before) + 1 and after[-1] == normalized
         return {
             "status": "verified" if verified else "verification_failed",
@@ -270,7 +270,7 @@ class MediaDomain:
         if not isinstance(evidence, dict):
             raise MediaError("media backend returned invalid queue evidence")
         after = self.queue(player_id)
-        accepted = bool(evidence.get("accepted"))
+        accepted = evidence.get("accepted") is True
         verified = accepted and after == expected
         return {
             "status": "verified" if verified else "verification_failed",
