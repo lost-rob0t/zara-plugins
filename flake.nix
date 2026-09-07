@@ -217,6 +217,7 @@
                   }
                   ''
                     export HOME=$(mktemp -d)
+                    export PYTHONPATH=${zaraSource}
                     cp -r $src ./tree
                     chmod -R u+w ./tree
                     cd ./tree/plugins/${entry.name}

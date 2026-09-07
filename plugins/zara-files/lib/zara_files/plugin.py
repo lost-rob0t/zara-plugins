@@ -43,8 +43,8 @@ class ZaraFilesPlugin(ServicePlugin):
             return
         self.domain = FileDomain(
             [Path(str(value)).expanduser() for value in roots],
-            max_read_bytes=int(section.get("max_read_bytes", 64 * 1024)),
-            max_results=int(section.get("max_results", 64)),
+            max_read_bytes=section.get("max_read_bytes", 64 * 1024),
+            max_results=section.get("max_results", 64),
         )
 
     def stop(self) -> None:

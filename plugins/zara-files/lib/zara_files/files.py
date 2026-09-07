@@ -20,9 +20,13 @@ class FileDomain:
         max_results: int = 64,
         semantic_index=None,
     ) -> None:
-        if not 1 <= int(max_read_bytes) <= 1024 * 1024:
+        if type(max_read_bytes) is not int:
+            raise FileDomainError("max_read_bytes must be an integer")
+        if type(max_results) is not int:
+            raise FileDomainError("max_results must be an integer")
+        if not 1 <= max_read_bytes <= 1024 * 1024:
             raise FileDomainError("max_read_bytes is out of range")
-        if not 1 <= int(max_results) <= 512:
+        if not 1 <= max_results <= 512:
             raise FileDomainError("max_results is out of range")
         configured: dict[str, Path] = {}
         for index, raw_root in enumerate(roots):
@@ -39,8 +43,8 @@ class FileDomain:
         if not configured:
             raise FileDomainError("at least one file root is required")
         self._roots = configured
-        self.max_read_bytes = int(max_read_bytes)
-        self.max_results = int(max_results)
+        self.max_read_bytes = max_read_bytes
+        self.max_results = max_results
         self.semantic_index = semantic_index
 
     @property
@@ -177,7 +181,9 @@ class FileDomain:
         info = path.lstat()
         if not stat.S_ISREG(info.st_mode):
             raise FileDomainError("text read requires a regular file")
-        limit = self.max_read_bytes if max_bytes is None else int(max_bytes)
+        if max_bytes is not None and type(max_bytes) is not int:
+            raise FileDomainError("read byte limit must be an integer")
+        limit = self.max_read_bytes if max_bytes is None else max_bytes
         if not 1 <= limit <= self.max_read_bytes:
             raise FileDomainError("read byte limit is out of range")
         try:
