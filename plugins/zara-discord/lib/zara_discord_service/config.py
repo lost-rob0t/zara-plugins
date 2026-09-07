@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import stat
 import threading
@@ -223,8 +224,10 @@ class PolicyStore:
 
     @staticmethod
     def _validated_chance(chance: float) -> float:
+        if isinstance(chance, bool) or not isinstance(chance, (int, float)):
+            raise ValueError("random reply chance must be a number")
         chance = float(chance)
-        if not 0.0 <= chance <= 1.0:
+        if not math.isfinite(chance) or not 0.0 <= chance <= 1.0:
             raise ValueError("random reply chance must be between 0 and 1")
         return chance
 
