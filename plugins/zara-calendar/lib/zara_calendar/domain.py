@@ -173,7 +173,7 @@ class CalendarDomain:
     def create(self, **event_fields):
         event = self._new_event(**event_fields)
         evidence = self.backend.create_event(event)
-        accepted = isinstance(evidence, dict) and bool(evidence.get("accepted"))
+        accepted = isinstance(evidence, dict) and evidence.get("accepted") is True
         observed = self.get(evidence.get("event_id")) if accepted and evidence.get("event_id") else None
         verified = accepted and observed is not None and observed["version"] == evidence.get("version")
         return {"status": "verified" if verified else "verification_failed", "accepted": accepted, "verified": verified, "event": observed, "evidence": evidence}
@@ -193,7 +193,7 @@ class CalendarDomain:
         merged.update(patch)
         self._event(merged)
         evidence = self.backend.update_event(event_id, expected_version, patch)
-        accepted = isinstance(evidence, dict) and bool(evidence.get("accepted"))
+        accepted = isinstance(evidence, dict) and evidence.get("accepted") is True
         observed = self.get(event_id) if accepted else current
         verified = accepted and observed is not None and observed["version"] == evidence.get("version")
         return {"status": "verified" if verified else "verification_failed", "accepted": accepted, "verified": verified, "event": observed, "evidence": evidence}
@@ -202,6 +202,6 @@ class CalendarDomain:
         event_id = self._text(event_id, "event id", 256)
         expected_version = self._text(expected_version, "expected_version", 256)
         evidence = self.backend.delete_event(event_id, expected_version)
-        accepted = isinstance(evidence, dict) and bool(evidence.get("accepted"))
+        accepted = isinstance(evidence, dict) and evidence.get("accepted") is True
         verified = accepted and self.backend.get_event(event_id) is None
         return {"status": "verified" if verified else "verification_failed", "accepted": accepted, "verified": verified, "event_id": event_id, "evidence": evidence}
