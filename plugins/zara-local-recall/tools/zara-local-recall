@@ -24,6 +24,69 @@ def _ignore_bytecode(_directory: str, names: list[str]) -> set[str]:
     return {name for name in names if name == "__pycache__" or name.endswith(".pyc")}
 
 
+def _remove_path(path: Path) -> None:
+    if path.is_dir():
+        shutil.rmtree(path)
+    elif path.exists():
+        path.unlink()
+
+
+def _restore_component(*, live: Path, backup: Path, existed: bool) -> None:
+    if existed:
+        _remove_path(live)
+        if backup.exists():
+            backup.rename(live)
+        return
+    _remove_path(live)
+    _remove_path(backup)
+
+
+def _publish_install(
+    *,
+    staging: Path,
+    library_dir: Path,
+    wrapper_staging: Path,
+    plugin_entry: Path,
+) -> None:
+    library_backup = library_dir.with_name(".lib.backup")
+    wrapper_backup = plugin_entry.with_name(".zara_local_recall.py.backup")
+    library_existed = library_dir.exists()
+    wrapper_existed = plugin_entry.exists()
+
+    _remove_path(library_backup)
+    _remove_path(wrapper_backup)
+
+    try:
+        if library_existed:
+            library_dir.rename(library_backup)
+        staging.rename(library_dir)
+
+        if wrapper_existed:
+            plugin_entry.rename(wrapper_backup)
+        shutil.copyfile(wrapper_staging, plugin_entry)
+        os.chmod(plugin_entry, 0o644)
+    except BaseException:
+        _restore_component(
+            live=library_dir,
+            backup=library_backup,
+            existed=library_existed,
+        )
+        _restore_component(
+            live=plugin_entry,
+            backup=wrapper_backup,
+            existed=wrapper_existed,
+        )
+        _remove_path(staging)
+        _remove_path(wrapper_staging)
+        _remove_path(library_backup)
+        _remove_path(wrapper_backup)
+        raise
+
+    _remove_path(wrapper_staging)
+    _remove_path(library_backup)
+    _remove_path(wrapper_backup)
+
+
 def install(
     *,
     home: Path | None = None,
@@ -43,8 +106,9 @@ def install(
     plugin_dir.mkdir(parents=True, exist_ok=True)
 
     staging = config_dir / ".lib.tmp"
-    if staging.exists():
-        shutil.rmtree(staging)
+    wrapper_staging = plugin_entry.with_name(".zara_local_recall.py.tmp")
+    _remove_path(staging)
+    _remove_path(wrapper_staging)
     staging.mkdir()
     source_package = Path(__file__).resolve().parents[1] / "lib" / "zara_local_recall_service"
     shutil.copytree(
@@ -53,13 +117,16 @@ def install(
         copy_function=_copy_writable,
         ignore=_ignore_bytecode,
     )
-    if library_dir.exists():
-        shutil.rmtree(library_dir)
-    staging.rename(library_dir)
 
     entry_source = Path(__file__).resolve().parents[1] / "zara-plugin" / "zara_local_recall.py"
-    shutil.copyfile(entry_source, plugin_entry)
-    os.chmod(plugin_entry, 0o644)
+    shutil.copyfile(entry_source, wrapper_staging)
+    os.chmod(wrapper_staging, 0o644)
+    _publish_install(
+        staging=staging,
+        library_dir=library_dir,
+        wrapper_staging=wrapper_staging,
+        plugin_entry=plugin_entry,
+    )
 
     return plugin_entry, library_dir
 
@@ -76,7 +143,7 @@ def main() -> int:
         choices=["install"],
         help="install the plugin into Zara's search path",
     )
-    arguments = parser.parse_args()
+    parser.parse_args()
 
     if not shutil.which("local-recall"):
         print(
