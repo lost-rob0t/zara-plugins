@@ -34,6 +34,12 @@ class CommsDomain:
             raise CommsError(f"{name} contains invalid control characters")
         return value
 
+    @staticmethod
+    def _boolean(value, name):
+        if type(value) is not bool:
+            raise CommsError(f"{name} must be a boolean")
+        return value
+
     def _provider(self, name):
         name = self._text(name, "provider", 128)
         provider = self.providers.get(name)
@@ -92,7 +98,7 @@ class CommsDomain:
             "timestamp": message["timestamp"],
             "body": body,
             "attachments": normalized_attachments,
-            "read": bool(message["read"]),
+            "read": self._boolean(message["read"], "read"),
             "reply_to": reply_to,
         }
 
@@ -187,7 +193,7 @@ class CommsDomain:
             "reply_to": draft.get("reply_to"),
         }
         evidence = adapter.send(normalized)
-        accepted = isinstance(evidence, dict) and bool(evidence.get("accepted"))
+        accepted = isinstance(evidence, dict) and evidence.get("accepted") is True
         message = self.get(provider_name, evidence.get("message_id")) if accepted and evidence.get("message_id") else None
         verified = accepted and message is not None and message["provider"] == provider_name
         if verified and normalized["conversation_id"] is not None:
