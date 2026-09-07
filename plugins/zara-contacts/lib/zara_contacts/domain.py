@@ -148,7 +148,8 @@ class ContactsDomain:
         evidence = self.backend.create_contact(candidate)
         accepted = isinstance(evidence, dict) and evidence.get("accepted") is True
         observed = self.get(evidence.get("contact_id")) if accepted and evidence.get("contact_id") else None
-        verified = accepted and observed is not None
+        observed_payload = None if observed is None else {key: observed[key] for key in candidate}
+        verified = accepted and observed_payload == candidate
         return {"status": "verified" if verified else "verification_failed", "accepted": accepted, "verified": verified, "contact": observed, "evidence": evidence}
 
     def update(self, contact_id, patch):
