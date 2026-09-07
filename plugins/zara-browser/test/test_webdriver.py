@@ -22,6 +22,7 @@ class FakeTransport:
         self.values = {"search-1": ""}
         self.property_unavailable = set()
         self.fail_title_for = None
+        self.fail_switch_to = None
 
     def request(self, method, path, payload=None):
         self.calls.append((method, path, payload))
@@ -30,7 +31,10 @@ class FakeTransport:
         if path.endswith("/window") and method == "GET":
             return self.active
         if path.endswith("/window") and method == "POST":
-            self.active = payload["handle"]
+            handle = payload["handle"]
+            if handle == self.fail_switch_to and self.active != handle:
+                raise BrowserError("synthetic restoration failure")
+            self.active = handle
             return None
         if path.endswith("/window/new"):
             handle = f"win-{len(self.handles) + 1}"
@@ -111,6 +115,20 @@ class WebDriverBrowserBackendTest(unittest.TestCase):
         with self.assertRaisesRegex(BrowserError, "synthetic title failure"):
             self.backend.list_tabs()
         self.assertEqual(self.transport.active, "win-1")
+
+    def test_list_tabs_preserves_enumeration_failure_when_restoration_also_fails(self):
+        self.transport.handles.append("win-2")
+        self.transport.urls["win-2"] = "https://example.test/two"
+        self.transport.titles["win-2"] = "Two"
+        self.transport.fail_title_for = "win-2"
+        self.transport.fail_switch_to = "win-1"
+
+        with self.assertRaisesRegex(BrowserError, "synthetic title failure") as raised:
+            self.backend.list_tabs()
+
+        self.assertIsInstance(raised.exception.__cause__, BrowserError)
+        self.assertRegex(str(raised.exception.__cause__), "synthetic restoration failure")
+        self.assertEqual(self.transport.active, "win-2")
 
     def test_list_tabs_rejects_excessive_handle_sets_before_enumeration(self):
         self.transport.handles = [f"win-{index}" for index in range(1, 34)]
