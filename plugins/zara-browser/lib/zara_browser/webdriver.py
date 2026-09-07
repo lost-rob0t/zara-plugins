@@ -10,6 +10,7 @@ from .browser import BrowserError
 
 
 _ELEMENT_KEY = "element-6066-11e4-a52e-4f735466cecf"
+_MAX_WINDOW_HANDLES = 32
 
 
 def _webdriver_endpoint(value: str) -> str:
@@ -103,10 +104,19 @@ class WebDriverBrowserBackend:
         handles = self._request("GET", "/window/handles")
         if not isinstance(handles, list) or not all(isinstance(handle, str) for handle in handles):
             raise BrowserError("WebDriver returned invalid window handles")
-        tabs = [self._tab(handle) for handle in handles]
-        if active in handles:
-            self._switch(active)
-        return tabs
+        if len(handles) > _MAX_WINDOW_HANDLES:
+            raise BrowserError("WebDriver window handle limit exceeded")
+        if any(len(handle.encode("utf-8")) > 256 for handle in handles):
+            raise BrowserError("WebDriver returned oversized window handle")
+
+        tabs: list[dict[str, object]] = []
+        try:
+            for handle in handles:
+                tabs.append(self._tab(handle))
+            return tabs
+        finally:
+            if active in handles:
+                self._switch(active)
 
     def open_tab(self, url: str) -> dict[str, object]:
         created = self._request("POST", "/window/new", {"type": "tab"})
@@ -176,26 +186,35 @@ class WebDriverBrowserBackend:
         element = self._element(selector)
         self._request("POST", f"/element/{element}/click", {})
         active = self.active_tab_id
+        url = self._request("GET", "/url")
         return {
             "action": "click",
             "selector": selector,
             "tab_id": active,
-            "url": self._request("GET", "/url"),
-            "observed": active is not None,
+            "url": url if isinstance(url, str) else "",
+            "acknowledged": True,
+            "observed": False,
+            "observation": "post-action-tab-state-only",
         }
 
     def type_text(self, selector: str, text: str) -> dict[str, object]:
         element = self._element(selector)
         self._request("POST", f"/element/{element}/value", {"text": text})
+        observed_value = self._request("GET", f"/element/{element}/property/value")
         active = self.active_tab_id
+        url = self._request("GET", "/url")
+        observed = isinstance(observed_value, str) and observed_value.endswith(text)
         return {
             "action": "type",
             "selector": selector,
             "tab_id": active,
-            "url": self._request("GET", "/url"),
+            "url": url if isinstance(url, str) else "",
             "value_length": len(text),
             "submitted": False,
-            "observed": active is not None,
+            "acknowledged": True,
+            "observed": observed,
+            "observed_value": observed_value if isinstance(observed_value, str) else None,
+            "observation": "element-value-readback" if observed else "element-value-not-verified",
         }
 
     def select(self, selector: str, value: str) -> dict[str, object]:
