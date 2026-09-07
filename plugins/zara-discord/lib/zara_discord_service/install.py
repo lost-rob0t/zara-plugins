@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import os
 import shutil
 from dataclasses import dataclass
@@ -31,11 +32,76 @@ def _remove_path(path: Path) -> None:
         path.unlink()
 
 
-def _recover_interrupted_publish(live: Path, backup: Path) -> None:
-    if not backup.exists():
+def _restore_component(*, live: Path, backup: Path, existed: bool) -> None:
+    if existed:
+        if backup.exists():
+            _remove_path(live)
+            os.replace(backup, live)
         return
     _remove_path(live)
-    os.replace(backup, live)
+    _remove_path(backup)
+
+
+def _recover_interrupted_publish(
+    *,
+    library_dir: Path,
+    library_backup: Path,
+    plugin_entry: Path,
+    wrapper_backup: Path,
+    transaction_marker: Path,
+) -> None:
+    if transaction_marker.exists():
+        state = json.loads(transaction_marker.read_text(encoding="utf-8"))
+        _restore_component(
+            live=library_dir,
+            backup=library_backup,
+            existed=bool(state["library_existed"]),
+        )
+        _restore_component(
+            live=plugin_entry,
+            backup=wrapper_backup,
+            existed=bool(state["wrapper_existed"]),
+        )
+        _remove_path(library_backup)
+        _remove_path(wrapper_backup)
+        _remove_path(transaction_marker)
+        return
+
+    # Legacy fixed backups predate the transaction marker. A missing live path
+    # proves publication was interrupted before replacement; a live path means
+    # the backup can only be treated safely as stale cleanup residue.
+    for live, backup in (
+        (library_dir, library_backup),
+        (plugin_entry, wrapper_backup),
+    ):
+        if not backup.exists():
+            continue
+        if live.exists():
+            _remove_path(backup)
+        else:
+            os.replace(backup, live)
+
+
+def _write_transaction_marker(
+    *,
+    transaction_marker: Path,
+    library_existed: bool,
+    wrapper_existed: bool,
+) -> None:
+    marker_staging = transaction_marker.with_name(f".{transaction_marker.name}.tmp")
+    _remove_path(marker_staging)
+    marker_staging.write_text(
+        json.dumps(
+            {
+                "library_existed": library_existed,
+                "wrapper_existed": wrapper_existed,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    os.replace(marker_staging, transaction_marker)
 
 
 def _publish_install(
@@ -47,43 +113,53 @@ def _publish_install(
 ) -> None:
     library_backup = library_dir.with_name(".lib.backup")
     wrapper_backup = plugin_entry.with_name(".zara_discord.py.backup")
+    transaction_marker = library_dir.parent / ".install-transaction.json"
 
-    # A backup can be the only last-known-good copy after process death. Roll
-    # any interrupted publication back before starting a new transaction.
-    _recover_interrupted_publish(library_dir, library_backup)
-    _recover_interrupted_publish(plugin_entry, wrapper_backup)
+    _recover_interrupted_publish(
+        library_dir=library_dir,
+        library_backup=library_backup,
+        plugin_entry=plugin_entry,
+        wrapper_backup=wrapper_backup,
+        transaction_marker=transaction_marker,
+    )
 
-    library_backed_up = False
-    wrapper_backed_up = False
-    library_published = False
-    wrapper_published = False
+    library_existed = library_dir.exists()
+    wrapper_existed = plugin_entry.exists()
+    _write_transaction_marker(
+        transaction_marker=transaction_marker,
+        library_existed=library_existed,
+        wrapper_existed=wrapper_existed,
+    )
+
     try:
-        if library_dir.exists():
+        if library_existed:
             os.replace(library_dir, library_backup)
-            library_backed_up = True
         os.replace(staging, library_dir)
-        library_published = True
 
-        if plugin_entry.exists():
+        if wrapper_existed:
             os.replace(plugin_entry, wrapper_backup)
-            wrapper_backed_up = True
         os.replace(wrapper_staging, plugin_entry)
-        wrapper_published = True
     except BaseException:
-        if wrapper_published:
-            _remove_path(plugin_entry)
-        if wrapper_backed_up:
-            os.replace(wrapper_backup, plugin_entry)
-        if library_published:
-            _remove_path(library_dir)
-        if library_backed_up:
-            os.replace(library_backup, library_dir)
+        _restore_component(
+            live=library_dir,
+            backup=library_backup,
+            existed=library_existed,
+        )
+        _restore_component(
+            live=plugin_entry,
+            backup=wrapper_backup,
+            existed=wrapper_existed,
+        )
         _remove_path(staging)
         _remove_path(wrapper_staging)
         _remove_path(library_backup)
         _remove_path(wrapper_backup)
+        _remove_path(transaction_marker)
         raise
 
+    # Marker deletion commits the new pair. Any backup surviving a process
+    # death after this point is stale cleanup residue and must never be restored.
+    _remove_path(transaction_marker)
     _remove_path(library_backup)
     _remove_path(wrapper_backup)
 
