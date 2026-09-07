@@ -21,6 +21,12 @@ def state_directory() -> Path:
     return root / "zarathushtra" / "plugins" / "zara-discord"
 
 
+def _positive_int(name: str, value: object) -> int:
+    if type(value) is not int or value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
 class ModerationAudit:
     def __init__(
         self,
@@ -31,8 +37,8 @@ class ModerationAudit:
     ) -> None:
         self.directory = directory or state_directory()
         self.path = self.directory / AUDIT_FILENAME
-        self.max_bytes = max(1, int(max_bytes))
-        self.max_files = max(1, int(max_files))
+        self.max_bytes = _positive_int("max_bytes", max_bytes)
+        self.max_files = _positive_int("max_files", max_files)
         self._lock = threading.RLock()
 
     def record(
