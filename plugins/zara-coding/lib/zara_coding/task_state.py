@@ -121,13 +121,38 @@ class TaskStateSession:
     ) -> dict[str, object]:
         bounded_task_id = self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS)
         with self._lock:
+            bounded_repository = None
             if expected_repository is not None or repository_validator is not None:
                 if expected_repository is None or repository_validator is None:
                     raise ValueError("expected_repository and repository_validator must be provided together")
                 bounded_repository = self._bounded_repository(expected_repository)
                 if bounded_repository is None or not repository_validator(bounded_repository):
                     return {"status": "rejected", "reason": "repository-snapshot-stale"}
-            return self._request({"op": "complete", "task_id": bounded_task_id})
+
+            response = self._request({"op": "complete", "task_id": bounded_task_id})
+            if response.get("status") != "ok" or bounded_repository is None or repository_validator is None:
+                return response
+
+            try:
+                repository_current = repository_validator(bounded_repository)
+            except Exception as exc:
+                self._invalidate_completion_or_fence(bounded_task_id)
+                raise CodingError("zara-coding repository validation failed after completion") from exc
+
+            if repository_current:
+                return response
+
+            self._invalidate_completion_or_fence(bounded_task_id)
+            return {"status": "rejected", "reason": "repository-snapshot-stale"}
+
+    def _invalidate_completion_or_fence(self, task_id: str) -> None:
+        response = self._request({"op": "invalidate_completion", "task_id": task_id})
+        if response.get("status") == "ok":
+            return
+        process = self._process
+        if process is not None:
+            self._fail_protocol(process, "zara-coding task-state could not invalidate stale completion")
+        raise CodingError("zara-coding task-state could not invalidate stale completion")
 
     def _request(self, command: dict[str, object]) -> dict[str, object]:
         with self._lock:
