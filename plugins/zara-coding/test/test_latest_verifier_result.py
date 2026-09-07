@@ -15,13 +15,26 @@ from zara_coding.task_state import TaskStateSession
 class LatestVerifierResultTest(unittest.TestCase):
     def setUp(self) -> None:
         driver = ROOT / "prolog" / "zara_coding_task_state.pl"
-        self.session = TaskStateSession(driver)
+        self.verifier_capability = object()
+        self.session = TaskStateSession(driver, verifier_capability=self.verifier_capability)
         self.addCleanup(self.session.stop)
 
     def test_later_failure_revokes_earlier_pass_for_same_verifier(self) -> None:
         self.session.create_task("task-regressed", goal="do not complete after regression", completion_criteria=["test"])
-        self.session.record_evidence("task-regressed", kind="test", status="passed", detail="suite passed")
-        self.session.record_evidence("task-regressed", kind="test", status="failed", detail="suite regressed")
+        self.session.record_verifier_evidence(
+            "task-regressed",
+            kind="test",
+            status="passed",
+            detail="suite passed",
+            capability=self.verifier_capability,
+        )
+        self.session.record_verifier_evidence(
+            "task-regressed",
+            kind="test",
+            status="failed",
+            detail="suite regressed",
+            capability=self.verifier_capability,
+        )
         rejected = self.session.complete_task("task-regressed")
         fetched = self.session.get_task("task-regressed")
         self.assertEqual(rejected, {"status": "rejected", "reason": "passing-verification-required"})
@@ -30,8 +43,20 @@ class LatestVerifierResultTest(unittest.TestCase):
 
     def test_current_failure_in_another_verifier_blocks_completion(self) -> None:
         self.session.create_task("task-mixed-verifiers", goal="require all current verifier results to pass", completion_criteria=["test", "build"])
-        self.session.record_evidence("task-mixed-verifiers", kind="test", status="passed", detail="suite passed")
-        self.session.record_evidence("task-mixed-verifiers", kind="build", status="failed", detail="build failed")
+        self.session.record_verifier_evidence(
+            "task-mixed-verifiers",
+            kind="test",
+            status="passed",
+            detail="suite passed",
+            capability=self.verifier_capability,
+        )
+        self.session.record_verifier_evidence(
+            "task-mixed-verifiers",
+            kind="build",
+            status="failed",
+            detail="build failed",
+            capability=self.verifier_capability,
+        )
         rejected = self.session.complete_task("task-mixed-verifiers")
         fetched = self.session.get_task("task-mixed-verifiers")
         self.assertEqual(rejected, {"status": "rejected", "reason": "passing-verification-required"})
