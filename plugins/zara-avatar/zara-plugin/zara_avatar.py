@@ -2687,11 +2687,12 @@ class ZaraAvatarPlugin(ServicePlugin):
         if bind_address != "127.0.0.1":
             raise ValueError("bind_address must be 127.0.0.1")
         self._port = _integer_setting(configuration, "port", DEFAULT_AVATAR_PORT, 0, 65535)
-        self._avatar_directory = str(
-            configuration.get("avatar_directory", DEFAULT_AVATAR_DIRECTORY)
+        avatar_directory = configuration.get(
+            "avatar_directory", DEFAULT_AVATAR_DIRECTORY
         )
-        if not self._avatar_directory.strip():
-            raise ValueError("avatar_directory must be a non-empty path")
+        if not isinstance(avatar_directory, str) or not avatar_directory.strip():
+            raise ValueError("avatar_directory must be a non-empty path string")
+        self._avatar_directory = avatar_directory
         self._request_size_limit = _integer_setting(
             configuration,
             "request_size_limit",
