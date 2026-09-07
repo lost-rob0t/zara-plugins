@@ -21,6 +21,14 @@ def _bounded_text(value: str, *, name: str, limit: int) -> str:
     return value
 
 
+def _bounded_integer(value: int, *, name: str, minimum: int, maximum: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise BrowserError(f"{name} must be an integer")
+    if not minimum <= value <= maximum:
+        raise BrowserError(f"{name} is out of range")
+    return value
+
+
 def _url(value: str) -> str:
     value = _bounded_text(value, name="URL", limit=2048)
     parsed = urlsplit(value)
@@ -189,19 +197,31 @@ class BrowserSession:
         max_input_bytes: int = 8192,
         max_screenshot_bytes: int = 2 * 1024 * 1024,
     ) -> None:
-        if not 64 <= max_text_bytes <= 1024 * 1024:
-            raise BrowserError("max_text_bytes is out of range")
-        if not 1 <= max_tabs <= 64:
-            raise BrowserError("max_tabs is out of range")
-        if not 1 <= max_input_bytes <= 65536:
-            raise BrowserError("max_input_bytes is out of range")
-        if not 1024 <= max_screenshot_bytes <= 8 * 1024 * 1024:
-            raise BrowserError("max_screenshot_bytes is out of range")
         self.backend = backend
-        self.max_text_bytes = max_text_bytes
-        self.max_tabs = max_tabs
-        self.max_input_bytes = max_input_bytes
-        self.max_screenshot_bytes = max_screenshot_bytes
+        self.max_text_bytes = _bounded_integer(
+            max_text_bytes,
+            name="max_text_bytes",
+            minimum=64,
+            maximum=1024 * 1024,
+        )
+        self.max_tabs = _bounded_integer(
+            max_tabs,
+            name="max_tabs",
+            minimum=1,
+            maximum=64,
+        )
+        self.max_input_bytes = _bounded_integer(
+            max_input_bytes,
+            name="max_input_bytes",
+            minimum=1,
+            maximum=65536,
+        )
+        self.max_screenshot_bytes = _bounded_integer(
+            max_screenshot_bytes,
+            name="max_screenshot_bytes",
+            minimum=1024,
+            maximum=8 * 1024 * 1024,
+        )
 
     def _require_backend(self) -> None:
         if isinstance(self.backend, UnavailableBrowserBackend):
