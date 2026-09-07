@@ -204,7 +204,18 @@ class CalendarDomain:
         evidence = self.backend.create_event(event)
         accepted = isinstance(evidence, dict) and evidence.get("accepted") is True
         observed = self.get(evidence.get("event_id")) if accepted and evidence.get("event_id") else None
-        verified = accepted and observed is not None and observed["version"] == evidence.get("version")
+        observed_state = None
+        if observed is not None:
+            observed_state = dict(observed)
+            observed_state.pop("event_id")
+            observed_state.pop("version")
+        verified = (
+            accepted
+            and observed is not None
+            and observed["event_id"] == evidence.get("event_id")
+            and observed["version"] == evidence.get("version")
+            and observed_state == event
+        )
         return {"status": "verified" if verified else "verification_failed", "accepted": accepted, "verified": verified, "event": observed, "evidence": evidence}
 
     def update(self, event_id, expected_version, patch):
@@ -220,11 +231,22 @@ class CalendarDomain:
             raise CalendarError("event does not exist")
         merged = dict(current)
         merged.update(patch)
-        self._event(merged)
+        expected = self._event(merged)
         evidence = self.backend.update_event(event_id, expected_version, patch)
         accepted = isinstance(evidence, dict) and evidence.get("accepted") is True
         observed = self.get(event_id) if accepted else current
-        verified = accepted and observed is not None and observed["version"] == evidence.get("version")
+        expected_state = dict(expected)
+        expected_state.pop("version")
+        observed_state = None
+        if observed is not None:
+            observed_state = dict(observed)
+            observed_state.pop("version")
+        verified = (
+            accepted
+            and observed is not None
+            and observed["version"] == evidence.get("version")
+            and observed_state == expected_state
+        )
         return {"status": "verified" if verified else "verification_failed", "accepted": accepted, "verified": verified, "event": observed, "evidence": evidence}
 
     def delete(self, event_id, expected_version):
