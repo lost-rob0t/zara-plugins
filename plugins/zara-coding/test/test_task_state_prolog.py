@@ -31,6 +31,32 @@ class PrologTaskStateIntegrationTest(unittest.TestCase):
         self.assertEqual(fetched["task"]["state"], "completed")
         self.assertEqual(len(fetched["task"]["evidence"]), 1)
 
+    def test_external_repository_change_invalidates_completed_transition(self) -> None:
+        repository = {"root": "/tmp/repo", "head": "h1", "branch": "main"}
+        observations = iter((True, False))
+        self.session.create_task(
+            "task-external-race",
+            goal="reject stale completion",
+            repository=repository,
+            completion_criteria=["test"],
+        )
+        self.session.record_evidence(
+            "task-external-race",
+            kind="test",
+            status="passed",
+            detail="verified at h1",
+        )
+
+        rejected = self.session.complete_task(
+            "task-external-race",
+            expected_repository=repository,
+            repository_validator=lambda expected: next(observations),
+        )
+        fetched = self.session.get_task("task-external-race")
+
+        self.assertEqual(rejected, {"status": "rejected", "reason": "repository-snapshot-stale"})
+        self.assertEqual(fetched["task"]["state"], "open")
+
     def test_task_completion_requires_all_dependencies_completed(self) -> None:
         self.session.create_task("dependency", goal="complete prerequisite", completion_criteria=["test"])
         self.session.create_task("dependent", goal="wait for prerequisite", dependencies=["dependency"], completion_criteria=["test"])
