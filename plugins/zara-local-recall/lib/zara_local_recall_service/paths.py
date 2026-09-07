@@ -74,16 +74,24 @@ class PluginSettings:
             enabled=enabled if isinstance(enabled, bool) else True,
             visual_selector=selector if selector in {"current", "recent"} else "recent",
             visual_maximum_records=(
-                maximum_records if isinstance(maximum_records, int) and 1 <= maximum_records <= 8 else 3
+                maximum_records
+                if isinstance(maximum_records, int)
+                and not isinstance(maximum_records, bool)
+                and 1 <= maximum_records <= 8
+                else 3
             ),
             visual_timeout_seconds=(
                 visual_timeout
-                if isinstance(visual_timeout, (int, float)) and 0 < float(visual_timeout) <= 30
+                if not isinstance(visual_timeout, bool)
+                and isinstance(visual_timeout, (int, float))
+                and 0 < float(visual_timeout) <= 30
                 else DEFAULT_VISUAL_TIMEOUT_SECONDS
             ),
             cli_timeout_seconds=(
                 cli_timeout
-                if isinstance(cli_timeout, (int, float)) and 0 < float(cli_timeout) <= 60
+                if not isinstance(cli_timeout, bool)
+                and isinstance(cli_timeout, (int, float))
+                and 0 < float(cli_timeout) <= 60
                 else DEFAULT_CLI_TIMEOUT_SECONDS
             ),
         )
