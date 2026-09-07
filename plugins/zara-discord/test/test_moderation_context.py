@@ -1,3 +1,4 @@
+import math
 import unittest
 
 from discord_test_support import LIB_ROOT
@@ -82,6 +83,16 @@ class ModerationContextStoreTests(unittest.TestCase):
             ModerationContextStore(ttl_seconds=0)
         with self.assertRaisesRegex(ValueError, "max_contexts"):
             ModerationContextStore(max_contexts=0)
+
+    def test_policy_bounds_reject_coercion_and_non_finite_values(self):
+        for value in (True, False, "1", None, math.nan, math.inf, -math.inf):
+            with self.subTest(ttl_seconds=value):
+                with self.assertRaises(ValueError):
+                    ModerationContextStore(ttl_seconds=value)
+        for value in (True, False, 1.5, "2", None):
+            with self.subTest(max_contexts=value):
+                with self.assertRaises(ValueError):
+                    ModerationContextStore(max_contexts=value)
 
     def test_invalid_token_source_fails_closed(self):
         store = ModerationContextStore(token_factory=lambda _size: "short")
