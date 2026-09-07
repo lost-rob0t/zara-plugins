@@ -29,6 +29,7 @@ class FreeBusyEvidenceTest(unittest.TestCase):
             {"calendar_id": "work", "start": "2026-09-07T02:00:00+00:00", "end": "2026-09-07T01:00:00+00:00"},
             {"calendar_id": "other", "start": "2026-09-07T01:00:00+00:00", "end": "2026-09-07T02:00:00+00:00"},
             {"calendar_id": "work", "start": "2026-09-07T01:00:00+00:00", "end": "2026-09-07T02:00:00+00:00", "event_id": 7},
+            {"calendar_id": "work", "start": "2026-09-07T01:00:00+00:00", "end": "2026-09-07T02:00:00+00:00", "provider_private": "opaque"},
         )
         for value in malformed:
             with self.subTest(value=value):
@@ -47,12 +48,12 @@ class FreeBusyEvidenceTest(unittest.TestCase):
             "end": "2026-09-07T02:00:00+00:00",
             "event_id": "evt-1",
         }
-        result = self.calendar([interval]).free_busy(
+        result = self.calendar([interval] * 12).free_busy(
             "2026-09-07T00:00:00+00:00",
             "2026-09-07T03:00:00+00:00",
             ["work"],
         )
-        self.assertEqual(result, [interval])
+        self.assertEqual(result, [interval] * 8)
 
 
 if __name__ == "__main__":
