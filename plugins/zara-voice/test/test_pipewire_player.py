@@ -1,4 +1,5 @@
 import sys
+import threading
 import unittest
 from pathlib import Path
 
@@ -25,9 +26,27 @@ class FakeStdin:
         self.closed = True
 
 
+class BlockingStdin(FakeStdin):
+    def __init__(self):
+        super().__init__()
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def write(self, data):
+        self.started.set()
+        self.release.wait(timeout=5.0)
+        if self.closed:
+            raise ValueError("closed")
+        return super().write(data)
+
+    def close(self):
+        self.closed = True
+        self.release.set()
+
+
 class FakeProcess:
-    def __init__(self, *, returncode=None, wait_timeout=False):
-        self.stdin = FakeStdin()
+    def __init__(self, *, returncode=None, wait_timeout=False, stdin=None):
+        self.stdin = stdin or FakeStdin()
         self.returncode = returncode
         self.wait_timeout = wait_timeout
         self.terminated = False
@@ -113,6 +132,19 @@ class PipeWirePlayerTests(unittest.TestCase):
 
         self.assertEqual(calls, [])
 
+    def test_id_allocation_failure_happens_before_process_spawn(self):
+        calls = []
+        player = PipeWirePlayer(
+            locator=lambda name: "/usr/bin/pw-play",
+            process_factory=lambda *args, **kwargs: calls.append((args, kwargs)),
+            id_factory=lambda: "",
+        )
+
+        with self.assertRaisesRegex(VoiceError, "unique playback id"):
+            player.play(self.artifact())
+
+        self.assertEqual(calls, [])
+
     def test_cancel_unknown_or_finished_id_is_rejected_as_stale(self):
         process = FakeProcess(returncode=0)
         player = PipeWirePlayer(
@@ -144,6 +176,22 @@ class PipeWirePlayerTests(unittest.TestCase):
         self.assertEqual(process.wait_calls, [0.25, 0.1])
         with self.assertRaisesRegex(VoiceError, "stale|unknown"):
             player.cancel("opaque-3")
+
+    def test_cancel_closes_input_and_joins_blocked_writer_before_success(self):
+        stdin = BlockingStdin()
+        process = FakeProcess(stdin=stdin)
+        player = PipeWirePlayer(
+            locator=lambda name: "/usr/bin/pw-play",
+            process_factory=lambda *args, **kwargs: process,
+            id_factory=lambda: "opaque-blocked",
+            writer_timeout=0.25,
+        )
+        player.play(self.artifact())
+        self.assertTrue(stdin.started.wait(timeout=0.5))
+
+        self.assertTrue(player.cancel("opaque-blocked"))
+        self.assertTrue(stdin.closed)
+        self.assertFalse(any(thread.name.startswith("zara-voice-pw-play-opaque-b") for thread in threading.enumerate()))
 
     def test_active_playback_count_is_bounded(self):
         spawned = []
