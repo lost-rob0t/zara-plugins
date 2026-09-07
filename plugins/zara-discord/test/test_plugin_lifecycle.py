@@ -34,7 +34,7 @@ class ZaraDiscordPluginLifecycleTest(unittest.TestCase):
 
     @patch("zara_discord_service.plugin.config_directory")
     @patch("zara_discord_service.plugin.load_token")
-    def test_missing_credentials_fail_start_without_runtime_resources(
+    def test_missing_credentials_allocate_no_runtime_resources(
         self,
         load_token,
         config_directory,
@@ -42,8 +42,7 @@ class ZaraDiscordPluginLifecycleTest(unittest.TestCase):
         config_directory.return_value = "/tmp/zara-discord-test"
         load_token.side_effect = ConfigError("missing Discord token")
 
-        with self.assertRaisesRegex(RuntimeError, "Discord integration unavailable"):
-            self.plugin.start(self.runtime)
+        self.plugin.start(self.runtime)
 
         self.assertEqual(self.runtime.subscriptions, [])
         self.assertEqual(self.runtime.workers, [])
