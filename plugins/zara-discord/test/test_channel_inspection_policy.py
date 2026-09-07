@@ -18,6 +18,37 @@ class ChannelInspectionPolicyTests(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
+    def test_policy_flags_require_exact_booleans(self):
+        for value in (1, "false", None):
+            with self.subTest(scope="guild-random", value=value):
+                with self.assertRaises(ValueError):
+                    self.store.set_random_mode(10, value)
+            with self.subTest(scope="guild-moderation", value=value):
+                with self.assertRaises(ValueError):
+                    self.store.set_moderation_enabled(10, value)
+            with self.subTest(scope="channel-enabled", value=value):
+                with self.assertRaises(ValueError):
+                    self.store.set_channel_inspection_policy(
+                        10,
+                        30,
+                        enabled=value,
+                        chance=0.5,
+                        trigger_prompt="",
+                        response_style_prompt="",
+                        moderation_enabled=False,
+                    )
+            with self.subTest(scope="channel-moderation", value=value):
+                with self.assertRaises(ValueError):
+                    self.store.set_channel_inspection_policy(
+                        10,
+                        30,
+                        enabled=True,
+                        chance=0.5,
+                        trigger_prompt="",
+                        response_style_prompt="",
+                        moderation_enabled=value,
+                    )
+
     def test_chance_requires_a_typed_finite_number(self):
         for chance in (True, "0.5", None, float("nan"), float("inf")):
             with self.subTest(scope="guild", chance=chance):

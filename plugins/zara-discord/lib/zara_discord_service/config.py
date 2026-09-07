@@ -153,7 +153,8 @@ class PolicyStore:
         self._update(guild_id, lambda policy: replace(policy, access_mode=mode))
 
     def set_random_mode(self, guild_id: int, enabled: bool) -> None:
-        self._update(guild_id, lambda policy: replace(policy, random_mode=bool(enabled)))
+        enabled = self._validated_bool(enabled, name="random_mode")
+        self._update(guild_id, lambda policy: replace(policy, random_mode=enabled))
 
     def set_random_reply_chance(self, guild_id: int, chance: float) -> None:
         chance = self._validated_chance(chance)
@@ -175,9 +176,10 @@ class PolicyStore:
         )
 
     def set_moderation_enabled(self, guild_id: int, enabled: bool) -> None:
+        enabled = self._validated_bool(enabled, name="moderation_enabled")
         self._update(
             guild_id,
-            lambda policy: replace(policy, moderation_enabled=bool(enabled)),
+            lambda policy: replace(policy, moderation_enabled=enabled),
         )
 
     def set_channel_inspection_policy(
@@ -194,11 +196,14 @@ class PolicyStore:
         guild_key = int(guild_id)
         channel_key = int(channel_id)
         policy = ChannelInspectionPolicy(
-            enabled=bool(enabled),
+            enabled=self._validated_bool(enabled, name="channel enabled"),
             chance=self._validated_chance(chance),
             trigger_prompt=str(trigger_prompt),
             response_style_prompt=str(response_style_prompt),
-            moderation_enabled=bool(moderation_enabled),
+            moderation_enabled=self._validated_bool(
+                moderation_enabled,
+                name="channel moderation_enabled",
+            ),
         )
         with self._lock:
             self._channel_policies[(guild_key, channel_key)] = policy
@@ -221,6 +226,12 @@ class PolicyStore:
 
     def clear_allowed_channels(self, guild_id: int) -> bool:
         return self._clear_set(guild_id, "allowed_channel_ids")
+
+    @staticmethod
+    def _validated_bool(value: object, *, name: str) -> bool:
+        if not isinstance(value, bool):
+            raise ValueError(f"{name} must be true or false")
+        return value
 
     @staticmethod
     def _validated_chance(chance: float) -> float:
