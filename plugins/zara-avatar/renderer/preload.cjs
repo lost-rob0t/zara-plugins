@@ -10,4 +10,7 @@ contextBridge.exposeInMainWorld("zaraAvatar", {
   onCommand: (handler) => {
     ipcRenderer.on("avatar-command", (_event, document) => handler(document));
   },
+  onRendererActive: (handler) => {
+    ipcRenderer.on("renderer-active", (_event, active) => handler(Boolean(active)));
+  },
 });
