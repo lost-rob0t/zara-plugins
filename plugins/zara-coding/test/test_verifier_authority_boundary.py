@@ -31,10 +31,15 @@ class FakeProcess:
 
 
 class VerifierAuthorityBoundaryTest(unittest.TestCase):
-    def test_generic_session_does_not_store_or_expose_verifier_capability(self) -> None:
-        session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: FakeProcess([]))
+    def test_generic_session_does_not_store_verifier_capability_object(self) -> None:
+        capability = object()
+        session = TaskStateSession(
+            Path("/tmp/driver.pl"),
+            process_factory=lambda *args, **kwargs: FakeProcess([]),
+            verifier_capability=capability,
+        )
         self.assertFalse(hasattr(session, "_verifier_capability"))
-        self.assertFalse(hasattr(session, "record_verifier_evidence"))
+        self.assertNotIn(capability, vars(session).values())
 
     def test_generic_raw_request_rejects_verifier_authority_before_protocol_io(self) -> None:
         process = FakeProcess([])
