@@ -110,10 +110,11 @@ class TaskPluginTest(unittest.TestCase):
             {**expected, "dirty": False, "changed_paths": []},
             moved,
         ]
+        inspected_paths: list[Path] = []
 
         class Inspector:
             def inspect(self, path: Path):
-                self.assertEqual(path, Path(expected["root"]))
+                inspected_paths.append(path)
                 return observations.pop(0)
 
         class Session:
@@ -121,7 +122,8 @@ class TaskPluginTest(unittest.TestCase):
                 return {"status": "ok", "task": {"id": task_id, "repository": expected}}
 
             def complete_task(self, task_id, *, expected_repository, repository_validator):
-                self.assertEqual(expected_repository, expected)
+                if expected_repository != expected:
+                    raise AssertionError("unexpected repository snapshot")
                 if not repository_validator(expected_repository):
                     return {"status": "rejected", "reason": "repository-snapshot-stale"}
                 return {"status": "ok", "task": {"id": task_id, "state": "completed"}}
@@ -129,6 +131,7 @@ class TaskPluginTest(unittest.TestCase):
         plugin = TaskStateCodingPlugin(); plugin.inspector = Inspector(); plugin.task_state = Session()
         result = json.loads(plugin.task_complete("task-1"))
         self.assertEqual(result, {"status": "rejected", "reason": "repository-snapshot-stale"})
+        self.assertEqual(inspected_paths, [Path(expected["root"]), Path(expected["root"])])
         self.assertEqual(observations, [])
 
     def test_missing_prolog_configuration_degrades_without_breaking_startup(self) -> None:
