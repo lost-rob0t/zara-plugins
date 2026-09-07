@@ -75,6 +75,29 @@ class TaskPluginTest(unittest.TestCase):
         self.assertEqual(calls, [Path("/projects/demo/src/module.py")])
         self.assertEqual(result["task"]["repository"], {"root": "/projects/demo", "head": "a" * 40, "branch": "main"})
 
+    def test_task_completion_rejects_repository_moved_since_snapshot(self) -> None:
+        expected = {"root": "/projects/demo", "head": "a" * 40, "branch": "main"}
+        observed = {"root": "/projects/demo", "head": "b" * 40, "branch": "main", "dirty": False, "changed_paths": []}
+
+        class Inspector:
+            def inspect(self, path: Path):
+                self.assertEqual(path, Path(expected["root"]))
+                return observed
+
+        class Session:
+            def get_task(self, task_id):
+                return {"status": "ok", "task": {"id": task_id, "repository": expected}}
+
+            def complete_task(self, task_id):
+                self.fail("stale verifier evidence reached completion")
+
+        plugin = TaskStateCodingPlugin(); plugin.inspector = Inspector(); plugin.task_state = Session()
+        result = json.loads(plugin.task_complete("task-1"))
+        self.assertEqual(result["status"], "rejected")
+        self.assertEqual(result["reason"], "repository-snapshot-stale")
+        self.assertEqual(result["expected_repository"], expected)
+        self.assertEqual(result["observed_repository"], {"root": "/projects/demo", "head": "b" * 40, "branch": "main"})
+
     def test_missing_prolog_configuration_degrades_without_breaking_startup(self) -> None:
         plugin = TaskStateCodingPlugin(); plugin.start(Runtime({"plugins": {"zara-coding": {}}}))
         status = json.loads(plugin.status())
