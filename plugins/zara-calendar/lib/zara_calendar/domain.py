@@ -97,8 +97,11 @@ class CalendarDomain:
         if not isinstance(interval, dict):
             raise CalendarError("calendar backend returned invalid free/busy interval")
         required = {"calendar_id", "start", "end"}
+        allowed = required | {"event_id"}
         if not required.issubset(interval):
             raise CalendarError("free/busy interval is missing required fields")
+        if set(interval) - allowed:
+            raise CalendarError("free/busy interval has unexpected fields")
         calendar_id = cls._text(interval["calendar_id"], "calendar id", 256)
         if calendar_id not in requested_calendar_ids:
             raise CalendarError("free/busy interval belongs to an unrequested calendar")
