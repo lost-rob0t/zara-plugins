@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import socket
 from urllib.error import HTTPError, URLError
 from urllib.parse import unquote, urljoin, urlsplit
@@ -13,7 +14,9 @@ class HomeAssistantHTTPError(RuntimeError):
 
 class HomeAssistantHTTPTransport:
     _MAX_RESPONSE = 1024 * 1024
+    _MAX_TOKEN_BYTES = 8192
     _METHODS = frozenset({"GET", "POST"})
+    _BEARER_TOKEN = re.compile(r"[A-Za-z0-9\-._~+/]+={0,}\Z")
 
     def __init__(self, base_url: str, access_token: str, *, refresh_token=None, timeout: float = 10.0) -> None:
         parsed = urlsplit(base_url)
@@ -23,7 +26,7 @@ class HomeAssistantHTTPTransport:
             raise HomeAssistantHTTPError("invalid-base-url")
         if parsed.path not in {"", "/"}:
             raise HomeAssistantHTTPError("invalid-base-url")
-        if not isinstance(access_token, str) or not access_token or len(access_token.encode()) > 8192:
+        if not self._valid_bearer_token(access_token):
             raise HomeAssistantHTTPError("invalid-access-token")
         if timeout <= 0 or timeout > 60:
             raise HomeAssistantHTTPError("invalid-timeout")
@@ -52,7 +55,7 @@ class HomeAssistantHTTPTransport:
             if error.code == 401 and allow_refresh:
                 return self._refresh_and_retry(method, path, payload)
             raise self._http_error(error.code) from None
-        except (URLError, TimeoutError, socket.timeout):
+        except (URLError, TimeoutError, socket.timeout, ConnectionError):
             raise HomeAssistantHTTPError("provider-unavailable") from None
 
         if len(raw) > self._MAX_RESPONSE:
@@ -71,10 +74,18 @@ class HomeAssistantHTTPTransport:
             token = self._refresh_token()
         except Exception:
             raise HomeAssistantHTTPError("reauth-required") from None
-        if not isinstance(token, str) or not token or len(token.encode()) > 8192:
+        if not self._valid_bearer_token(token):
             raise HomeAssistantHTTPError("reauth-required")
         self._access_token = token
         return self._request_once(method, path, payload, allow_refresh=False)
+
+    @classmethod
+    def _valid_bearer_token(cls, token) -> bool:
+        if not isinstance(token, str) or not token:
+            return False
+        if len(token) > cls._MAX_TOKEN_BYTES:
+            return False
+        return cls._BEARER_TOKEN.fullmatch(token) is not None
 
     @staticmethod
     def _validate_path(path: str) -> None:
