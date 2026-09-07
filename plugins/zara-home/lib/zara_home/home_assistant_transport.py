@@ -5,11 +5,16 @@ import re
 import socket
 from urllib.error import HTTPError, URLError
 from urllib.parse import unquote, urljoin, urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 class HomeAssistantHTTPError(RuntimeError):
     pass
+
+
+class _RejectRedirects(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
 class HomeAssistantHTTPTransport:
@@ -34,6 +39,7 @@ class HomeAssistantHTTPTransport:
         self._access_token = access_token
         self._refresh_token = refresh_token
         self.timeout = timeout
+        self._opener = build_opener(_RejectRedirects())
 
     def request(self, method: str, path: str, payload=None):
         if method not in self._METHODS:
@@ -49,7 +55,7 @@ class HomeAssistantHTTPTransport:
         if body is not None:
             request.add_header("Content-Type", "application/json")
         try:
-            with urlopen(request, timeout=self.timeout) as response:
+            with self._opener.open(request, timeout=self.timeout) as response:
                 raw = response.read(self._MAX_RESPONSE + 1)
         except HTTPError as error:
             if error.code == 401 and allow_refresh:
@@ -101,6 +107,8 @@ class HomeAssistantHTTPTransport:
 
     @staticmethod
     def _http_error(status: int) -> HomeAssistantHTTPError:
+        if 300 <= status <= 399:
+            return HomeAssistantHTTPError("redirect-not-allowed")
         if status == 400:
             return HomeAssistantHTTPError("bad-request")
         if status == 401:
