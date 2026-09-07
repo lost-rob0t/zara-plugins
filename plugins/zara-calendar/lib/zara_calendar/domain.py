@@ -179,3 +179,31 @@ class CalendarDomain:
         observed = self.get(evidence.get("event_id")) if accepted and evidence.get("event_id") else None
         verified = accepted and observed is not None and observed["version"] == evidence.get("version")
         return {"status": "verified" if verified else "verification_failed", "accepted": accepted, "verified": verified, "event": observed, "evidence": evidence}
+
+    def update(self, event_id, expected_version, patch):
+        event_id = self._text(event_id, "event id", 256)
+        expected_version = self._text(expected_version, "expected_version", 256)
+        if not isinstance(patch, dict) or not patch:
+            raise CalendarError("patch must be a non-empty object")
+        allowed = {"title", "start", "end", "timezone", "attendees", "recurrence", "reminders"}
+        if set(patch) - allowed:
+            raise CalendarError("patch contains unsupported fields")
+        current = self.get(event_id)
+        if current is None:
+            raise CalendarError("event does not exist")
+        merged = dict(current)
+        merged.update(patch)
+        self._event(merged)
+        evidence = self.backend.update_event(event_id, expected_version, patch)
+        accepted = isinstance(evidence, dict) and evidence.get("accepted") is True
+        observed = self.get(event_id) if accepted else current
+        verified = accepted and observed is not None and observed["version"] == evidence.get("version")
+        return {"status": "verified" if verified else "verification_failed", "accepted": accepted, "verified": verified, "event": observed, "evidence": evidence}
+
+    def delete(self, event_id, expected_version):
+        event_id = self._text(event_id, "event id", 256)
+        expected_version = self._text(expected_version, "expected_version", 256)
+        evidence = self.backend.delete_event(event_id, expected_version)
+        accepted = isinstance(evidence, dict) and evidence.get("accepted") is True
+        verified = accepted and self.backend.get_event(event_id) is None
+        return {"status": "verified" if verified else "verification_failed", "accepted": accepted, "verified": verified, "event_id": event_id, "evidence": evidence}
