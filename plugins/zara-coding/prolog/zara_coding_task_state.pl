@@ -116,6 +116,19 @@ dispatch_op("complete", Command, Response) :-
     ; Response = _{status:"rejected", reason:"task-not-found"}
     ).
 
+dispatch_op("invalidate_completion", Command, Response) :-
+    get_dict(task_id, Command, Id),
+    ( task_state(Id, Task) ->
+        ( task_completed(Task) ->
+            put_dict(state, Task, "open", Open),
+            retractall(task_state(Id, _)),
+            assertz(task_state(Id, Open)),
+            Response = _{status:"ok", task:Open}
+        ; Response = _{status:"rejected", reason:"task-not-completed"}
+        )
+    ; Response = _{status:"rejected", reason:"task-not-found"}
+    ).
+
 completion_response(Id, Task, Response) :-
     ( dependencies_completed(Task) ->
         completion_evidence_response(Id, Task, Response)
