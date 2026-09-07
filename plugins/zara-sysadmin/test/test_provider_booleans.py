@@ -26,6 +26,11 @@ class MalformedBooleanBackend:
         return {"accepted": "false"}
 
 
+class AcceptedMalformedObservedBackend(MalformedBooleanBackend):
+    def service_action(self, unit, action):
+        return {"accepted": True}
+
+
 class SysadminProviderBooleanTest(unittest.TestCase):
     def setUp(self):
         self.expert = SysadminExpert(MalformedBooleanBackend())
@@ -39,6 +44,15 @@ class SysadminProviderBooleanTest(unittest.TestCase):
         self.assertFalse(result["accepted"])
         self.assertFalse(result["verified"])
         self.assertEqual(result["status"], "verification_failed")
+
+    def test_service_action_requires_exact_boolean_observed_state(self):
+        expert = SysadminExpert(AcceptedMalformedObservedBackend())
+        for action in ("start", "stop"):
+            with self.subTest(action=action):
+                result = expert.service_action("demo.service", action)
+                self.assertTrue(result["accepted"])
+                self.assertFalse(result["verified"])
+                self.assertEqual(result["status"], "verification_failed")
 
     def test_nix_operation_rejects_truthy_non_boolean_acceptance(self):
         result = self.expert.nix_operation("check", ".#demo")
