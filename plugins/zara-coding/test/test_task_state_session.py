@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
 from zara_coding.domain import CodingError
-from zara_coding.task_state import TaskStateSession
+from zara_coding.task_state import TaskStateSession, create_task_state_interfaces
 
 
 class FakeProcess:
@@ -59,25 +59,17 @@ class TaskStateSessionTest(unittest.TestCase):
         self.assertEqual(commands[0]["op"], "create"); self.assertEqual(commands[1], {"op": "get", "task_id": "task-1"})
 
     def test_completion_fails_closed_until_verification_evidence_exists(self) -> None:
-        verifier_capability = object()
         process = FakeProcess([
             {"status": "rejected", "reason": "verification-evidence-required"},
             {"status": "ok", "evidence": {"kind": "test", "status": "passed", "provenance": "verifier"}},
             {"status": "ok", "task": {"id": "task-1", "state": "completed"}},
         ])
-        session = TaskStateSession(
+        session, verifier = create_task_state_interfaces(
             Path("/tmp/driver.pl"),
             process_factory=lambda *args, **kwargs: process,
-            verifier_capability=verifier_capability,
         )
         rejected = session.complete_task("task-1")
-        evidence = session.record_verifier_evidence(
-            "task-1",
-            kind="test",
-            status="passed",
-            detail="unit suite",
-            capability=verifier_capability,
-        )
+        evidence = verifier.record_evidence("task-1", kind="test", status="passed", detail="unit suite")
         completed = session.complete_task("task-1")
         commands = [json.loads(line) for line in process.stdin.getvalue().splitlines()]
         self.assertEqual(rejected, {"status": "rejected", "reason": "verification-evidence-required"})
@@ -91,24 +83,6 @@ class TaskStateSessionTest(unittest.TestCase):
         session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
         with self.assertRaisesRegex(ValueError, "passing task evidence is verifier-owned"):
             session.record_evidence("task-1", kind="test", status="passed", detail="model says green")
-        self.assertEqual(process.stdin.getvalue(), "")
-
-    def test_verifier_evidence_requires_matching_capability(self) -> None:
-        verifier_capability = object()
-        process = FakeProcess([])
-        session = TaskStateSession(
-            Path("/tmp/driver.pl"),
-            process_factory=lambda *args, **kwargs: process,
-            verifier_capability=verifier_capability,
-        )
-        with self.assertRaisesRegex(PermissionError, "verifier capability required"):
-            session.record_verifier_evidence(
-                "task-1",
-                kind="test",
-                status="passed",
-                detail="forged",
-                capability=object(),
-            )
         self.assertEqual(process.stdin.getvalue(), "")
 
     def test_generic_evidence_is_caller_owned_by_construction(self) -> None:
@@ -131,22 +105,14 @@ class TaskStateSessionTest(unittest.TestCase):
         ])
         process.stdin = MutatingStdin(lambda: state.__setitem__("matches", False))
         session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
-
         result = session.complete_task(
             "task-race",
             expected_repository=repository,
             repository_validator=lambda expected: state["matches"],
         )
-
         commands = [json.loads(line) for line in process.stdin.getvalue().splitlines()]
         self.assertEqual(result, {"status": "rejected", "reason": "repository-snapshot-stale"})
-        self.assertEqual(
-            commands,
-            [
-                {"op": "complete", "task_id": "task-race"},
-                {"op": "invalidate_completion", "task_id": "task-race"},
-            ],
-        )
+        self.assertEqual(commands, [{"op": "complete", "task_id": "task-race"}, {"op": "invalidate_completion", "task_id": "task-race"}])
 
     def test_evidence_status_rejects_unsupported_values_before_writing(self) -> None:
         process = FakeProcess([]); session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
