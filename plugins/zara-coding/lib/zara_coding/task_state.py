@@ -31,11 +31,18 @@ class TaskStateSession:
     MAX_RESPONSE_CHARS = 131072
     MAX_RESPONSE_TIMEOUT_SECONDS = 60.0
     EVIDENCE_STATUSES = frozenset({"failed", "passed"})
-    EVIDENCE_PROVENANCE = frozenset({"caller", "verifier"})
     RESPONSE_STATUSES = frozenset({"ok", "rejected"})
 
-    def __init__(self, driver: Path, *, executable: str = "swipl", process_factory: ProcessFactory | None = None,
-                 response_timeout_seconds: float = 5.0, readiness_waiter: ReadinessWaiter | None = None) -> None:
+    def __init__(
+        self,
+        driver: Path,
+        *,
+        executable: str = "swipl",
+        process_factory: ProcessFactory | None = None,
+        response_timeout_seconds: float = 5.0,
+        readiness_waiter: ReadinessWaiter | None = None,
+        verifier_capability: object | None = None,
+    ) -> None:
         if not isinstance(executable, str) or not executable.strip() or any(c in executable for c in ("\x00", "\n", "\r")):
             raise ValueError("executable must be non-empty single-line text without NUL")
         if isinstance(response_timeout_seconds, bool) or not isinstance(response_timeout_seconds, (int, float)) or not 0 < response_timeout_seconds <= self.MAX_RESPONSE_TIMEOUT_SECONDS:
@@ -45,6 +52,7 @@ class TaskStateSession:
         self.response_timeout_seconds = float(response_timeout_seconds)
         self._process_factory = process_factory or subprocess.Popen
         self._readiness_waiter = readiness_waiter or _default_readiness_waiter
+        self._verifier_capability = verifier_capability
         self._process: subprocess.Popen[str] | None = None
         self._lock = threading.RLock()
 
@@ -95,21 +103,53 @@ class TaskStateSession:
     def get_task(self, task_id: str) -> dict[str, object]:
         return self._request({"op": "get", "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS)})
 
-    def record_evidence(self, task_id: str, *, kind: str, status: str, detail: str,
-                        provenance: str = "verifier") -> dict[str, object]:
-        evidence_status = self._bounded_string(status, "status", self.MAX_ITEM_CHARS)
-        if evidence_status not in self.EVIDENCE_STATUSES:
-            raise ValueError(f"status must be one of: {', '.join(sorted(self.EVIDENCE_STATUSES))}")
-        evidence_provenance = self._bounded_string(provenance, "provenance", self.MAX_ITEM_CHARS)
-        if evidence_provenance not in self.EVIDENCE_PROVENANCE:
-            raise ValueError(f"provenance must be one of: {', '.join(sorted(self.EVIDENCE_PROVENANCE))}")
+    def record_evidence(self, task_id: str, *, kind: str, status: str, detail: str) -> dict[str, object]:
+        evidence_status = self._bounded_evidence_status(status)
+        if evidence_status == "passed":
+            raise ValueError("passing task evidence is verifier-owned")
+        return self._record_evidence(
+            task_id,
+            kind=kind,
+            status=evidence_status,
+            detail=detail,
+            provenance="caller",
+        )
+
+    def record_verifier_evidence(
+        self,
+        task_id: str,
+        *,
+        kind: str,
+        status: str,
+        detail: str,
+        capability: object,
+    ) -> dict[str, object]:
+        if self._verifier_capability is None or capability is not self._verifier_capability:
+            raise PermissionError("verifier capability required")
+        return self._record_evidence(
+            task_id,
+            kind=kind,
+            status=self._bounded_evidence_status(status),
+            detail=detail,
+            provenance="verifier",
+        )
+
+    def _record_evidence(
+        self,
+        task_id: str,
+        *,
+        kind: str,
+        status: str,
+        detail: str,
+        provenance: str,
+    ) -> dict[str, object]:
         return self._request({
             "op": "record_evidence",
             "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS),
             "kind": self._bounded_string(kind, "kind", self.MAX_ITEM_CHARS),
-            "status": evidence_status,
+            "status": status,
             "detail": self._bounded_string(detail, "detail", self.MAX_DETAIL_CHARS),
-            "provenance": evidence_provenance,
+            "provenance": provenance,
         })
 
     def complete_task(
@@ -220,6 +260,13 @@ class TaskStateSession:
             "head": cls._bounded_string(repository["head"], "repository.head", cls.MAX_ID_CHARS),
             "branch": cls._bounded_string(repository["branch"], "repository.branch", cls.MAX_ITEM_CHARS),
         }
+
+    @classmethod
+    def _bounded_evidence_status(cls, status: str) -> str:
+        evidence_status = cls._bounded_string(status, "status", cls.MAX_ITEM_CHARS)
+        if evidence_status not in cls.EVIDENCE_STATUSES:
+            raise ValueError(f"status must be one of: {', '.join(sorted(cls.EVIDENCE_STATUSES))}")
+        return evidence_status
 
     @classmethod
     def _bounded_string(cls, value: str, name: str, maximum: int) -> str:
