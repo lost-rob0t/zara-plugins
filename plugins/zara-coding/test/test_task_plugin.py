@@ -79,7 +79,17 @@ class TaskPluginTest(unittest.TestCase):
         self.assertEqual(result, {"status": "ok"})
         self.assertEqual(
             calls,
-            [("task-1", {"kind": "tests", "status": "failed", "detail": "1 failed"})],
+            [
+                (
+                    "task-1",
+                    {
+                        "kind": "tests",
+                        "status": "failed",
+                        "detail": "1 failed",
+                        "provenance": "caller",
+                    },
+                )
+            ],
         )
 
     def test_task_creation_binds_fresh_repository_identity(self) -> None:
