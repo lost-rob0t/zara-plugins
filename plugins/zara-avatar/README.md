@@ -56,6 +56,11 @@ avatar_directory = "~/.local/share/zara/avatars"
 # renderer_command = ["/path/to/electron", "/path/to/main.mjs"]
 ```
 
+Renderer process policy fails closed: command argv must be a non-empty sequence
+of non-empty strings, and renderer startup/request/shutdown timeouts must be
+finite positive numbers. Per-request timeout overrides are validated before
+any renderer process or pipe is touched.
+
 ## Control surface
 
 The plugin serves `http://127.0.0.1:7321` only. Use the bundled CLI or plain

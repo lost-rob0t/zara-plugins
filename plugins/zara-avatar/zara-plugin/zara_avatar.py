@@ -763,6 +763,15 @@ class RendererRequestError(Exception):
     """A renderer request failed, timed out, or was answered with an error."""
 
 
+def _positive_finite_timeout(value: object, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be a finite positive number")
+    number = float(value)
+    if not math.isfinite(number) or number <= 0.0:
+        raise ValueError(f"{name} must be a finite positive number")
+    return number
+
+
 class RendererHost:
     """Owns the renderer child process over a newline-delimited JSON stdio.
 
@@ -781,12 +790,24 @@ class RendererHost:
         environment: Optional[Mapping[str, str]] = None,
         allowed_commands: Optional[frozenset] = None,
     ) -> None:
-        if not command or not all(isinstance(part, str) for part in command):
-            raise ValueError("renderer command must be a list of strings")
+        if (
+            not isinstance(command, (list, tuple))
+            or not command
+            or not all(isinstance(part, str) and part for part in command)
+        ):
+            raise ValueError(
+                "renderer command must be a non-empty sequence of non-empty strings"
+            )
         self.command = list(command)
-        self.startup_timeout = startup_timeout
-        self.request_timeout = request_timeout
-        self.shutdown_grace = shutdown_grace
+        self.startup_timeout = _positive_finite_timeout(
+            startup_timeout, "startup_timeout"
+        )
+        self.request_timeout = _positive_finite_timeout(
+            request_timeout, "request_timeout"
+        )
+        self.shutdown_grace = _positive_finite_timeout(
+            shutdown_grace, "shutdown_grace"
+        )
         self.environment = dict(environment) if environment else None
         self.allowed_commands = allowed_commands or RENDERER_COMMANDS
         self.process = None
@@ -885,6 +906,9 @@ class RendererHost:
         *,
         timeout: Optional[float] = None,
     ) -> dict:
+        wait = self.request_timeout
+        if timeout is not None:
+            wait = _positive_finite_timeout(timeout, "timeout")
         if command not in self.allowed_commands:
             raise ValueError(f"unknown renderer command {command!r}")
         payload = dict(params or {})
@@ -903,7 +927,6 @@ class RendererHost:
         except (OSError, ValueError) as error:
             self._pending.pop(request_id, None)
             raise RendererRequestError(f"renderer pipe is broken: {error}") from error
-        wait = self.request_timeout if timeout is None else timeout
         try:
             reply = replies.get(timeout=wait)
         except queue.Empty:
