@@ -72,6 +72,33 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse(self.plugin_entry.with_name(".zara_discord.py.tmp").exists())
         self.assertFalse(self.wrapper_backup.exists())
 
+    def seed_coherent_new_install_with_stale_backups(self):
+        library_dir = self.config_dir / "lib"
+        library_dir.mkdir(parents=True)
+        library_dir.joinpath("new-marker.txt").write_text("new-library\n")
+        self.plugin_entry.parent.mkdir(parents=True)
+        self.plugin_entry.write_text("new-wrapper\n")
+        self.library_backup.mkdir()
+        self.library_backup.joinpath("old-marker.txt").write_text("old-library\n")
+        self.wrapper_backup.write_text("old-wrapper\n")
+        self.config_dir.joinpath("settings.json").write_text('{"version": 2, "guilds": {}}\n')
+        self.config_dir.joinpath("token").write_text("keep-new-secret\n")
+
+    def assert_coherent_new_install_intact(self):
+        library_dir = self.config_dir / "lib"
+        self.assertEqual(library_dir.joinpath("new-marker.txt").read_text(), "new-library\n")
+        self.assertFalse(library_dir.joinpath("old-marker.txt").exists())
+        self.assertEqual(self.plugin_entry.read_text(), "new-wrapper\n")
+        self.assertEqual(
+            self.config_dir.joinpath("settings.json").read_text(),
+            '{"version": 2, "guilds": {}}\n',
+        )
+        self.assertEqual(self.config_dir.joinpath("token").read_text(), "keep-new-secret\n")
+        self.assertFalse(self.config_dir.joinpath(".lib.tmp").exists())
+        self.assertFalse(self.library_backup.exists())
+        self.assertFalse(self.plugin_entry.with_name(".zara_discord.py.tmp").exists())
+        self.assertFalse(self.wrapper_backup.exists())
+
     def test_places_entry_code_dependencies_and_config_in_separate_namespaces(self):
         result = install(home=self.home, xdg_config_home=self.xdg)
 
@@ -170,6 +197,22 @@ class InstallerTests(unittest.TestCase):
                 install(home=self.home, xdg_config_home=self.xdg)
 
         self.assert_existing_install_intact()
+
+    def test_stale_backups_after_success_do_not_replace_coherent_live_pair(self):
+        self.seed_coherent_new_install_with_stale_backups()
+        real_replace = os.replace
+        library_dir = self.config_dir / "lib"
+
+        def fail_library_publication(source, destination):
+            if Path(destination) == library_dir and Path(source).name == ".lib.tmp":
+                raise OSError("injected library publication failure")
+            return real_replace(source, destination)
+
+        with mock.patch("zara_discord_service.install.os.replace", side_effect=fail_library_publication):
+            with self.assertRaisesRegex(OSError, "library publication failure"):
+                install(home=self.home, xdg_config_home=self.xdg)
+
+        self.assert_coherent_new_install_intact()
 
 
 if __name__ == "__main__":
