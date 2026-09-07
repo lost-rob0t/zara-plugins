@@ -90,7 +90,7 @@ class TaskPluginTest(unittest.TestCase):
             def get_task(self, task_id):
                 return {"status": "ok", "task": {"id": task_id, "repository": expected}}
 
-            def complete_task(self, task_id):
+            def complete_task(self, task_id, **kwargs):
                 completion_calls.append(task_id)
                 return {"status": "ok"}
 
@@ -102,6 +102,34 @@ class TaskPluginTest(unittest.TestCase):
         self.assertEqual(result["reason"], "repository-snapshot-stale")
         self.assertEqual(result["expected_repository"], expected)
         self.assertEqual(result["observed_repository"], {"root": "/projects/demo", "head": "b" * 40, "branch": "main"})
+
+    def test_task_completion_revalidates_inside_authoritative_transition(self) -> None:
+        expected = {"root": "/projects/demo", "head": "a" * 40, "branch": "main"}
+        moved = {"root": "/projects/demo", "head": "b" * 40, "branch": "main", "dirty": False, "changed_paths": []}
+        observations = [
+            {**expected, "dirty": False, "changed_paths": []},
+            moved,
+        ]
+
+        class Inspector:
+            def inspect(self, path: Path):
+                self.assertEqual(path, Path(expected["root"]))
+                return observations.pop(0)
+
+        class Session:
+            def get_task(self, task_id):
+                return {"status": "ok", "task": {"id": task_id, "repository": expected}}
+
+            def complete_task(self, task_id, *, expected_repository, repository_validator):
+                self.assertEqual(expected_repository, expected)
+                if not repository_validator(expected_repository):
+                    return {"status": "rejected", "reason": "repository-snapshot-stale"}
+                return {"status": "ok", "task": {"id": task_id, "state": "completed"}}
+
+        plugin = TaskStateCodingPlugin(); plugin.inspector = Inspector(); plugin.task_state = Session()
+        result = json.loads(plugin.task_complete("task-1"))
+        self.assertEqual(result, {"status": "rejected", "reason": "repository-snapshot-stale"})
+        self.assertEqual(observations, [])
 
     def test_missing_prolog_configuration_degrades_without_breaking_startup(self) -> None:
         plugin = TaskStateCodingPlugin(); plugin.start(Runtime({"plugins": {"zara-coding": {}}}))
