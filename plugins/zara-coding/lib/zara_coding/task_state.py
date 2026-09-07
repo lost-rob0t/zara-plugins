@@ -10,7 +10,6 @@ from typing import Callable, TextIO
 
 from .domain import CodingError
 
-
 ProcessFactory = Callable[..., subprocess.Popen[str]]
 ReadinessWaiter = Callable[[TextIO, float], bool]
 
@@ -32,31 +31,15 @@ class TaskStateSession:
     MAX_RESPONSE_CHARS = 131072
     MAX_RESPONSE_TIMEOUT_SECONDS = 60.0
     EVIDENCE_STATUSES = frozenset({"failed", "passed"})
+    EVIDENCE_PROVENANCE = frozenset({"caller", "verifier"})
     RESPONSE_STATUSES = frozenset({"ok", "rejected"})
 
-    def __init__(
-        self,
-        driver: Path,
-        *,
-        executable: str = "swipl",
-        process_factory: ProcessFactory | None = None,
-        response_timeout_seconds: float = 5.0,
-        readiness_waiter: ReadinessWaiter | None = None,
-    ) -> None:
-        if (
-            not isinstance(executable, str)
-            or not executable.strip()
-            or any(character in executable for character in ("\x00", "\n", "\r"))
-        ):
+    def __init__(self, driver: Path, *, executable: str = "swipl", process_factory: ProcessFactory | None = None,
+                 response_timeout_seconds: float = 5.0, readiness_waiter: ReadinessWaiter | None = None) -> None:
+        if not isinstance(executable, str) or not executable.strip() or any(c in executable for c in ("\x00", "\n", "\r")):
             raise ValueError("executable must be non-empty single-line text without NUL")
-        if (
-            isinstance(response_timeout_seconds, bool)
-            or not isinstance(response_timeout_seconds, (int, float))
-            or not 0 < response_timeout_seconds <= self.MAX_RESPONSE_TIMEOUT_SECONDS
-        ):
-            raise ValueError(
-                f"response_timeout_seconds must be greater than zero and at most {self.MAX_RESPONSE_TIMEOUT_SECONDS}"
-            )
+        if isinstance(response_timeout_seconds, bool) or not isinstance(response_timeout_seconds, (int, float)) or not 0 < response_timeout_seconds <= self.MAX_RESPONSE_TIMEOUT_SECONDS:
+            raise ValueError(f"response_timeout_seconds must be greater than zero and at most {self.MAX_RESPONSE_TIMEOUT_SECONDS}")
         self.driver = Path(driver).expanduser().resolve()
         self.executable = executable
         self.response_timeout_seconds = float(response_timeout_seconds)
@@ -77,15 +60,7 @@ class TaskStateSession:
             if self._process is not None:
                 raise CodingError("zara-coding task-state Prolog process exited unexpectedly")
             try:
-                process = self._process_factory(
-                    [self.executable, "-q", "-s", str(self.driver), "-g", "zara_coding_task_state:serve"],
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    bufsize=1,
-                    shell=False,
-                )
+                process = self._process_factory([self.executable, "-q", "-s", str(self.driver), "-g", "zara_coding_task_state:serve"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1, shell=False)
             except (FileNotFoundError, OSError) as exc:
                 raise CodingError("zara-coding task-state Prolog process could not start") from exc
             if process.stdin is None or process.stdout is None:
@@ -104,17 +79,10 @@ class TaskStateSession:
     def status(self) -> dict[str, object]:
         return self._request({"op": "status"})
 
-    def create_task(
-        self,
-        task_id: str,
-        *,
-        goal: str,
-        repository: Mapping[str, str] | None = None,
-        constraints: Sequence[str] = (),
-        dependencies: Sequence[str] = (),
-        completion_criteria: Sequence[str] = (),
-    ) -> dict[str, object]:
-        command = {
+    def create_task(self, task_id: str, *, goal: str, repository: Mapping[str, str] | None = None,
+                    constraints: Sequence[str] = (), dependencies: Sequence[str] = (),
+                    completion_criteria: Sequence[str] = ()) -> dict[str, object]:
+        return self._request({
             "op": "create",
             "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS),
             "goal": self._bounded_string(goal, "goal", self.MAX_GOAL_CHARS),
@@ -122,33 +90,30 @@ class TaskStateSession:
             "constraints": self._bounded_strings(constraints, "constraints"),
             "dependencies": self._bounded_strings(dependencies, "dependencies"),
             "completion_criteria": self._bounded_strings(completion_criteria, "completion_criteria"),
-        }
-        return self._request(command)
+        })
 
     def get_task(self, task_id: str) -> dict[str, object]:
-        return self._request(
-            {"op": "get", "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS)}
-        )
+        return self._request({"op": "get", "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS)})
 
-    def record_evidence(self, task_id: str, *, kind: str, status: str, detail: str) -> dict[str, object]:
+    def record_evidence(self, task_id: str, *, kind: str, status: str, detail: str,
+                        provenance: str = "verifier") -> dict[str, object]:
         evidence_status = self._bounded_string(status, "status", self.MAX_ITEM_CHARS)
         if evidence_status not in self.EVIDENCE_STATUSES:
-            allowed = ", ".join(sorted(self.EVIDENCE_STATUSES))
-            raise ValueError(f"status must be one of: {allowed}")
-        return self._request(
-            {
-                "op": "record_evidence",
-                "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS),
-                "kind": self._bounded_string(kind, "kind", self.MAX_ITEM_CHARS),
-                "status": evidence_status,
-                "detail": self._bounded_string(detail, "detail", self.MAX_DETAIL_CHARS),
-            }
-        )
+            raise ValueError(f"status must be one of: {', '.join(sorted(self.EVIDENCE_STATUSES))}")
+        evidence_provenance = self._bounded_string(provenance, "provenance", self.MAX_ITEM_CHARS)
+        if evidence_provenance not in self.EVIDENCE_PROVENANCE:
+            raise ValueError(f"provenance must be one of: {', '.join(sorted(self.EVIDENCE_PROVENANCE))}")
+        return self._request({
+            "op": "record_evidence",
+            "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS),
+            "kind": self._bounded_string(kind, "kind", self.MAX_ITEM_CHARS),
+            "status": evidence_status,
+            "detail": self._bounded_string(detail, "detail", self.MAX_DETAIL_CHARS),
+            "provenance": evidence_provenance,
+        })
 
     def complete_task(self, task_id: str) -> dict[str, object]:
-        return self._request(
-            {"op": "complete", "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS)}
-        )
+        return self._request({"op": "complete", "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS)})
 
     def _request(self, command: dict[str, object]) -> dict[str, object]:
         with self._lock:
@@ -185,12 +150,7 @@ class TaskStateSession:
             return response
 
     @classmethod
-    def _fail_protocol(
-        cls,
-        process: subprocess.Popen[str],
-        message: str,
-        cause: BaseException | None = None,
-    ) -> None:
+    def _fail_protocol(cls, process: subprocess.Popen[str], message: str, cause: BaseException | None = None) -> None:
         cls._terminate_process(process)
         error = CodingError(message)
         if cause is not None:
