@@ -37,7 +37,7 @@ class TaskEvidenceProvenanceTest(unittest.TestCase):
         self.assertTrue(line)
         return json.loads(line)
 
-    def create_task(self, task_id: str) -> None:
+    def create_task(self, task_id: str, completion_criteria=None) -> None:
         response = self.request(
             {
                 "op": "create",
@@ -46,10 +46,22 @@ class TaskEvidenceProvenanceTest(unittest.TestCase):
                 "repository": None,
                 "constraints": [],
                 "dependencies": [],
-                "completion_criteria": ["tests-pass"],
+                "completion_criteria": completion_criteria or ["tests"],
             }
         )
         self.assertEqual(response["status"], "ok")
+
+    def record_verifier_evidence(self, task_id: str, kind: str, status: str) -> dict[str, object]:
+        return self.request(
+            {
+                "op": "record_evidence",
+                "task_id": task_id,
+                "kind": kind,
+                "status": status,
+                "detail": f"{kind} {status}",
+                "provenance": "verifier",
+            }
+        )
 
     def test_caller_authored_pass_cannot_complete_task(self) -> None:
         self.create_task("caller-pass")
@@ -78,22 +90,50 @@ class TaskEvidenceProvenanceTest(unittest.TestCase):
     def test_verifier_pass_is_retained_with_provenance_and_can_complete(self) -> None:
         self.create_task("verifier-pass")
 
-        recorded = self.request(
-            {
-                "op": "record_evidence",
-                "task_id": "verifier-pass",
-                "kind": "tests",
-                "status": "passed",
-                "detail": "pytest exit=0 head=abc",
-                "provenance": "verifier",
-            }
-        )
+        recorded = self.record_verifier_evidence("verifier-pass", "tests", "passed")
 
         self.assertEqual(recorded["status"], "ok")
         self.assertEqual(recorded["evidence"]["provenance"], "verifier")
         completed = self.request({"op": "complete", "task_id": "verifier-pass"})
         self.assertEqual(completed["status"], "ok")
         self.assertEqual(completed["task"]["state"], "completed")
+
+    def test_every_declared_completion_criterion_requires_current_verifier_pass(self) -> None:
+        self.create_task("multi-criterion", ["tests", "lint"])
+        self.record_verifier_evidence("multi-criterion", "tests", "passed")
+
+        missing = self.request({"op": "complete", "task_id": "multi-criterion"})
+        self.assertEqual(
+            missing,
+            {"status": "rejected", "reason": "passing-verification-required"},
+        )
+
+        self.record_verifier_evidence("multi-criterion", "lint", "passed")
+        completed = self.request({"op": "complete", "task_id": "multi-criterion"})
+        self.assertEqual(completed["status"], "ok")
+        self.assertEqual(completed["task"]["state"], "completed")
+
+    def test_unrelated_verifier_pass_does_not_satisfy_declared_criterion(self) -> None:
+        self.create_task("wrong-kind", ["tests"])
+        self.record_verifier_evidence("wrong-kind", "lint", "passed")
+
+        completed = self.request({"op": "complete", "task_id": "wrong-kind"})
+        self.assertEqual(
+            completed,
+            {"status": "rejected", "reason": "passing-verification-required"},
+        )
+
+    def test_later_failure_revokes_criterion_pass(self) -> None:
+        self.create_task("criterion-regressed", ["tests", "lint"])
+        self.record_verifier_evidence("criterion-regressed", "tests", "passed")
+        self.record_verifier_evidence("criterion-regressed", "lint", "passed")
+        self.record_verifier_evidence("criterion-regressed", "lint", "failed")
+
+        completed = self.request({"op": "complete", "task_id": "criterion-regressed"})
+        self.assertEqual(
+            completed,
+            {"status": "rejected", "reason": "passing-verification-required"},
+        )
 
     def test_unknown_provenance_fails_closed(self) -> None:
         self.create_task("unknown-provenance")
