@@ -179,7 +179,23 @@ class TaskStateCodingPlugin(ZaraCodingPlugin):
                 sort_keys=True,
             )
 
-        return json.dumps(session.complete_task(task_id), sort_keys=True)
+        return json.dumps(
+            session.complete_task(
+                task_id,
+                expected_repository=expected_repository,
+                repository_validator=self._repository_matches_snapshot,
+            ),
+            sort_keys=True,
+        )
+
+    def _repository_matches_snapshot(self, expected_repository: Mapping[str, str]) -> bool:
+        observed = self._require_inspector().inspect(Path(expected_repository["root"]))
+        return (
+            observed.get("root") == expected_repository["root"]
+            and observed.get("head") == expected_repository["head"]
+            and observed.get("branch") == expected_repository["branch"]
+            and not bool(observed.get("dirty"))
+        )
 
     def _require_task_state(self) -> TaskStateSession:
         if self.task_state is None:
