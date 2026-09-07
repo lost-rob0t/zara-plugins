@@ -191,7 +191,8 @@ class SysadminExpert:
         after = self.service_status(unit)
         accepted = result.get("accepted") is True
         expected_active = action in {"start", "restart"}
-        verified = accepted and ((after.get("active") is True) is expected_active)
+        observed_active = after.get("active")
+        verified = accepted and type(observed_active) is bool and observed_active is expected_active
         return {
             "status": "verified" if verified else "verification_failed",
             "accepted": accepted,
