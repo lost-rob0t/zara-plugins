@@ -22,7 +22,7 @@ class LatestVerifierResultTest(unittest.TestCase):
         self.session.create_task(
             "task-regressed",
             goal="do not complete after regression",
-            completion_criteria=["tests-green"],
+            completion_criteria=["test"],
         )
         self.session.record_evidence(
             "task-regressed",
@@ -48,7 +48,7 @@ class LatestVerifierResultTest(unittest.TestCase):
         self.session.create_task(
             "task-mixed-verifiers",
             goal="require all current verifier results to pass",
-            completion_criteria=["tests-green", "build-green"],
+            completion_criteria=["test", "build"],
         )
         self.session.record_evidence(
             "task-mixed-verifiers",
