@@ -142,6 +142,7 @@ class TaskStateSession:
                 "kind": self._bounded_string(kind, "kind", self.MAX_ITEM_CHARS),
                 "status": evidence_status,
                 "detail": self._bounded_string(detail, "detail", self.MAX_DETAIL_CHARS),
+                "provenance": "caller",
             }
         )
 
