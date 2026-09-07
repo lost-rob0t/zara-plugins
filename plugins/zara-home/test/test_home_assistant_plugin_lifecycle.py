@@ -1,8 +1,10 @@
+import json
 import sys
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = ROOT.parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
 from zara_home.plugin import ZaraHomePlugin
@@ -51,6 +53,17 @@ class ZaraHomePluginLifecycleTests(unittest.TestCase):
         plugin.stop()
 
         self.assertEqual(plugin.status(), '{"status": "ready"}')
+
+    def test_registry_declares_production_websocket_client(self):
+        registry = json.loads((REPO_ROOT / "plugins.json").read_text())
+        entry = next(plugin for plugin in registry["plugins"] if plugin["name"] == "zara-home")
+
+        self.assertIn("websocket-client", entry.get("python_dependencies", []))
+
+    def test_production_websocket_module_imports(self):
+        import websocket
+
+        self.assertTrue(callable(websocket.create_connection))
 
 
 if __name__ == "__main__":
