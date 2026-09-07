@@ -38,6 +38,23 @@ class TimerDomainTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_scheduling_numeric_descriptors_fail_closed(self):
+        for value in (True, "10", None, float("nan"), float("inf")):
+            with self.subTest(operation="timer", value=value):
+                with self.assertRaises(TimerError):
+                    self.timers.create_timer("bad timer", value)
+        for value in (True, 1.5, "60", None):
+            with self.subTest(operation="reminder", value=value):
+                with self.assertRaises(TimerError):
+                    self.timers.create_reminder(
+                        "bad reminder",
+                        "2026-09-05T12:05:00+00:00",
+                        cadence_seconds=value,
+                        timezone_name="UTC",
+                    )
+        self.assertEqual(self.timers.list(), [])
+        self.assertFalse(self.state.exists())
+
     def test_countdown_uses_monotonic_time_and_stable_id(self):
         created = self.timers.create_timer("tea", 30)
         self.assertEqual(created["kind"], "timer")
