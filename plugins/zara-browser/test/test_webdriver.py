@@ -1,4 +1,3 @@
-import json
 import sys
 import unittest
 from pathlib import Path
@@ -56,15 +55,15 @@ class FakeTransport:
             return self.text.get(element_id, "")
         if "/element/" in path and path.endswith("/click"):
             return None
-        if "/element/" in path and path.endswith("/value"):
-            element_id = path.split("/element/", 1)[1].split("/", 1)[0]
-            self.values[element_id] = self.values.get(element_id, "") + payload["text"]
-            return None
         if "/element/" in path and path.endswith("/property/value"):
             element_id = path.split("/element/", 1)[1].split("/", 1)[0]
             if element_id in self.property_unavailable:
                 return None
             return self.values.get(element_id)
+        if "/element/" in path and path.endswith("/value"):
+            element_id = path.split("/element/", 1)[1].split("/", 1)[0]
+            self.values[element_id] = self.values.get(element_id, "") + payload["text"]
+            return None
         if path.endswith("/back") or path.endswith("/forward") or path.endswith("/refresh"):
             return None
         if path.endswith("/screenshot"):
