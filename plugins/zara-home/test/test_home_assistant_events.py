@@ -172,6 +172,50 @@ class HomeAssistantEventStreamTest(unittest.TestCase):
         self.assertTrue(stream.fresh)
         self.assertFalse(stream.observation("light.desk")["state"]["power"])
 
+    def test_reconcile_evicts_supported_entity_absent_from_authoritative_snapshot(self):
+        sock = FakeSocket([
+            json.dumps({"type": "auth_required"}),
+            json.dumps({"type": "auth_ok"}),
+            json.dumps({"id": 1, "type": "result", "success": True}),
+            json.dumps({"id": 1, "type": "event", "event": {"event_type": "state_changed", "data": {"entity_id": "switch.fan", "new_state": self.state("switch.fan", "on", "2026-09-07T12:00:00+00:00")}}}),
+        ])
+        stream, _ = self.stream([sock], [])
+        stream.connect_once()
+        stream.poll_once()
+        stream.poll_once()
+        self.assertIsNotNone(stream.observation("switch.fan"))
+        stream.mark_disconnected()
+
+        second = FakeSocket([
+            json.dumps({"type": "auth_required"}),
+            json.dumps({"type": "auth_ok"}),
+            json.dumps({"id": 2, "type": "result", "success": True}),
+        ])
+        stream._connect = lambda _url: second
+        stream.connect_once()
+        stream.poll_once()
+        self.assertTrue(stream.fresh)
+        self.assertIsNone(stream.observation("switch.fan"))
+
+    def test_live_state_changed_removal_evicts_without_accepting_stale_tombstone(self):
+        sock = FakeSocket([
+            json.dumps({"type": "auth_required"}),
+            json.dumps({"type": "auth_ok"}),
+            json.dumps({"id": 1, "type": "result", "success": True}),
+            json.dumps({"id": 1, "type": "event", "event": {"event_type": "state_changed", "time_fired": "2026-09-07T12:00:02+00:00", "data": {"entity_id": "light.desk", "new_state": self.state("light.desk", "on", "2026-09-07T12:00:02+00:00")}}}),
+            json.dumps({"id": 1, "type": "event", "event": {"event_type": "state_changed", "time_fired": "2026-09-07T12:00:01+00:00", "data": {"entity_id": "light.desk", "new_state": None}}}),
+            json.dumps({"id": 1, "type": "event", "event": {"event_type": "state_changed", "time_fired": "2026-09-07T12:00:03+00:00", "data": {"entity_id": "light.desk", "new_state": None}}}),
+        ])
+        stream, _ = self.stream([sock])
+        stream.connect_once()
+        stream.poll_once()
+        stream.poll_once()
+        self.assertIsNotNone(stream.observation("light.desk"))
+        stream.poll_once()
+        self.assertIsNotNone(stream.observation("light.desk"))
+        stream.poll_once()
+        self.assertIsNone(stream.observation("light.desk"))
+
     def test_stop_closes_socket_and_prevents_reconnect(self):
         sock = FakeSocket([
             json.dumps({"type": "auth_required"}),
