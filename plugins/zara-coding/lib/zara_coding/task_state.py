@@ -32,6 +32,7 @@ class TaskStateSession:
     MAX_RESPONSE_CHARS = 131072
     MAX_RESPONSE_TIMEOUT_SECONDS = 60.0
     EVIDENCE_STATUSES = frozenset({"failed", "passed"})
+    EVIDENCE_PROVENANCE = frozenset({"caller", "verifier"})
     RESPONSE_STATUSES = frozenset({"ok", "rejected"})
 
     def __init__(
@@ -130,11 +131,25 @@ class TaskStateSession:
             {"op": "get", "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS)}
         )
 
-    def record_evidence(self, task_id: str, *, kind: str, status: str, detail: str) -> dict[str, object]:
+    def record_evidence(
+        self,
+        task_id: str,
+        *,
+        kind: str,
+        status: str,
+        detail: str,
+        provenance: str = "verifier",
+    ) -> dict[str, object]:
         evidence_status = self._bounded_string(status, "status", self.MAX_ITEM_CHARS)
         if evidence_status not in self.EVIDENCE_STATUSES:
             allowed = ", ".join(sorted(self.EVIDENCE_STATUSES))
             raise ValueError(f"status must be one of: {allowed}")
+        evidence_provenance = self._bounded_string(
+            provenance, "provenance", self.MAX_ITEM_CHARS
+        )
+        if evidence_provenance not in self.EVIDENCE_PROVENANCE:
+            allowed = ", ".join(sorted(self.EVIDENCE_PROVENANCE))
+            raise ValueError(f"provenance must be one of: {allowed}")
         return self._request(
             {
                 "op": "record_evidence",
@@ -142,7 +157,7 @@ class TaskStateSession:
                 "kind": self._bounded_string(kind, "kind", self.MAX_ITEM_CHARS),
                 "status": evidence_status,
                 "detail": self._bounded_string(detail, "detail", self.MAX_DETAIL_CHARS),
-                "provenance": "caller",
+                "provenance": evidence_provenance,
             }
         )
 
