@@ -18,7 +18,9 @@ Session/tab state persists for the lifetime of the Zara service plugin instance.
 
 ## Safety
 
-URLs are bounded HTTP(S) URLs with no userinfo. Selectors and typed values are bounded. Text extraction and screenshots have hard payload limits. Normal extraction never includes cookies or credential material. Typing never implicitly submits a form. Downloads accept only safe relative destinations for the backend's configured download root. Every action must return backend-observed evidence; unavailable features return an explicit unavailable/error state.
+URLs are bounded HTTP(S) URLs with no userinfo. Selectors and typed values are bounded. Text extraction and screenshots have hard payload limits. Normal extraction never includes cookies or credential material. Typing never implicitly submits a form. Downloads accept only safe relative destinations for the backend's configured download root.
+
+Mutation acknowledgement and observed intended state are distinct. A successful provider command is never promoted to effect verification by itself. The WebDriver backend therefore reports click acknowledgement separately from post-action tab/URL context and does not claim a generic click effect was observed. Typing is marked observed only when bounded before/after element `value` readback provides concrete evidence of the requested text mutation. Unavailable or unverifiable features return an explicit unavailable/error or unobserved state rather than false success.
 
 Zara Core remains responsible for canonical tool authorization and approval policy. This plugin does not auto-approve browser actions or expose arbitrary JavaScript/eval/shell execution.
 
@@ -33,7 +35,9 @@ export ZARA_BROWSER_WEBDRIVER_URL=http://127.0.0.1:4444
 export ZARA_BROWSER_WEBDRIVER_SESSION_ID=<existing-session-id>
 ```
 
-The endpoint is intentionally restricted to loopback HTTP and must not contain credentials, query parameters, or fragments. The adapter uses standardized WebDriver window, navigation, element, text, click, value, and screenshot endpoints; it does not expose arbitrary JavaScript execution.
+The endpoint is intentionally restricted to loopback HTTP and must not contain credentials, query parameters, or fragments. The adapter uses standardized WebDriver window, navigation, element, text, click, value, element-property, and screenshot endpoints; it does not expose arbitrary JavaScript execution.
+
+Window enumeration is bounded to 32 handles and restores the originally active handle even when an enumeration request fails after switching tabs.
 
 This first production slice deliberately reports `browser.select` and `browser.download` as unavailable because portable W3C WebDriver does not provide a generic safe download-root contract and native select semantics need a bounded element-level implementation. They are not reported as successful.
 
