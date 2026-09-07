@@ -31,6 +31,13 @@ def _remove_path(path: Path) -> None:
         path.unlink()
 
 
+def _recover_interrupted_publish(live: Path, backup: Path) -> None:
+    if not backup.exists():
+        return
+    _remove_path(live)
+    os.replace(backup, live)
+
+
 def _publish_install(
     *,
     staging: Path,
@@ -40,8 +47,11 @@ def _publish_install(
 ) -> None:
     library_backup = library_dir.with_name(".lib.backup")
     wrapper_backup = plugin_entry.with_name(".zara_discord.py.backup")
-    _remove_path(library_backup)
-    _remove_path(wrapper_backup)
+
+    # A backup can be the only last-known-good copy after process death. Roll
+    # any interrupted publication back before starting a new transaction.
+    _recover_interrupted_publish(library_dir, library_backup)
+    _recover_interrupted_publish(plugin_entry, wrapper_backup)
 
     library_backed_up = False
     wrapper_backed_up = False
