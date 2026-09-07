@@ -120,7 +120,7 @@ class PluginTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "plugin is not started"):
             inspect.invoke({"context_token": token})
 
-    def test_missing_token_degrades_without_starting_workers(self):
+    def test_missing_token_allocates_no_runtime_resources(self):
         environment = {
             "XDG_CONFIG_HOME": self.temporary.name,
             "XDG_STATE_HOME": self.temporary.name,
