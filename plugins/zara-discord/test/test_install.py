@@ -39,6 +39,14 @@ class InstallerTests(unittest.TestCase):
     def plugin_entry(self):
         return self.home / ".zarathushtra" / "plugins" / "zara_discord.py"
 
+    @property
+    def library_backup(self):
+        return self.config_dir / ".lib.backup"
+
+    @property
+    def wrapper_backup(self):
+        return self.plugin_entry.with_name(".zara_discord.py.backup")
+
     def seed_existing_install(self):
         library_dir = self.config_dir / "lib"
         library_dir.mkdir(parents=True)
@@ -60,9 +68,9 @@ class InstallerTests(unittest.TestCase):
         )
         self.assertEqual(self.config_dir.joinpath("token").read_text(), "keep-me\n")
         self.assertFalse(self.config_dir.joinpath(".lib.tmp").exists())
-        self.assertFalse(self.config_dir.joinpath(".lib.backup").exists())
+        self.assertFalse(self.library_backup.exists())
         self.assertFalse(self.plugin_entry.with_name(".zara_discord.py.tmp").exists())
-        self.assertFalse(self.plugin_entry.with_name(".zara_discord.py.backup").exists())
+        self.assertFalse(self.wrapper_backup.exists())
 
     def test_places_entry_code_dependencies_and_config_in_separate_namespaces(self):
         result = install(home=self.home, xdg_config_home=self.xdg)
@@ -117,6 +125,39 @@ class InstallerTests(unittest.TestCase):
 
     def test_failed_wrapper_publication_rolls_back_existing_install(self):
         self.seed_existing_install()
+        real_replace = os.replace
+
+        def fail_wrapper_publication(source, destination):
+            if Path(destination) == self.plugin_entry and Path(source).name == ".zara_discord.py.tmp":
+                raise OSError("injected wrapper publication failure")
+            return real_replace(source, destination)
+
+        with mock.patch("zara_discord_service.install.os.replace", side_effect=fail_wrapper_publication):
+            with self.assertRaisesRegex(OSError, "wrapper publication failure"):
+                install(home=self.home, xdg_config_home=self.xdg)
+
+        self.assert_existing_install_intact()
+
+    def test_interrupted_library_backup_is_recovered_before_failed_update(self):
+        self.seed_existing_install()
+        library_dir = self.config_dir / "lib"
+        os.replace(library_dir, self.library_backup)
+        real_replace = os.replace
+
+        def fail_library_publication(source, destination):
+            if Path(destination) == library_dir and Path(source).name == ".lib.tmp":
+                raise OSError("injected library publication failure")
+            return real_replace(source, destination)
+
+        with mock.patch("zara_discord_service.install.os.replace", side_effect=fail_library_publication):
+            with self.assertRaisesRegex(OSError, "library publication failure"):
+                install(home=self.home, xdg_config_home=self.xdg)
+
+        self.assert_existing_install_intact()
+
+    def test_interrupted_wrapper_backup_is_recovered_before_failed_update(self):
+        self.seed_existing_install()
+        os.replace(self.plugin_entry, self.wrapper_backup)
         real_replace = os.replace
 
         def fail_wrapper_publication(source, destination):
