@@ -22,9 +22,26 @@ URLs are bounded HTTP(S) URLs with no userinfo. Selectors and typed values are b
 
 Zara Core remains responsible for canonical tool authorization and approval policy. This plugin does not auto-approve browser actions or expose arbitrary JavaScript/eval/shell execution.
 
+## WebDriver backend
+
+A production adapter can attach to an existing W3C WebDriver session (ChromeDriver, GeckoDriver, or a compatible implementation) without adding Selenium as a runtime dependency.
+
+Set both:
+
+```sh
+export ZARA_BROWSER_WEBDRIVER_URL=http://127.0.0.1:4444
+export ZARA_BROWSER_WEBDRIVER_SESSION_ID=<existing-session-id>
+```
+
+The endpoint is intentionally restricted to loopback HTTP and must not contain credentials, query parameters, or fragments. The adapter uses standardized WebDriver window, navigation, element, text, click, value, and screenshot endpoints; it does not expose arbitrary JavaScript execution.
+
+This first production slice deliberately reports `browser.select` and `browser.download` as unavailable because portable W3C WebDriver does not provide a generic safe download-root contract and native select semantics need a bounded element-level implementation. They are not reported as successful.
+
+If exactly one WebDriver environment variable is configured, status degrades explicitly with `browser-webdriver-configuration-incomplete`.
+
 ## Backends
 
-`BrowserSession` is the stable adapter boundary. The repository includes a deterministic in-memory backend for tests. Production browser drivers should implement the same structured operations and enforce their own connection/session timeouts. No GUI, browser, network, cookie store, or credential is required by the test suite.
+`BrowserSession` is the stable adapter boundary. The repository includes a deterministic in-memory backend for tests plus the loopback W3C WebDriver adapter. No GUI, browser, network, cookie store, or credential is required by the unit test suite.
 
 ## Verification
 
