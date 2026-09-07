@@ -28,6 +28,8 @@ class FileDomain:
             raise FileDomainError("max_read_bytes is out of range")
         if not 1 <= max_results <= 512:
             raise FileDomainError("max_results is out of range")
+        if not isinstance(roots, (list, tuple)) or not 1 <= len(roots) <= 64:
+            raise FileDomainError("roots must be a non-empty bounded list or tuple")
         configured: dict[str, Path] = {}
         for index, raw_root in enumerate(roots):
             path = Path(raw_root).expanduser()
@@ -40,8 +42,6 @@ class FileDomain:
             if not stat.S_ISDIR(info.st_mode):
                 raise FileDomainError("configured root must be a directory")
             configured[f"root-{index}"] = path.resolve(strict=True)
-        if not configured:
-            raise FileDomainError("at least one file root is required")
         self._roots = configured
         self.max_read_bytes = max_read_bytes
         self.max_results = max_results
