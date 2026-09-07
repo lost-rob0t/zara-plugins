@@ -47,15 +47,16 @@ class ZaraDiscordPlugin:
         try:
             token = load_token(directory)
         except ConfigError as error:
-            logger.warning("Discord integration is disabled: %s", error)
-            return
+            raise RuntimeError(
+                "Discord integration unavailable: configuration is invalid"
+            ) from error
+
         policies = PolicyStore(directory)
         acknowledgements = ModerationAcknowledgementStore(directory)
         audit = ModerationAudit()
         controller = ConversationController(runtime)
-        self._subscription = runtime.subscribe(maxsize=128)
         message_content_requested = policies.requires_message_content()
-        self._bot = DiscordClient(
+        bot = DiscordClient(
             controller,
             policies,
             self._moderation_contexts,
@@ -63,27 +64,38 @@ class ZaraDiscordPlugin:
             audit,
             message_content=message_content_requested,
         )
-        if not _message_content_enabled(self._bot):
+        if not _message_content_enabled(bot):
             logger.warning(
                 "Discord Message Content intent is disabled; ordinary-message "
                 "inspection is metadata-only and must report content_available=false"
             )
 
+        subscription = runtime.subscribe(maxsize=128)
+        self._bot = bot
+        self._subscription = subscription
+
         def consume_events(stop_event) -> None:
             while not stop_event.is_set():
                 try:
-                    envelope = self._subscription.get(timeout=0.25)
+                    envelope = subscription.get(timeout=0.25)
                 except queue.Empty:
                     continue
                 except RuntimeError:
                     return
                 controller.handle_event(envelope.event)
 
-        runtime.start_worker("runtime-events", consume_events)
-        runtime.start_worker(
-            "gateway",
-            lambda stop_event: self._bot.run_gateway(token, stop_event),
-        )
+        try:
+            runtime.start_worker("runtime-events", consume_events)
+            runtime.start_worker(
+                "gateway",
+                lambda stop_event: bot.run_gateway(token, stop_event),
+            )
+        except Exception:
+            bot.request_close()
+            subscription.close()
+            self._bot = None
+            self._subscription = None
+            raise
 
     def stop(self) -> None:
         if self._bot is not None:
@@ -91,6 +103,7 @@ class ZaraDiscordPlugin:
         if self._subscription is not None:
             self._subscription.close()
         self._bot = None
+        self._subscription = None
 
 
 def create_plugin():
