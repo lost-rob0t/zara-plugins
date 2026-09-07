@@ -75,19 +75,34 @@ class TimerDomain:
             data = json.loads(self.state_path.read_text(encoding="utf-8"))
             if data.get("schema_version") != 1 or not isinstance(data.get("items"), list):
                 raise ValueError("schema")
-            self._sequence = int(data.get("sequence", 0))
+            sequence = data.get("sequence", 0)
+            if type(sequence) is not int or sequence < 0:
+                raise ValueError("sequence")
+            self._sequence = sequence
             for raw in data["items"]:
                 item = dict(raw)
                 item_id = item["id"]
+                if item["kind"] == "timer" and item["status"] in {"running", "paused"}:
+                    remaining = item["remaining"]
+                    if type(remaining) not in {int, float}:
+                        raise ValueError("remaining")
+                    remaining = float(remaining)
+                    if not math.isfinite(remaining) or not 0 <= remaining <= 31_536_000:
+                        raise ValueError("remaining")
+                    item["remaining"] = remaining
+                if item["kind"] == "reminder":
+                    cadence = item["cadence_seconds"]
+                    if type(cadence) is not int or not 1 <= cadence <= 31_536_000:
+                        raise ValueError("cadence")
                 if item["kind"] == "timer" and item["status"] == "running":
                     now = self.clock.now()
                     saved_at = self._aware(item["saved_at"], "saved_at")
                     elapsed = max(0.0, (now - saved_at).total_seconds())
-                    item["remaining"] = max(0.0, float(item["remaining"]) - elapsed)
+                    item["remaining"] = max(0.0, item["remaining"] - elapsed)
                     item["started_mono"] = self.clock.monotonic()
                     item["saved_at"] = now.isoformat()
                 self._items[item_id] = item
-        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError, TimerError) as error:
             raise TimerError("timer state is invalid or unrecoverable") from error
 
     def _persist(self):
