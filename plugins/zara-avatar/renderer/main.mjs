@@ -38,6 +38,22 @@ function sendToPage(document) {
   }
 }
 
+function rendererIsActive() {
+  return Boolean(
+    window &&
+      !window.isDestroyed() &&
+      window.isVisible() &&
+      !window.isMinimized(),
+  );
+}
+
+function syncRendererActive() {
+  if (!pageReady || !window || window.isDestroyed()) {
+    return;
+  }
+  window.webContents.send("renderer-active", rendererIsActive());
+}
+
 function createWindow(options) {
   window = new BrowserWindow({
     width: options.width || 480,
@@ -56,6 +72,10 @@ function createWindow(options) {
   });
   window.setMenuBarVisibility(false);
   window.loadFile(join(here, "index.html"));
+  window.on("show", syncRendererActive);
+  window.on("hide", syncRendererActive);
+  window.on("minimize", syncRendererActive);
+  window.on("restore", syncRendererActive);
   window.on("closed", () => {
     window = null;
     pageReady = false;
@@ -83,10 +103,12 @@ async function handleCommand(request) {
     case "ShowWindow":
       if (!window) createWindow(params);
       window.show();
+      syncRendererActive();
       emit({ id: request.id, ok: true, result: { visible: true } });
       return;
     case "HideWindow":
       if (window && !window.isDestroyed()) window.hide();
+      syncRendererActive();
       emit({ id: request.id, ok: true, result: { visible: false } });
       return;
     default:
@@ -155,6 +177,7 @@ function main() {
   });
   ipcMain.on("page-ready", () => {
     pageReady = true;
+    syncRendererActive();
     while (pendingToPage.length) {
       const document = pendingToPage.shift();
       window?.webContents?.send("avatar-command", document);
