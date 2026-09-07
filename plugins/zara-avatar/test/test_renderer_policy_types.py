@@ -13,7 +13,7 @@ class RendererPolicyTypeTests(unittest.TestCase):
         for command in ("renderer", b"renderer", [], [""], ["renderer", ""]):
             with self.subTest(command=command):
                 with self.assertRaises(ValueError):
-                    AVATAR.RendererHost(command=command)  # type: ignore[arg-type]
+                    AVATAR.RendererHost(command=command)
 
     def test_rejects_malformed_lifecycle_timeouts(self) -> None:
         for key in ("startup_timeout", "request_timeout", "shutdown_grace"):
