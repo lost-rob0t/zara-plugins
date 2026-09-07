@@ -61,6 +61,10 @@ of non-empty strings, and renderer startup/request/shutdown timeouts must be
 finite positive numbers. Per-request timeout overrides are validated before
 any renderer process or pipe is touched.
 
+`avatar_directory` is also type-strict: it must be a non-empty string.
+Malformed scalar or container values are rejected before any avatar state
+directory is created.
+
 ## Control surface
 
 The plugin serves `http://127.0.0.1:7321` only. Use the bundled CLI or plain
