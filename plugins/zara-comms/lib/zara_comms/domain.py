@@ -76,7 +76,9 @@ class CommsDomain:
             required_attachment = {"attachment_id", "name", "size", "content_type"}
             if not required_attachment.issubset(item):
                 raise CommsError("attachment metadata is incomplete")
-            size = int(item["size"])
+            size = item["size"]
+            if type(size) is not int:
+                raise CommsError("attachment size must be an integer")
             if size < 0 or size > 100 * 1024 * 1024:
                 raise CommsError("attachment size is out of range")
             normalized_attachments.append({
