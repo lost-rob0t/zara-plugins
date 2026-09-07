@@ -78,7 +78,14 @@ class TaskStateSessionTest(unittest.TestCase):
         process = FakeProcess(
             [
                 {"status": "rejected", "reason": "verification-evidence-required"},
-                {"status": "ok", "evidence": {"kind": "test", "status": "passed"}},
+                {
+                    "status": "ok",
+                    "evidence": {
+                        "kind": "test",
+                        "status": "passed",
+                        "provenance": "verifier",
+                    },
+                },
                 {"status": "ok", "task": {"id": "task-1", "state": "completed"}},
             ]
         )
@@ -87,9 +94,12 @@ class TaskStateSessionTest(unittest.TestCase):
         rejected = session.complete_task("task-1")
         evidence = session.record_evidence("task-1", kind="test", status="passed", detail="unit suite")
         completed = session.complete_task("task-1")
+        commands = [json.loads(line) for line in process.stdin.getvalue().splitlines()]
 
         self.assertEqual(rejected, {"status": "rejected", "reason": "verification-evidence-required"})
         self.assertEqual(evidence["status"], "ok")
+        self.assertEqual(evidence["evidence"]["provenance"], "verifier")
+        self.assertEqual(commands[1]["provenance"], "verifier")
         self.assertEqual(completed["task"]["state"], "completed")
 
     def test_evidence_status_rejects_unsupported_values_before_writing(self) -> None:
@@ -98,6 +108,21 @@ class TaskStateSessionTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "status must be one of"):
             session.record_evidence("task-1", kind="test", status="unknown", detail="ambiguous")
+
+        self.assertEqual(process.stdin.getvalue(), "")
+
+    def test_evidence_provenance_rejects_unsupported_values_before_writing(self) -> None:
+        process = FakeProcess([])
+        session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
+
+        with self.assertRaisesRegex(ValueError, "provenance must be one of"):
+            session.record_evidence(
+                "task-1",
+                kind="test",
+                status="failed",
+                detail="ambiguous",
+                provenance="model",
+            )
 
         self.assertEqual(process.stdin.getvalue(), "")
 
