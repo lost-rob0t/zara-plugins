@@ -197,9 +197,17 @@ class CommsDomain:
         evidence = adapter.send(normalized)
         accepted = isinstance(evidence, dict) and evidence.get("accepted") is True
         message = self.get(provider_name, evidence.get("message_id")) if accepted and evidence.get("message_id") else None
-        verified = accepted and message is not None and message["provider"] == provider_name
+        verified = accepted and message is not None
+        if verified:
+            verified = (
+                message["provider"] == normalized["provider"]
+                and message["account_id"] == normalized["account_id"]
+                and message["recipients"] == normalized["recipients"]
+                and message["body"] == normalized["body"]
+                and message["reply_to"] == normalized["reply_to"]
+            )
         if verified and normalized["conversation_id"] is not None:
-            verified = message["conversation_id"] == normalized["conversation_id"] and message["reply_to"] == normalized["reply_to"]
+            verified = message["conversation_id"] == normalized["conversation_id"]
         return {
             "status": "verified" if verified else "verification_failed",
             "accepted": accepted,
