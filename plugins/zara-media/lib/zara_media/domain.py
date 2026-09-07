@@ -63,10 +63,8 @@ class MediaDomain:
         provider = cls._bounded(item["provider"], name="provider", limit=128)
         duration_ms = item["duration_ms"]
         if duration_ms is not None:
-            try:
-                duration_ms = int(duration_ms)
-            except (TypeError, ValueError) as error:
-                raise MediaError("duration_ms is invalid") from error
+            if type(duration_ms) is not int:
+                raise MediaError("duration_ms must be an integer")
             if duration_ms < 0 or duration_ms > 7 * 24 * 60 * 60 * 1000:
                 raise MediaError("duration_ms is out of range")
         artist = item.get("artist")
@@ -95,18 +93,17 @@ class MediaDomain:
             state = "unknown"
         volume = player.get("volume")
         if volume is not None:
-            try:
-                volume = float(volume)
-            except (TypeError, ValueError) as error:
-                raise MediaError("player volume is invalid") from error
+            if type(volume) not in {int, float}:
+                raise MediaError("player volume must be numeric")
+            volume = float(volume)
+            if not math.isfinite(volume):
+                raise MediaError("player volume must be finite")
             if not 0.0 <= volume <= 1.0:
                 raise MediaError("player volume is out of range")
         position = player.get("position_ms")
         if position is not None:
-            try:
-                position = int(position)
-            except (TypeError, ValueError) as error:
-                raise MediaError("player position is invalid") from error
+            if type(position) is not int:
+                raise MediaError("player position must be an integer")
             if position < 0:
                 raise MediaError("player position is out of range")
         item = player.get("item")
