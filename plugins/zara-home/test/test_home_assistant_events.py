@@ -82,6 +82,9 @@ class HomeAssistantEventStreamTest(unittest.TestCase):
         self.assertEqual(sock.sent[1], {"id": 1, "type": "subscribe_events", "event_type": "state_changed"})
         self.assertIsNone(stream.observation("light.desk"))
         stream.poll_once()
+        self.assertFalse(stream.fresh)
+        self.assertIsNone(stream.observation("light.desk"))
+        stream.poll_once()
         self.assertTrue(stream.fresh)
         stream.poll_once()
         self.assertTrue(stream.observation("light.desk")["state"]["power"])
@@ -106,6 +109,7 @@ class HomeAssistantEventStreamTest(unittest.TestCase):
         ])
         stream, _ = self.stream([sock])
         stream.connect_once()
+        stream.poll_once()
         with self.assertRaises(HomeAssistantEventError) as raised:
             stream.poll_once()
         self.assertEqual(str(raised.exception), "frame-too-large")
@@ -124,6 +128,7 @@ class HomeAssistantEventStreamTest(unittest.TestCase):
         stream.connect_once()
         stream.poll_once()
         stream.poll_once()
+        stream.poll_once()
         self.assertEqual(stream.observations(), {})
 
     def test_older_last_updated_cannot_replace_newer_observation(self):
@@ -136,6 +141,7 @@ class HomeAssistantEventStreamTest(unittest.TestCase):
         ])
         stream, _ = self.stream([sock])
         stream.connect_once()
+        stream.poll_once()
         stream.poll_once()
         stream.poll_once()
         self.assertTrue(stream.observation("switch.fan")["state"]["power"])
@@ -154,6 +160,8 @@ class HomeAssistantEventStreamTest(unittest.TestCase):
         reconciled = [self.state("light.desk", "off", "2026-09-07T12:05:00+00:00")]
         stream, _ = self.stream([first, second], reconciled)
         stream.connect_once()
+        self.assertFalse(stream.fresh)
+        stream.poll_once()
         self.assertTrue(stream.fresh)
         stream.mark_disconnected()
         self.assertFalse(stream.fresh)
