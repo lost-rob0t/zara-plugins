@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import socket
 from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import unquote, urljoin, urlsplit
 from urllib.request import Request, urlopen
 
 
@@ -13,6 +13,7 @@ class HomeAssistantHTTPError(RuntimeError):
 
 class HomeAssistantHTTPTransport:
     _MAX_RESPONSE = 1024 * 1024
+    _METHODS = frozenset({"GET", "POST"})
 
     def __init__(self, base_url: str, access_token: str, *, refresh_token=None, timeout: float = 10.0) -> None:
         parsed = urlsplit(base_url)
@@ -32,6 +33,8 @@ class HomeAssistantHTTPTransport:
         self.timeout = timeout
 
     def request(self, method: str, path: str, payload=None):
+        if method not in self._METHODS:
+            raise HomeAssistantHTTPError("unsupported-method")
         self._validate_path(path)
         return self._request_once(method, path, payload, allow_refresh=True)
 
@@ -75,12 +78,13 @@ class HomeAssistantHTTPTransport:
 
     @staticmethod
     def _validate_path(path: str) -> None:
-        if not isinstance(path, str) or not path.startswith("/") or path.startswith("//"):
+        if not isinstance(path, str) or not path.startswith("/api/") or path.startswith("//"):
             raise HomeAssistantHTTPError("invalid-request-path")
         parsed = urlsplit(path)
         if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
             raise HomeAssistantHTTPError("invalid-request-path")
-        segments = [segment for segment in parsed.path.split("/") if segment]
+        decoded = unquote(parsed.path)
+        segments = [segment for segment in decoded.split("/") if segment]
         if any(segment in {".", ".."} for segment in segments):
             raise HomeAssistantHTTPError("invalid-request-path")
 
