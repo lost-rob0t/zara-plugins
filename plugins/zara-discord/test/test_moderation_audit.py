@@ -96,6 +96,14 @@ class ModerationAuditTests(unittest.TestCase):
         self.assertLessEqual(rotated.stat().st_size, 400)
         self.assertFalse((self.directory / "moderation-audit.jsonl.2").exists())
 
+    def test_rotation_bounds_require_exact_positive_integers(self):
+        for field in ("max_bytes", "max_files"):
+            for value in (True, False, 1.5, "2", None, 0, -1):
+                with self.subTest(field=field, value=value):
+                    with self.assertRaises(ValueError):
+                        ModerationAudit(self.directory, **{field: value})
+                    self.assertEqual(list(self.directory.iterdir()), [])
+
     def test_rejects_unknown_actions_outcomes_and_invalid_ids(self):
         audit = ModerationAudit(self.directory)
         common = dict(guild_id=1, channel_id=2, message_id=3, target_id=4)
