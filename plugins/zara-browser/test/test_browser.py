@@ -14,6 +14,22 @@ class BrowserSessionTest(unittest.TestCase):
         self.backend = FakeBrowserBackend()
         self.session = BrowserSession(self.backend, max_text_bytes=128, max_tabs=4)
 
+    def test_resource_bounds_require_exact_integers(self):
+        invalid_values = (True, 64.5, "64", None)
+        fields = {
+            "max_text_bytes": 128,
+            "max_tabs": 4,
+            "max_input_bytes": 8192,
+            "max_screenshot_bytes": 2 * 1024 * 1024,
+        }
+        for field in fields:
+            for value in invalid_values:
+                options = dict(fields)
+                options[field] = value
+                with self.subTest(field=field, value=value):
+                    with self.assertRaises(BrowserError):
+                        BrowserSession(self.backend, **options)
+
     def test_tabs_persist_across_operations(self):
         first = self.session.open_tab("https://example.test/a")
         second = self.session.open_tab("https://example.test/b")
