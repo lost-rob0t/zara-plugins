@@ -2425,9 +2425,11 @@ def _resolve_renderer_command(
         if (
             not isinstance(explicit, list)
             or not explicit
-            or not all(isinstance(part, str) for part in explicit)
+            or not all(isinstance(part, str) and part for part in explicit)
         ):
-            raise ValueError("renderer_command must be a list of strings")
+            raise ValueError(
+                "renderer_command must be a non-empty list of non-empty strings"
+            )
         return list(explicit)
     env = os.environ.get("ZARA_AVATAR_RENDERER")
     if env:
