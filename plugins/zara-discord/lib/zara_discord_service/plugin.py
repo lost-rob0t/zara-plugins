@@ -86,15 +86,20 @@ class ZaraDiscordPlugin:
                     return
                 controller.handle_event(envelope.event)
 
+        runtime_events_worker = None
         try:
-            runtime.start_worker("runtime-events", consume_events)
+            runtime_events_worker = runtime.start_worker("runtime-events", consume_events)
             runtime.start_worker(
                 "gateway",
                 lambda stop_event: bot.run_gateway(token, stop_event),
             )
         except Exception:
+            if runtime_events_worker is not None:
+                runtime_events_worker.request_stop()
             bot.request_close()
             subscription.close()
+            if runtime_events_worker is not None:
+                runtime_events_worker.join(timeout=1.0)
             self._bot = None
             self._subscription = None
             raise
