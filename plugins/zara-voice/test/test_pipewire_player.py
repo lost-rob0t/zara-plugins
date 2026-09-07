@@ -45,6 +45,23 @@ class BlockingStdin(FakeStdin):
         self.release.set()
 
 
+class StubbornBlockingStdin(FakeStdin):
+    def __init__(self):
+        super().__init__()
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def write(self, data):
+        self.started.set()
+        self.release.wait(timeout=5.0)
+        if self.closed:
+            raise ValueError("closed")
+        return super().write(data)
+
+    def close(self):
+        self.closed = True
+
+
 class FakeProcess:
     def __init__(self, *, returncode=None, wait_timeout=False, stdin=None):
         self.stdin = stdin or FakeStdin()
@@ -80,6 +97,12 @@ class StuckProcess(FakeProcess):
     def wait(self, timeout=None):
         self.wait_calls.append(timeout)
         raise subprocess.TimeoutExpired("pw-play", timeout)
+
+
+class MissingStdinStuckProcess(StuckProcess):
+    def __init__(self):
+        super().__init__()
+        self.stdin = None
 
 
 class PipeWirePlayerTests(unittest.TestCase):
@@ -153,6 +176,23 @@ class PipeWirePlayerTests(unittest.TestCase):
 
         self.assertEqual(calls, [])
 
+    def test_missing_stdin_stubborn_child_remains_tracked_for_retry(self):
+        process = MissingStdinStuckProcess()
+        player = PipeWirePlayer(
+            locator=lambda name: "/usr/bin/pw-play",
+            process_factory=lambda *args, **kwargs: process,
+            id_factory=lambda: "opaque-no-stdin",
+            terminate_timeout=0.05,
+            kill_timeout=0.05,
+        )
+
+        with self.assertRaisesRegex(VoiceError, "cleanup|cancellation"):
+            player.play(self.artifact())
+
+        self.assertTrue(process.terminated)
+        self.assertTrue(process.killed)
+        self.assertIn("opaque-no-stdin", player._playbacks)
+
     def test_cancel_unknown_or_finished_id_is_rejected_as_stale(self):
         process = FakeProcess(returncode=0)
         player = PipeWirePlayer(
@@ -166,6 +206,25 @@ class PipeWirePlayerTests(unittest.TestCase):
             player.cancel("missing")
         with self.assertRaisesRegex(VoiceError, "stale|unknown"):
             player.cancel("opaque-2")
+
+    def test_finished_process_with_live_writer_reports_cleanup_timeout_not_stale(self):
+        stdin = StubbornBlockingStdin()
+        process = FakeProcess(returncode=0, stdin=stdin)
+        player = PipeWirePlayer(
+            locator=lambda name: "/usr/bin/pw-play",
+            process_factory=lambda *args, **kwargs: process,
+            id_factory=lambda: "opaque-finished-writer",
+            writer_timeout=0.05,
+        )
+        player.play(self.artifact())
+        self.assertTrue(stdin.started.wait(timeout=0.5))
+
+        try:
+            with self.assertRaisesRegex(VoiceError, "writer cleanup exceeded"):
+                player.cancel("opaque-finished-writer")
+            self.assertIn("opaque-finished-writer", player._playbacks)
+        finally:
+            stdin.release.set()
 
     def test_cancel_terminates_waits_then_escalates_to_kill_with_bounds(self):
         process = FakeProcess(wait_timeout=True)
