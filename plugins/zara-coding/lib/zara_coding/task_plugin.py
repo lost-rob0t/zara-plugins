@@ -1,62 +1,40 @@
 from __future__ import annotations
 
 import json
-import shutil
 from collections.abc import Sequence
 from pathlib import Path
 
 from langchain_core.tools import StructuredTool
 
-from .domain import CodingError
-from .plugin import ZaraCodingPlugin
+from .coding import CodingError, ZaraCodingPlugin
 from .task_state import TaskStateSession
 
 
 class TaskStateCodingPlugin(ZaraCodingPlugin):
-    def __init__(self, *, plugin_root: Path | None = None) -> None:
+    def __init__(self, *, task_state: TaskStateSession | None = None) -> None:
         super().__init__()
-        self.plugin_root = (plugin_root or Path(__file__).resolve().parents[2]).resolve()
-        self.task_state: TaskStateSession | None = None
-        self.task_state_reason = "not-started"
+        self.task_state = task_state
+        self.task_state_reason = "task-state-not-started"
 
     def start(self, runtime) -> None:
         super().start(runtime)
-        section = self._section(runtime.configuration)
-        checkout = section.get("prolog_rlm_checkout")
-        executable = section.get("swipl", "swipl")
-        if not checkout:
-            self.task_state = None
-            self.task_state_reason = "prolog-rlm-checkout-not-configured"
+        if self.task_state is not None:
+            self.task_state_reason = ""
             return
-        if not isinstance(executable, str) or not executable:
-            raise ValueError("swipl must be a non-empty string")
-        if shutil.which(executable) is None:
-            self.task_state = None
-            self.task_state_reason = "swipl-executable-not-found"
-            return
-        driver = self.plugin_root / "prolog" / "zara_coding_task_state.pl"
-        if not driver.is_file():
-            self.task_state = None
-            self.task_state_reason = "task-state-driver-missing"
-            return
-        session = TaskStateSession(driver, executable=executable)
         try:
-            session.start()
-            session.status()
-        except CodingError:
-            session.stop()
+            self.task_state = TaskStateSession(
+                Path(__file__).resolve().parents[2] / "prolog" / "zara_coding_task_state.pl"
+            )
+            self.task_state.status()
+            self.task_state_reason = ""
+        except Exception as exc:
             self.task_state = None
-            self.task_state_reason = "task-state-prolog-not-ready"
-            return
-        self.task_state = session
-        self.task_state_reason = "ready"
+            self.task_state_reason = str(exc)
 
     def stop(self) -> None:
-        session = self.task_state
-        self.task_state = None
-        if session is not None:
-            session.stop()
-        self.task_state_reason = "stopped"
+        if self.task_state is not None:
+            self.task_state.stop()
+            self.task_state = None
         super().stop()
 
     def tools(self) -> Sequence[StructuredTool]:
@@ -65,7 +43,7 @@ class TaskStateCodingPlugin(ZaraCodingPlugin):
             StructuredTool.from_function(
                 func=self.task_create,
                 name="coding.task.create",
-                description="Create bounded Prolog-owned symbolic coding task state bound to a freshly inspected repository identity.",
+                description="Create bounded Prolog-owned symbolic coding task state. Each completion criterion is a verifier key that requires its own current verifier-owned passing evidence.",
             ),
             StructuredTool.from_function(
                 func=self.task_get,
@@ -80,7 +58,7 @@ class TaskStateCodingPlugin(ZaraCodingPlugin):
             StructuredTool.from_function(
                 func=self.task_complete,
                 name="coding.task.complete",
-                description="Complete one symbolic coding task only when Prolog state contains verifier-owned passing verification evidence.",
+                description="Complete one symbolic coding task only when every declared verifier key has current verifier-owned passing evidence.",
             ),
         )
 
@@ -99,26 +77,19 @@ class TaskStateCodingPlugin(ZaraCodingPlugin):
         self,
         task_id: str,
         goal: str,
-        repository_path: str,
+        repository: str | None = None,
         constraints: list[str] | None = None,
         dependencies: list[str] | None = None,
         completion_criteria: list[str] | None = None,
     ) -> str:
-        if not isinstance(repository_path, str) or not repository_path:
-            raise ValueError("repository_path must be a non-empty string")
-        inspector = self._require_inspector()
-        observed = inspector.inspect(Path(repository_path))
-        repository = {
-            "root": observed["root"],
-            "head": observed["head"],
-            "branch": observed["branch"],
-        }
-        session = self._require_task_state()
+        repository_identity = None
+        if repository is not None:
+            repository_identity = json.loads(self.repo_inspect(repository))
         return json.dumps(
-            session.create_task(
+            self._require_task_state().create_task(
                 task_id,
                 goal=goal,
-                repository=repository,
+                repository=repository_identity,
                 constraints=constraints or (),
                 dependencies=dependencies or (),
                 completion_criteria=completion_criteria or (),
@@ -148,9 +119,5 @@ class TaskStateCodingPlugin(ZaraCodingPlugin):
 
     def _require_task_state(self) -> TaskStateSession:
         if self.task_state is None:
-            raise RuntimeError(f"zara-coding symbolic task state unavailable: {self.task_state_reason}")
+            raise CodingError(f"zara-coding symbolic task state unavailable: {self.task_state_reason}")
         return self.task_state
-
-
-def create_plugin(*, plugin_root: Path | None = None) -> TaskStateCodingPlugin:
-    return TaskStateCodingPlugin(plugin_root=plugin_root)
