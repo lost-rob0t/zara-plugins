@@ -47,6 +47,10 @@ class InstallerTests(unittest.TestCase):
     def wrapper_backup(self):
         return self.plugin_entry.with_name(".zara_discord.py.backup")
 
+    @property
+    def transaction_marker(self):
+        return self.config_dir / ".install-transaction.json"
+
     def seed_existing_install(self):
         library_dir = self.config_dir / "lib"
         library_dir.mkdir(parents=True)
@@ -55,6 +59,29 @@ class InstallerTests(unittest.TestCase):
         self.plugin_entry.write_text("old-wrapper\n")
         self.config_dir.joinpath("settings.json").write_text('{"version": 1, "guilds": {}}\n')
         self.config_dir.joinpath("token").write_text("keep-me\n")
+
+    def seed_interrupted_transaction(self, marker_text):
+        self.seed_existing_install()
+        os.replace(self.config_dir / "lib", self.library_backup)
+        os.replace(self.plugin_entry, self.wrapper_backup)
+        self.transaction_marker.write_text(marker_text, encoding="utf-8")
+
+    def assert_interrupted_transaction_unchanged(self, marker_text):
+        self.assertFalse(self.config_dir.joinpath("lib").exists())
+        self.assertFalse(self.plugin_entry.exists())
+        self.assertEqual(
+            self.library_backup.joinpath("old-marker.txt").read_text(),
+            "old-library\n",
+        )
+        self.assertEqual(self.wrapper_backup.read_text(), "old-wrapper\n")
+        self.assertEqual(self.transaction_marker.read_text(encoding="utf-8"), marker_text)
+        self.assertEqual(
+            self.config_dir.joinpath("settings.json").read_text(),
+            '{"version": 1, "guilds": {}}\n',
+        )
+        self.assertEqual(self.config_dir.joinpath("token").read_text(), "keep-me\n")
+        self.assertFalse(self.config_dir.joinpath(".lib.tmp").exists())
+        self.assertFalse(self.plugin_entry.with_name(".zara_discord.py.tmp").exists())
 
     def assert_existing_install_intact(self):
         self.assertEqual(
@@ -213,6 +240,42 @@ class InstallerTests(unittest.TestCase):
                 install(home=self.home, xdg_config_home=self.xdg)
 
         self.assert_coherent_new_install_intact()
+
+    def test_missing_transaction_marker_key_is_rejected_without_mutation(self):
+        marker_text = '{"library_existed": true}\n'
+        self.seed_interrupted_transaction(marker_text)
+
+        with self.assertRaisesRegex(ValueError, "invalid install transaction marker"):
+            install(home=self.home, xdg_config_home=self.xdg)
+
+        self.assert_interrupted_transaction_unchanged(marker_text)
+
+    def test_non_boolean_transaction_marker_value_is_rejected_without_mutation(self):
+        marker_text = '{"library_existed": "yes", "wrapper_existed": true}\n'
+        self.seed_interrupted_transaction(marker_text)
+
+        with self.assertRaisesRegex(ValueError, "invalid install transaction marker"):
+            install(home=self.home, xdg_config_home=self.xdg)
+
+        self.assert_interrupted_transaction_unchanged(marker_text)
+
+    def test_extra_transaction_marker_key_is_rejected_without_mutation(self):
+        marker_text = '{"library_existed": true, "wrapper_existed": true, "extra": false}\n'
+        self.seed_interrupted_transaction(marker_text)
+
+        with self.assertRaisesRegex(ValueError, "invalid install transaction marker"):
+            install(home=self.home, xdg_config_home=self.xdg)
+
+        self.assert_interrupted_transaction_unchanged(marker_text)
+
+    def test_invalid_json_transaction_marker_is_rejected_without_mutation(self):
+        marker_text = '{not-json}\n'
+        self.seed_interrupted_transaction(marker_text)
+
+        with self.assertRaisesRegex(ValueError, "invalid install transaction marker"):
+            install(home=self.home, xdg_config_home=self.xdg)
+
+        self.assert_interrupted_transaction_unchanged(marker_text)
 
 
 if __name__ == "__main__":
