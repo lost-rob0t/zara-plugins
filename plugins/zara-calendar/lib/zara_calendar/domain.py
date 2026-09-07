@@ -55,8 +55,10 @@ class CalendarDomain:
         required = {"event_id", "calendar_id", "title", "start", "end", "timezone", "attendees", "recurrence", "reminders", "version"}
         if not required.issubset(event):
             raise CalendarError("calendar event is missing required fields")
-        cls._time(event["start"], "event start")
-        cls._time(event["end"], "event end")
+        start_dt = cls._time(event["start"], "event start")
+        end_dt = cls._time(event["end"], "event end")
+        if end_dt <= start_dt:
+            raise CalendarError("event end must be after start")
         attendees = event["attendees"]
         reminders = event["reminders"]
         recurrence = event["recurrence"]
