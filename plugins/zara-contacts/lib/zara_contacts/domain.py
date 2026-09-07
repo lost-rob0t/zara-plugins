@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 
 
@@ -13,10 +14,12 @@ _PHONE = re.compile(r"^\+[1-9][0-9]{6,14}$")
 
 class ContactsDomain:
     def __init__(self, backend, *, max_results: int = 50) -> None:
-        if not 1 <= int(max_results) <= 200:
+        if type(max_results) is not int:
+            raise ContactsError("max_results must be an integer")
+        if not 1 <= max_results <= 200:
             raise ContactsError("max_results is out of range")
         self.backend = backend
-        self.max_results = int(max_results)
+        self.max_results = max_results
 
     @staticmethod
     def _text(value, name, limit=512):
@@ -80,10 +83,12 @@ class ContactsDomain:
         for item in sources:
             if not isinstance(item, dict) or set(item) != {"provider", "record_id", "confidence"}:
                 raise ContactsError("source is invalid")
-            confidence = float(item["confidence"])
+            confidence = item["confidence"]
+            if type(confidence) not in {int, float} or not math.isfinite(confidence):
+                raise ContactsError("source confidence must be a finite number")
             if not 0.0 <= confidence <= 1.0:
                 raise ContactsError("source confidence is out of range")
-            normalized_sources.append({"provider": cls._text(item["provider"], "source provider", 128), "record_id": cls._text(item["record_id"], "source record id", 256), "confidence": confidence})
+            normalized_sources.append({"provider": cls._text(item["provider"], "source provider", 128), "record_id": cls._text(item["record_id"], "source record id", 256), "confidence": float(confidence)})
         return {
             "contact_id": contact_id,
             "display_name": cls._text(contact["display_name"], "display name", 512),
@@ -97,7 +102,9 @@ class ContactsDomain:
 
     def search(self, query, *, limit=None):
         query = self._text(query, "query", 512)
-        bounded = min(self.max_results, self.max_results if limit is None else int(limit))
+        if limit is not None and type(limit) is not int:
+            raise ContactsError("result limit must be an integer")
+        bounded = self.max_results if limit is None else min(self.max_results, limit)
         if bounded < 1:
             raise ContactsError("result limit is invalid")
         values = self.backend.search_contacts(query, bounded)
