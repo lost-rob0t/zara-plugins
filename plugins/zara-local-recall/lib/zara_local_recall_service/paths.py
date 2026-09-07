@@ -72,7 +72,11 @@ class PluginSettings:
         cli_timeout = configuration.get("cli_timeout_seconds", DEFAULT_CLI_TIMEOUT_SECONDS)
         return cls(
             enabled=enabled if isinstance(enabled, bool) else True,
-            visual_selector=selector if selector in {"current", "recent"} else "recent",
+            visual_selector=(
+                selector
+                if isinstance(selector, str) and selector in {"current", "recent"}
+                else "recent"
+            ),
             visual_maximum_records=(
                 maximum_records
                 if isinstance(maximum_records, int)
