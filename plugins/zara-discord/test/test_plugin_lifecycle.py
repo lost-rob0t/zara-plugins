@@ -14,6 +14,7 @@ class FakeRuntime:
     def __init__(self):
         self.subscriptions = []
         self.workers = []
+        self.worker_handles = {}
         self.fail_worker = None
 
     def subscribe(self, *, maxsize):
@@ -24,7 +25,10 @@ class FakeRuntime:
     def start_worker(self, name, target):
         if name == self.fail_worker:
             raise RuntimeError(f"synthetic {name} worker failure")
+        worker = Mock()
         self.workers.append((name, target))
+        self.worker_handles[name] = worker
+        return worker
 
 
 class ZaraDiscordPluginLifecycleTest(unittest.TestCase):
@@ -87,7 +91,7 @@ class ZaraDiscordPluginLifecycleTest(unittest.TestCase):
     @patch("zara_discord_service.plugin.PolicyStore")
     @patch("zara_discord_service.plugin.load_token")
     @patch("zara_discord_service.plugin.config_directory")
-    def test_worker_setup_failure_rolls_back_client_and_subscription(
+    def test_worker_setup_failure_rolls_back_client_subscription_and_started_worker(
         self,
         config_directory,
         load_token,
@@ -108,6 +112,9 @@ class ZaraDiscordPluginLifecycleTest(unittest.TestCase):
             self.plugin.start(self.runtime)
 
         self.assertEqual([name for name, _ in self.runtime.workers], ["runtime-events"])
+        worker = self.runtime.worker_handles["runtime-events"]
+        worker.request_stop.assert_called_once_with()
+        worker.join.assert_called_once_with(timeout=1.0)
         self.assertEqual(len(self.runtime.subscriptions), 1)
         self.runtime.subscriptions[0][1].close.assert_called_once_with()
         bot.request_close.assert_called_once_with()
