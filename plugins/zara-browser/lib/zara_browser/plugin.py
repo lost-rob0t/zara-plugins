@@ -1,14 +1,28 @@
 from __future__ import annotations
 
 import json
+import os
 
 from langchain_core.tools import StructuredTool
 from zara.plugins import PluginMetadata, ServicePlugin
 
 from .browser import BrowserSession, UnavailableBrowserBackend
+from .webdriver import WebDriverBrowserBackend
 
 
 PLUGIN_VERSION = "0.1.0"
+
+
+def _configured_backend():
+    endpoint = os.environ.get("ZARA_BROWSER_WEBDRIVER_URL")
+    session_id = os.environ.get("ZARA_BROWSER_WEBDRIVER_SESSION_ID")
+    if endpoint is None and session_id is None:
+        return UnavailableBrowserBackend()
+    if not endpoint or not session_id:
+        backend = UnavailableBrowserBackend()
+        backend.reason = "browser-webdriver-configuration-incomplete"
+        return backend
+    return WebDriverBrowserBackend(endpoint, session_id)
 
 
 class ZaraBrowserPlugin(ServicePlugin):
@@ -20,7 +34,7 @@ class ZaraBrowserPlugin(ServicePlugin):
     )
 
     def __init__(self, backend=None) -> None:
-        self.session = BrowserSession(backend or UnavailableBrowserBackend())
+        self.session = BrowserSession(backend or _configured_backend())
 
     def start(self, runtime) -> None:
         return None
