@@ -15,6 +15,12 @@ class InstallResult:
     config_dir: Path
 
 
+@dataclass(frozen=True)
+class _TransactionState:
+    library_existed: bool
+    wrapper_existed: bool
+
+
 def _copy_writable(source: str, destination: str) -> str:
     shutil.copyfile(source, destination)
     os.chmod(destination, 0o644)
@@ -42,6 +48,25 @@ def _restore_component(*, live: Path, backup: Path, existed: bool) -> None:
     _remove_path(backup)
 
 
+def _read_transaction_state(transaction_marker: Path) -> _TransactionState:
+    try:
+        raw_state = json.loads(transaction_marker.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("invalid install transaction marker") from exc
+
+    expected_keys = {"library_existed", "wrapper_existed"}
+    if not isinstance(raw_state, dict) or set(raw_state) != expected_keys:
+        raise ValueError("invalid install transaction marker")
+    library_existed = raw_state["library_existed"]
+    wrapper_existed = raw_state["wrapper_existed"]
+    if type(library_existed) is not bool or type(wrapper_existed) is not bool:
+        raise ValueError("invalid install transaction marker")
+    return _TransactionState(
+        library_existed=library_existed,
+        wrapper_existed=wrapper_existed,
+    )
+
+
 def _recover_interrupted_publish(
     *,
     library_dir: Path,
@@ -51,16 +76,16 @@ def _recover_interrupted_publish(
     transaction_marker: Path,
 ) -> None:
     if transaction_marker.exists():
-        state = json.loads(transaction_marker.read_text(encoding="utf-8"))
+        state = _read_transaction_state(transaction_marker)
         _restore_component(
             live=library_dir,
             backup=library_backup,
-            existed=bool(state["library_existed"]),
+            existed=state.library_existed,
         )
         _restore_component(
             live=plugin_entry,
             backup=wrapper_backup,
-            existed=bool(state["wrapper_existed"]),
+            existed=state.wrapper_existed,
         )
         _remove_path(library_backup)
         _remove_path(wrapper_backup)
@@ -115,13 +140,18 @@ def _publish_install(
     wrapper_backup = plugin_entry.with_name(".zara_discord.py.backup")
     transaction_marker = library_dir.parent / ".install-transaction.json"
 
-    _recover_interrupted_publish(
-        library_dir=library_dir,
-        library_backup=library_backup,
-        plugin_entry=plugin_entry,
-        wrapper_backup=wrapper_backup,
-        transaction_marker=transaction_marker,
-    )
+    try:
+        _recover_interrupted_publish(
+            library_dir=library_dir,
+            library_backup=library_backup,
+            plugin_entry=plugin_entry,
+            wrapper_backup=wrapper_backup,
+            transaction_marker=transaction_marker,
+        )
+    except BaseException:
+        _remove_path(staging)
+        _remove_path(wrapper_staging)
+        raise
 
     library_existed = library_dir.exists()
     wrapper_existed = plugin_entry.exists()
