@@ -9,13 +9,17 @@ class CalendarError(RuntimeError):
 
 class CalendarDomain:
     def __init__(self, backend, *, max_results: int = 50, max_window_days: int = 90) -> None:
-        if not 1 <= int(max_results) <= 200:
+        if type(max_results) is not int:
+            raise CalendarError("max_results must be an integer")
+        if type(max_window_days) is not int:
+            raise CalendarError("max_window_days must be an integer")
+        if not 1 <= max_results <= 200:
             raise CalendarError("max_results is out of range")
-        if not 1 <= int(max_window_days) <= 366:
+        if not 1 <= max_window_days <= 366:
             raise CalendarError("max_window_days is out of range")
         self.backend = backend
-        self.max_results = int(max_results)
-        self.max_window_days = int(max_window_days)
+        self.max_results = max_results
+        self.max_window_days = max_window_days
 
     @staticmethod
     def _text(value, name, limit=1024):
@@ -69,7 +73,9 @@ class CalendarDomain:
         for reminder in reminders:
             if not isinstance(reminder, dict) or set(reminder) != {"minutes_before"}:
                 raise CalendarError("reminder is invalid")
-            minutes = int(reminder["minutes_before"])
+            minutes = reminder["minutes_before"]
+            if type(minutes) is not int:
+                raise CalendarError("reminder minutes must be an integer")
             if not 0 <= minutes <= 10080:
                 raise CalendarError("reminder is out of range")
             normalized_reminders.append({"minutes_before": minutes})
@@ -92,7 +98,12 @@ class CalendarDomain:
             text = self._text(text, "search text")
         if calendar_id is not None:
             calendar_id = self._text(calendar_id, "calendar id", 256)
-        bounded = min(self.max_results, self.max_results if limit is None else int(limit))
+        if limit is None:
+            bounded = self.max_results
+        else:
+            if type(limit) is not int:
+                raise CalendarError("result limit must be an integer")
+            bounded = min(self.max_results, limit)
         if bounded < 1:
             raise CalendarError("result limit is invalid")
         values = self.backend.search_events(start, end, text, calendar_id, bounded)
@@ -125,8 +136,10 @@ class CalendarDomain:
 
     def suggest_times(self, start, end, *, duration_minutes, calendar_ids, step_minutes=30):
         start_dt, end_dt = self._window(start, end)
-        duration = int(duration_minutes)
-        step = int(step_minutes)
+        if type(duration_minutes) is not int or type(step_minutes) is not int:
+            raise CalendarError("duration and step must be integers")
+        duration = duration_minutes
+        step = step_minutes
         if not 1 <= duration <= 1440 or not 1 <= step <= 1440:
             raise CalendarError("duration or step is out of range")
         suggestions = []
