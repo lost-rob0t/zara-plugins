@@ -123,6 +123,9 @@ class ReleaseWriterOnTerminateProcess(FakeProcess):
 class StuckProcess(FakeProcess):
     def kill(self):
         self.killed = True
+        release = getattr(self.stdin, "release", None)
+        if release is not None:
+            release.set()
 
     def wait(self, timeout=None):
         self.wait_calls.append(timeout)
@@ -274,9 +277,9 @@ class PipeWirePlayerTests(unittest.TestCase):
         with self.assertRaisesRegex(VoiceError, "stale|unknown"):
             player.cancel("opaque-3")
 
-    def test_cancel_closes_input_and_joins_blocked_writer_before_success(self):
+    def test_cancel_terminates_process_then_joins_writer_before_success(self):
         stdin = BlockingStdin()
-        process = FakeProcess(stdin=stdin)
+        process = ReleaseWriterOnTerminateProcess(stdin=stdin)
         player = PipeWirePlayer(
             locator=lambda name: "/usr/bin/pw-play",
             process_factory=lambda *args, **kwargs: process,
@@ -287,6 +290,7 @@ class PipeWirePlayerTests(unittest.TestCase):
         self.assertTrue(stdin.started.wait(timeout=0.5))
 
         self.assertTrue(player.cancel("opaque-blocked"))
+        self.assertTrue(process.terminated)
         self.assertTrue(stdin.closed)
         self.assertFalse(any(thread.name.startswith("zara-voice-pw-play-opaque-b") for thread in threading.enumerate()))
 
