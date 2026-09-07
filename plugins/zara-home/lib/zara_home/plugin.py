@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 from langchain_core.tools import StructuredTool
 from zara.plugins import PluginMetadata, ServicePlugin
 
 from .domain import HomeError, HomeService
+from .home_assistant import HomeAssistantAdapter
+from .home_assistant_transport import HomeAssistantHTTPError, HomeAssistantHTTPTransport
 from .rules import HomeRulePlanner
 
 
@@ -16,8 +19,26 @@ PLUGIN_VERSION = "0.1.0"
 class UnavailableHomeProvider:
     reason = "smart-home-provider-not-configured"
 
+    def __init__(self, reason: str | None = None) -> None:
+        if reason:
+            self.reason = reason
+
     def __getattr__(self, name):
         raise HomeError(self.reason)
+
+
+def _configured_provider():
+    base_url = os.environ.get("ZARA_HOME_ASSISTANT_URL")
+    access_token = os.environ.get("ZARA_HOME_ASSISTANT_TOKEN")
+    if base_url is None and access_token is None:
+        return UnavailableHomeProvider()
+    if not base_url or not access_token:
+        return UnavailableHomeProvider("home-assistant-configuration-incomplete")
+    try:
+        transport = HomeAssistantHTTPTransport(base_url, access_token)
+    except HomeAssistantHTTPError:
+        return UnavailableHomeProvider("home-assistant-configuration-invalid")
+    return HomeAssistantAdapter(transport)
 
 
 class ZaraHomePlugin(ServicePlugin):
@@ -29,7 +50,7 @@ class ZaraHomePlugin(ServicePlugin):
     )
 
     def __init__(self, provider=None) -> None:
-        self.provider = provider or UnavailableHomeProvider()
+        self.provider = provider or _configured_provider()
         self.home = HomeService(self.provider)
         self.planner = HomeRulePlanner(self.home)
 
