@@ -26,6 +26,17 @@ class FakeProcess:
     def wait(self, timeout=None) -> int: self.returncode = 0; return 0
 
 
+class MutatingStdin(io.StringIO):
+    def __init__(self, on_complete) -> None:
+        super().__init__()
+        self._on_complete = on_complete
+
+    def write(self, value: str) -> int:
+        if '"op":"complete"' in value:
+            self._on_complete()
+        return super().write(value)
+
+
 class RecordingStdout:
     def __init__(self, response: dict[str, object]) -> None:
         self._line = json.dumps(response) + "\n"
@@ -62,6 +73,32 @@ class TaskStateSessionTest(unittest.TestCase):
         self.assertEqual(evidence["evidence"]["provenance"], "verifier")
         self.assertEqual(commands[1]["provenance"], "verifier")
         self.assertEqual(completed["task"]["state"], "completed")
+
+    def test_external_writer_after_prevalidation_revokes_completion(self) -> None:
+        repository = {"root": "/tmp/repo", "head": "h1", "branch": "main"}
+        state = {"matches": True}
+        process = FakeProcess([
+            {"status": "ok", "task": {"id": "task-race", "state": "completed"}},
+            {"status": "ok", "task": {"id": "task-race", "state": "open"}},
+        ])
+        process.stdin = MutatingStdin(lambda: state.__setitem__("matches", False))
+        session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
+
+        result = session.complete_task(
+            "task-race",
+            expected_repository=repository,
+            repository_validator=lambda expected: state["matches"],
+        )
+
+        commands = [json.loads(line) for line in process.stdin.getvalue().splitlines()]
+        self.assertEqual(result, {"status": "rejected", "reason": "repository-snapshot-stale"})
+        self.assertEqual(
+            commands,
+            [
+                {"op": "complete", "task_id": "task-race"},
+                {"op": "invalidate_completion", "task_id": "task-race"},
+            ],
+        )
 
     def test_evidence_status_rejects_unsupported_values_before_writing(self) -> None:
         process = FakeProcess([]); session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
