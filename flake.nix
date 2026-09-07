@@ -204,6 +204,8 @@
               + ''
                 PYTHONPATH=${pluginPackages.zara-discord}/share/zara/runtime/zara-discord/lib \
                   ${python}/bin/python3 -c 'import discord, audioop, zara_discord_service'
+                PYTHONPATH=${pluginPackages.zara-home}/share/zara/runtime/zara-home/lib \
+                  ${python}/bin/python3 -c 'import websocket; from zara_home.home_assistant_events import HomeAssistantEventStream; assert callable(websocket.create_connection); assert callable(HomeAssistantEventStream.from_transport)'
                 touch $out
               '');
           } // pkgs.lib.listToAttrs (
@@ -239,8 +241,7 @@
           };
 
           apps = { } // pkgs.lib.listToAttrs (
-            map
-              (entry: pkgs.lib.nameValuePair entry.name {
+            map (entry: pkgs.lib.nameValuePair entry.name {
                 type = "app";
                 program = "${pluginPackages.${entry.name}}/bin/${entry.name}";
               })
