@@ -73,7 +73,7 @@ class HomeService:
         return {
             "scene_id": scene_id,
             "provider_evidence": dict(evidence),
-            "verified": bool(evidence.get("verified", False)),
+            "verified": evidence.get("verified") is True,
         }
 
     def _optional_mapping(self, method_name: str, room: str) -> dict[str, Any]:
