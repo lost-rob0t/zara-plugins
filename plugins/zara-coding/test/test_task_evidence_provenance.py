@@ -46,15 +46,15 @@ class TaskEvidenceProvenanceTest(unittest.TestCase):
 
     def verifier(self, task_id: str, kind: str, status: str) -> dict[str, object]:
         return self.request({
-            "op": "record_evidence", "task_id": task_id, "kind": kind,
-            "status": status, "detail": f"{kind} {status}", "provenance": "verifier",
+            "op": "record_verifier_evidence", "task_id": task_id, "kind": kind,
+            "status": status, "detail": f"{kind} {status}",
         })
 
     def test_caller_authored_pass_is_rejected_inside_prolog(self) -> None:
         self.create_task("caller-pass", ["tests"])
         recorded = self.request({
             "op": "record_evidence", "task_id": "caller-pass", "kind": "tests",
-            "status": "passed", "detail": "model says green", "provenance": "caller",
+            "status": "passed", "detail": "model says green", "provenance": "verifier",
         })
         self.assertEqual(recorded, {"status": "rejected", "reason": "passing-evidence-requires-verifier"})
         self.assertEqual(
