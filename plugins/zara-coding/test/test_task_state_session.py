@@ -59,20 +59,67 @@ class TaskStateSessionTest(unittest.TestCase):
         self.assertEqual(commands[0]["op"], "create"); self.assertEqual(commands[1], {"op": "get", "task_id": "task-1"})
 
     def test_completion_fails_closed_until_verification_evidence_exists(self) -> None:
+        verifier_capability = object()
         process = FakeProcess([
             {"status": "rejected", "reason": "verification-evidence-required"},
             {"status": "ok", "evidence": {"kind": "test", "status": "passed", "provenance": "verifier"}},
             {"status": "ok", "task": {"id": "task-1", "state": "completed"}},
         ])
-        session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
+        session = TaskStateSession(
+            Path("/tmp/driver.pl"),
+            process_factory=lambda *args, **kwargs: process,
+            verifier_capability=verifier_capability,
+        )
         rejected = session.complete_task("task-1")
-        evidence = session.record_evidence("task-1", kind="test", status="passed", detail="unit suite")
+        evidence = session.record_verifier_evidence(
+            "task-1",
+            kind="test",
+            status="passed",
+            detail="unit suite",
+            capability=verifier_capability,
+        )
         completed = session.complete_task("task-1")
         commands = [json.loads(line) for line in process.stdin.getvalue().splitlines()]
         self.assertEqual(rejected, {"status": "rejected", "reason": "verification-evidence-required"})
         self.assertEqual(evidence["evidence"]["provenance"], "verifier")
         self.assertEqual(commands[1]["provenance"], "verifier")
         self.assertEqual(completed["task"]["state"], "completed")
+
+    def test_generic_evidence_path_cannot_mint_verifier_pass(self) -> None:
+        process = FakeProcess([])
+        session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
+        with self.assertRaisesRegex(ValueError, "passing task evidence is verifier-owned"):
+            session.record_evidence("task-1", kind="test", status="passed", detail="model says green")
+        self.assertEqual(process.stdin.getvalue(), "")
+
+    def test_verifier_evidence_requires_matching_capability(self) -> None:
+        verifier_capability = object()
+        process = FakeProcess([])
+        session = TaskStateSession(
+            Path("/tmp/driver.pl"),
+            process_factory=lambda *args, **kwargs: process,
+            verifier_capability=verifier_capability,
+        )
+        with self.assertRaisesRegex(PermissionError, "verifier capability required"):
+            session.record_verifier_evidence(
+                "task-1",
+                kind="test",
+                status="passed",
+                detail="forged",
+                capability=object(),
+            )
+        self.assertEqual(process.stdin.getvalue(), "")
+
+    def test_generic_evidence_is_caller_owned_by_construction(self) -> None:
+        process = FakeProcess([
+            {"status": "ok", "evidence": {"kind": "test", "status": "failed", "provenance": "caller"}},
+        ])
+        session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
+        evidence = session.record_evidence("task-1", kind="test", status="failed", detail="caller observed failure")
+        command = json.loads(process.stdin.getvalue().splitlines()[0])
+        self.assertEqual(evidence["evidence"]["provenance"], "caller")
+        self.assertEqual(command["provenance"], "caller")
+        self.assertNotIn("capability", command)
 
     def test_external_writer_after_prevalidation_revokes_completion(self) -> None:
         repository = {"root": "/tmp/repo", "head": "h1", "branch": "main"}
@@ -104,12 +151,6 @@ class TaskStateSessionTest(unittest.TestCase):
         process = FakeProcess([]); session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
         with self.assertRaisesRegex(ValueError, "status must be one of"):
             session.record_evidence("task-1", kind="test", status="unknown", detail="ambiguous")
-        self.assertEqual(process.stdin.getvalue(), "")
-
-    def test_evidence_provenance_rejects_unsupported_values_before_writing(self) -> None:
-        process = FakeProcess([]); session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
-        with self.assertRaisesRegex(ValueError, "provenance must be one of"):
-            session.record_evidence("task-1", kind="test", status="failed", detail="ambiguous", provenance="model")
         self.assertEqual(process.stdin.getvalue(), "")
 
     def test_protocol_rejects_oversized_fields_before_writing(self) -> None:
