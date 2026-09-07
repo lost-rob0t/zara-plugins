@@ -29,7 +29,7 @@ class ZaraContextPlugin(ServicePlugin):
             plugins = configuration.get("plugins")
             section = plugins.get("zara-context", {}) if isinstance(plugins, dict) else {}
             if isinstance(section, dict) and "default_ttl_seconds" in section:
-                ttl = float(section["default_ttl_seconds"])
+                ttl = section["default_ttl_seconds"]
         self.store = ContextStore(default_ttl=ttl)
 
     def stop(self) -> None:
