@@ -46,10 +46,12 @@ class ZaraDiscordPlugin:
         directory = config_directory()
         try:
             token = load_token(directory)
-        except ConfigError as error:
-            raise RuntimeError(
-                "Discord integration unavailable: configuration is invalid"
-            ) from error
+        except ConfigError:
+            # API v1 has no canonical plugin-unavailable lifecycle result. Keep the
+            # zero-secret compatibility contract without allocating any runtime
+            # resources; Core issue #658 tracks the missing public state seam.
+            logger.warning("Discord plugin unavailable: configuration is invalid")
+            return
 
         policies = PolicyStore(directory)
         acknowledgements = ModerationAcknowledgementStore(directory)
