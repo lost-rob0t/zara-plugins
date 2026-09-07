@@ -1,3 +1,4 @@
+import math
 import sys
 import unittest
 from pathlib import Path
@@ -141,6 +142,19 @@ class MediaDomainTest(unittest.TestCase):
             self.media.playback("desk", "volume", value=1.1)
         with self.assertRaises(MediaError):
             self.media.playback("desk", "seek", value=-1)
+
+    def test_playback_numeric_values_are_typed_before_backend_mutation(self):
+        before = self.media.state("desk")
+        for value in (True, 12.5, "12", None):
+            with self.subTest(action="seek", value=value):
+                with self.assertRaises(MediaError):
+                    self.media.playback("desk", "seek", value=value)
+                self.assertEqual(self.media.state("desk"), before)
+        for value in (True, "0.5", None, math.nan, math.inf, -math.inf):
+            with self.subTest(action="volume", value=value):
+                with self.assertRaises(MediaError):
+                    self.media.playback("desk", "volume", value=value)
+                self.assertEqual(self.media.state("desk"), before)
 
     def test_queue_operations_are_bounded_structured_and_verified(self):
         item = self.backend.catalog[0]
