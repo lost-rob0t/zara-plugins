@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import tempfile
 from datetime import datetime, timedelta, timezone
@@ -48,6 +49,23 @@ class TimerDomain:
     def _name(value):
         if not isinstance(value, str) or not value.strip() or len(value.encode("utf-8")) > 512:
             raise TimerError("name is invalid")
+        return value
+
+    @staticmethod
+    def _duration(value):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TimerError("duration_seconds must be numeric")
+        duration = float(value)
+        if not math.isfinite(duration) or not 0 < duration <= 31_536_000:
+            raise TimerError("duration_seconds is out of range")
+        return duration
+
+    @staticmethod
+    def _cadence(value):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TimerError("cadence_seconds must be an integer")
+        if not 1 <= value <= 31_536_000:
+            raise TimerError("cadence_seconds is out of range")
         return value
 
     def _load(self):
@@ -116,9 +134,7 @@ class TimerDomain:
         return result
 
     def create_timer(self, name, duration_seconds):
-        duration = float(duration_seconds)
-        if not 0 < duration <= 31_536_000:
-            raise TimerError("duration_seconds is out of range")
+        duration = self._duration(duration_seconds)
         item = {
             "id": self._next_id("timer"), "kind": "timer", "name": self._name(name),
             "status": "running", "remaining": duration, "started_mono": self.clock.monotonic(),
@@ -137,9 +153,7 @@ class TimerDomain:
 
     def create_reminder(self, name, due_at, *, cadence_seconds, timezone_name):
         due = self._aware(due_at, "due_at")
-        cadence = int(cadence_seconds)
-        if not 1 <= cadence <= 31_536_000:
-            raise TimerError("cadence_seconds is out of range")
+        cadence = self._cadence(cadence_seconds)
         if not isinstance(timezone_name, str) or not timezone_name.strip() or len(timezone_name) > 128:
             raise TimerError("timezone is invalid")
         try:
