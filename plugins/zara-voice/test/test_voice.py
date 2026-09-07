@@ -57,6 +57,12 @@ class FakePlayer:
         self.closed = True
 
 
+class FailingClosePlayer(FakePlayer):
+    def close(self):
+        self.closed = True
+        raise VoiceError("player cleanup incomplete")
+
+
 class VoiceServiceTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -149,6 +155,15 @@ class VoiceServiceTests(unittest.TestCase):
         plugin = ZaraVoicePlugin(player=player, cache_root=self.root)
 
         plugin.stop()
+
+        self.assertTrue(player.closed)
+
+    def test_plugin_stop_surfaces_incomplete_player_cleanup(self):
+        player = FailingClosePlayer()
+        plugin = ZaraVoicePlugin(player=player, cache_root=self.root)
+
+        with self.assertRaisesRegex(VoiceError, "cleanup incomplete"):
+            plugin.stop()
 
         self.assertTrue(player.closed)
 
