@@ -78,10 +78,12 @@ class TaskPluginTest(unittest.TestCase):
     def test_task_completion_rejects_repository_moved_since_snapshot(self) -> None:
         expected = {"root": "/projects/demo", "head": "a" * 40, "branch": "main"}
         observed = {"root": "/projects/demo", "head": "b" * 40, "branch": "main", "dirty": False, "changed_paths": []}
+        inspected_paths: list[Path] = []
+        completion_calls: list[str] = []
 
         class Inspector:
             def inspect(self, path: Path):
-                self.assertEqual(path, Path(expected["root"]))
+                inspected_paths.append(path)
                 return observed
 
         class Session:
@@ -89,10 +91,13 @@ class TaskPluginTest(unittest.TestCase):
                 return {"status": "ok", "task": {"id": task_id, "repository": expected}}
 
             def complete_task(self, task_id):
-                self.fail("stale verifier evidence reached completion")
+                completion_calls.append(task_id)
+                return {"status": "ok"}
 
         plugin = TaskStateCodingPlugin(); plugin.inspector = Inspector(); plugin.task_state = Session()
         result = json.loads(plugin.task_complete("task-1"))
+        self.assertEqual(inspected_paths, [Path(expected["root"])])
+        self.assertEqual(completion_calls, [])
         self.assertEqual(result["status"], "rejected")
         self.assertEqual(result["reason"], "repository-snapshot-stale")
         self.assertEqual(result["expected_repository"], expected)
