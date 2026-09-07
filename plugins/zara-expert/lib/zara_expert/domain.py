@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import re
 import tempfile
@@ -40,15 +41,21 @@ class ExpertHost:
         query_timeout_seconds: float = 1.0,
         max_results: int = 16,
     ) -> None:
-        if query_timeout_seconds <= 0:
-            raise ValueError("query_timeout_seconds must be positive")
-        if max_results <= 0:
-            raise ValueError("max_results must be positive")
+        if (
+            isinstance(query_timeout_seconds, bool)
+            or not isinstance(query_timeout_seconds, (int, float))
+        ):
+            raise ValueError("query_timeout_seconds must be a finite positive number")
+        timeout = float(query_timeout_seconds)
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("query_timeout_seconds must be a finite positive number")
+        if isinstance(max_results, bool) or not isinstance(max_results, int) or max_results <= 0:
+            raise ValueError("max_results must be a positive integer")
         self._backend = backend
         self._state_root = Path(state_root)
         self._state_root.mkdir(parents=True, exist_ok=True)
-        self._query_timeout_seconds = float(query_timeout_seconds)
-        self._max_results = int(max_results)
+        self._query_timeout_seconds = timeout
+        self._max_results = max_results
         self._knowledge_bases: dict[str, tuple[str, ...]] = {}
 
     def register(self, namespace: str, knowledge_bases: Iterable[Path]) -> None:
