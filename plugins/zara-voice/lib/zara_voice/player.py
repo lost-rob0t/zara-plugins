@@ -13,8 +13,8 @@ from .domain import VoiceError
 @dataclass
 class _Playback:
     process: Any
-    stdin: Any
-    writer: threading.Thread
+    stdin: Any | None
+    writer: threading.Thread | None
 
 
 class PipeWirePlayer:
@@ -81,8 +81,14 @@ class PipeWirePlayer:
 
             stdin = getattr(process, "stdin", None)
             if stdin is None:
-                self._terminate_untracked(process)
-                raise VoiceError("PipeWire audio player did not provide an input stream")
+                self._playbacks[playback_id] = _Playback(process=process, stdin=None, writer=None)
+                process_error = self._terminate_process(process)
+                if process_error is None:
+                    self._playbacks.pop(playback_id, None)
+                    raise VoiceError("PipeWire audio player did not provide an input stream")
+                raise VoiceError(
+                    "PipeWire audio player input stream unavailable and cleanup exceeded configured time bound"
+                ) from process_error
 
             writer = threading.Thread(
                 target=self._write_audio,
@@ -112,29 +118,15 @@ class PipeWirePlayer:
             process = playback.process
             if process.poll() is not None:
                 self._close_input(playback.stdin)
-                playback.writer.join(timeout=self.writer_timeout)
-                if not playback.writer.is_alive():
-                    self._playbacks.pop(playback_id, None)
+                writer_error = self._join_writer(playback.writer)
+                if writer_error is not None:
+                    raise writer_error
+                self._playbacks.pop(playback_id, None)
                 raise VoiceError("unknown or stale playback id")
 
             self._close_input(playback.stdin)
-            process_error: VoiceError | None = None
-            writer_error: VoiceError | None = None
-
-            process.terminate()
-            try:
-                process.wait(timeout=self.terminate_timeout)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                try:
-                    process.wait(timeout=self.kill_timeout)
-                except subprocess.TimeoutExpired as exc:
-                    process_error = VoiceError("playback cancellation exceeded configured time bound")
-                    process_error.__cause__ = exc
-
-            playback.writer.join(timeout=self.writer_timeout)
-            if playback.writer.is_alive():
-                writer_error = VoiceError("playback writer cleanup exceeded configured time bound")
+            process_error = self._terminate_process(process)
+            writer_error = self._join_writer(playback.writer)
 
             if process_error is None and writer_error is None:
                 self._playbacks.pop(playback_id, None)
@@ -169,8 +161,7 @@ class PipeWirePlayer:
         for playback_id in finished:
             playback = self._playbacks[playback_id]
             self._close_input(playback.stdin)
-            playback.writer.join(timeout=self.writer_timeout)
-            if not playback.writer.is_alive():
+            if self._join_writer(playback.writer) is None:
                 self._playbacks.pop(playback_id, None)
 
     def _new_playback_id_locked(self) -> str:
@@ -194,21 +185,38 @@ class PipeWirePlayer:
                 pass
 
     @staticmethod
-    def _close_input(stdin: Any) -> None:
+    def _close_input(stdin: Any | None) -> None:
+        if stdin is None:
+            return
         try:
             stdin.close()
         except (OSError, ValueError):
             pass
 
-    def _terminate_untracked(self, process: Any) -> None:
+    def _join_writer(self, writer: threading.Thread | None) -> VoiceError | None:
+        if writer is None:
+            return None
+        writer.join(timeout=self.writer_timeout)
+        if writer.is_alive():
+            return VoiceError("playback writer cleanup exceeded configured time bound")
+        return None
+
+    def _terminate_process(self, process: Any) -> VoiceError | None:
         try:
             process.terminate()
-            process.wait(timeout=self.terminate_timeout)
-        except subprocess.TimeoutExpired:
-            process.kill()
             try:
-                process.wait(timeout=self.kill_timeout)
+                process.wait(timeout=self.terminate_timeout)
+                return None
             except subprocess.TimeoutExpired:
-                pass
-        except OSError:
-            pass
+                process.kill()
+                try:
+                    process.wait(timeout=self.kill_timeout)
+                    return None
+                except subprocess.TimeoutExpired as exc:
+                    error = VoiceError("playback cancellation exceeded configured time bound")
+                    error.__cause__ = exc
+                    return error
+        except OSError as exc:
+            error = VoiceError("playback cancellation failed")
+            error.__cause__ = exc
+            return error
