@@ -56,6 +56,14 @@ class PluginSettingsTests(unittest.TestCase):
         self.assertEqual(settings.visual_timeout_seconds, 8.0)
         self.assertEqual(settings.cli_timeout_seconds, 15.0)
 
+    def test_malformed_selector_descriptors_use_safe_default(self) -> None:
+        for selector in ([], {}, 1, True, None):
+            with self.subTest(selector=selector):
+                settings = PluginSettings.from_configuration(
+                    {"visual_selector": selector}
+                )
+                self.assertEqual(settings.visual_selector, "recent")
+
     def test_valid_values_pass_through(self) -> None:
         settings = PluginSettings.from_configuration(
             {
