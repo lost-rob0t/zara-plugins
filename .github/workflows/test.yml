@@ -71,3 +71,41 @@ jobs:
 
       - name: Build plugin packages
         run: nix build
+
+  avatar-renderer-cpu:
+    name: zara-avatar idle CPU budget
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ARTIFACT_DIR: ${{ github.workspace }}/artifacts/avatar-renderer-cpu
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: plugins/zara-avatar/renderer/package-lock.json
+
+      - name: Install Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb
+
+      - name: Install renderer dependencies
+        working-directory: plugins/zara-avatar/renderer
+        run: npm ci
+
+      - name: Enforce real Electron idle CPU budget
+        run: xvfb-run -a python3 scripts/check-avatar-renderer-cpu.py
+
+      - name: Upload CPU diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: avatar-renderer-cpu
+          path: artifacts/avatar-renderer-cpu/
+          if-no-files-found: warn

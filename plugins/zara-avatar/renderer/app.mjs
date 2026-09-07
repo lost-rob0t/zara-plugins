@@ -76,9 +76,11 @@ class Scene {
     this.nextBlinkAt = 1 + this.random() * 4;
     this.blinkUntil = 0;
     this.clock = new THREE.Clock();
+    this.rendererActive = false;
+    this.animationLoopRunning = false;
+    this.animationFrame = () => this.update();
     this.resize();
     window.addEventListener("resize", () => this.resize());
-    this.renderer.setAnimationLoop(() => this.update());
   }
 
   _buildLights() {
@@ -101,6 +103,39 @@ class Scene {
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / Math.max(1, height);
     this.camera.updateProjectionMatrix();
+    if (this.rendererActive && !this.animationLoopRunning) {
+      this.renderOnce();
+    }
+  }
+
+  setRendererActive(active) {
+    const next = Boolean(active);
+    if (this.rendererActive === next) {
+      return;
+    }
+    this.rendererActive = next;
+    this.syncAnimationLoop();
+    if (this.rendererActive && !this.animationLoopRunning) {
+      this.renderOnce();
+    }
+  }
+
+  syncAnimationLoop() {
+    const shouldAnimate = this.rendererActive && Boolean(this.vrm);
+    if (shouldAnimate === this.animationLoopRunning) {
+      return;
+    }
+    this.animationLoopRunning = shouldAnimate;
+    if (shouldAnimate) {
+      this.clock.getDelta();
+      this.renderer.setAnimationLoop(this.animationFrame);
+      return;
+    }
+    this.renderer.setAnimationLoop(null);
+  }
+
+  renderOnce() {
+    this.renderer.render(this.scene, this.camera);
   }
 
   // -- lifecycle ----------------------------------------------------------
@@ -130,6 +165,7 @@ class Scene {
     this.scene.add(vrm.scene);
     this.mixer = new THREE.AnimationMixer(vrm.scene);
     this.expression(0);
+    this.syncAnimationLoop();
     const expressions = this.availableExpressions();
     window.zaraAvatar.emit({
       event: "avatarLoaded",
@@ -153,6 +189,10 @@ class Scene {
       this.vrm = null;
     }
     this.currentAction = null;
+    this.syncAnimationLoop();
+    if (this.rendererActive) {
+      this.renderOnce();
+    }
   }
 
   availableExpressions() {
@@ -435,4 +475,5 @@ window.zaraAvatar.onCommand(async (document) => {
     });
   }
 });
+window.zaraAvatar.onRendererActive((active) => scene.setRendererActive(active));
 window.zaraAvatar.ready();
