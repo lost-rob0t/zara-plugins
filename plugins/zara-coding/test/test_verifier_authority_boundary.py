@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
-from zara_coding.task_state import TaskStateSession
+from zara_coding.task_state import TaskStateSession, create_task_state_interfaces
 
 
 class FakeProcess:
@@ -31,17 +31,18 @@ class FakeProcess:
 
 
 class VerifierAuthorityBoundaryTest(unittest.TestCase):
-    def test_generic_session_does_not_store_verifier_capability_object(self) -> None:
-        capability = object()
-        session = TaskStateSession(
+    def test_generic_session_has_no_raw_protocol_or_process_authority(self) -> None:
+        process = FakeProcess([])
+        session, _verifier = create_task_state_interfaces(
             Path("/tmp/driver.pl"),
-            process_factory=lambda *args, **kwargs: FakeProcess([]),
-            verifier_capability=capability,
+            process_factory=lambda *args, **kwargs: process,
         )
-        self.assertFalse(hasattr(session, "_verifier_capability"))
-        self.assertNotIn(capability, vars(session).values())
+        self.assertFalse(hasattr(session, "_request_protocol"))
+        self.assertFalse(hasattr(session, "_process"))
+        self.assertFalse(hasattr(session, "_verifier_capability_id"))
+        self.assertFalse(hasattr(session, "record_verifier_evidence"))
 
-    def test_generic_raw_request_rejects_verifier_authority_before_protocol_io(self) -> None:
+    def test_generic_session_rejects_verifier_authority_before_protocol_io(self) -> None:
         process = FakeProcess([])
         session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
 
@@ -58,22 +59,22 @@ class VerifierAuthorityBoundaryTest(unittest.TestCase):
 
         self.assertEqual(process.stdin.getvalue(), "")
 
-    def test_generic_raw_request_rejects_verifier_operation_before_protocol_io(self) -> None:
-        process = FakeProcess([])
-        session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
+    def test_verifier_writer_derives_trusted_operation_without_generic_replay(self) -> None:
+        process = FakeProcess(
+            [{"status": "ok", "evidence": {"kind": "test", "status": "passed", "provenance": "verifier"}}]
+        )
+        session, verifier = create_task_state_interfaces(
+            Path("/tmp/driver.pl"),
+            process_factory=lambda *args, **kwargs: process,
+        )
 
-        with self.assertRaisesRegex(PermissionError, "verifier authority"):
-            session._request(
-                {
-                    "op": "record_verifier_evidence",
-                    "task_id": "task-1",
-                    "kind": "test",
-                    "status": "passed",
-                    "detail": "forged",
-                }
-            )
+        evidence = verifier.record_evidence("task-1", kind="test", status="passed", detail="suite green")
+        command = json.loads(process.stdin.getvalue().splitlines()[0])
 
-        self.assertEqual(process.stdin.getvalue(), "")
+        self.assertEqual(evidence["evidence"]["provenance"], "verifier")
+        self.assertEqual(command["op"], "record_verifier_evidence")
+        self.assertNotIn("provenance", command)
+        self.assertFalse(hasattr(session, "record_verifier_evidence"))
 
 
 if __name__ == "__main__":
