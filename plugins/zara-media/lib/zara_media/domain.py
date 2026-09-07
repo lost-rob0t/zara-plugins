@@ -42,6 +42,12 @@ class MediaDomain:
             raise MediaError(f"{name} contains control characters")
         return value
 
+    @staticmethod
+    def _boolean(value: object, *, name: str) -> bool:
+        if type(value) is not bool:
+            raise MediaError(f"{name} must be boolean")
+        return value
+
     @classmethod
     def _item(cls, item: object) -> dict[str, object]:
         if not isinstance(item, dict):
@@ -110,7 +116,7 @@ class MediaDomain:
             "device": str(player.get("device", "unknown"))[:256],
             "state": state,
             "volume": volume,
-            "muted": bool(player.get("muted", False)),
+            "muted": cls._boolean(player.get("muted", False), name="player muted"),
             "position_ms": position,
             "item": None if item is None else cls._item(item),
         }
@@ -196,7 +202,7 @@ class MediaDomain:
         if not isinstance(evidence, dict):
             raise MediaError("media backend returned invalid playback evidence")
         after = self.state(player_id)
-        accepted = bool(evidence.get("accepted"))
+        accepted = self._boolean(evidence.get("accepted"), name="playback accepted")
         if action == "play":
             observed = after["state"] == "playing"
         elif action == "pause":
