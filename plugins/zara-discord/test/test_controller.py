@@ -25,6 +25,19 @@ class FakeRuntime:
 
 
 class ControllerTests(unittest.TestCase):
+    def test_history_bounds_require_exact_integers(self):
+        for value in (True, 1.5, "10", None):
+            with self.subTest(field="budget_chars", value=value):
+                with self.assertRaises(ValueError):
+                    ConversationHistory(value)
+            with self.subTest(field="max_conversations", value=value):
+                with self.assertRaises(ValueError):
+                    ConversationHistory(100, max_conversations=value)
+        with self.assertRaises(ValueError):
+            ConversationHistory(-1)
+        with self.assertRaises(ValueError):
+            ConversationHistory(100, max_conversations=0)
+
     def test_submits_correlated_turn_and_delivers_response(self):
         runtime = FakeRuntime()
         controller = ConversationController(runtime)
