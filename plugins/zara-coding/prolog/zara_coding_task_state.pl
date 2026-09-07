@@ -9,8 +9,6 @@
 max_tasks(64).
 max_evidence_per_task(64).
 
-evidence_provenance("caller").
-evidence_provenance("verifier").
 evidence_status("failed").
 evidence_status("passed").
 
@@ -70,22 +68,21 @@ dispatch_op("get", Command, Response) :-
     ).
 
 dispatch_op("record_evidence", Command, Response) :-
+    evidence_response(Command, "caller", Response).
+
+dispatch_op("record_verifier_evidence", Command, Response) :-
+    evidence_response(Command, "verifier", Response).
+
+evidence_response(Command, Provenance, Response) :-
     get_dict(task_id, Command, Id),
     ( task_state(Id, Task) ->
         ( task_completed(Task) ->
             Response = _{status:"rejected", reason:"task-already-completed"}
         ; evidence_limit_reached(Id) ->
             Response = _{status:"rejected", reason:"evidence-limit-reached"}
-        ; evidence_response(Command, Id, Response)
+        ; evidence_status_response(Command, Id, Provenance, Response)
         )
     ; Response = _{status:"rejected", reason:"task-not-found"}
-    ).
-
-evidence_response(Command, Id, Response) :-
-    get_dict(provenance, Command, Provenance),
-    ( evidence_provenance(Provenance) ->
-        evidence_status_response(Command, Id, Provenance, Response)
-    ; Response = _{status:"rejected", reason:"unsupported-evidence-provenance"}
     ).
 
 evidence_status_response(Command, Id, Provenance, Response) :-
