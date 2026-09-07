@@ -56,10 +56,10 @@ avatar_directory = "~/.local/share/zara/avatars"
 # renderer_command = ["/path/to/electron", "/path/to/main.mjs"]
 ```
 
-Renderer process policy fails closed: command argv must be a non-empty sequence
-of non-empty strings, and renderer startup/request/shutdown timeouts must be
-finite positive numbers. Per-request timeout overrides are validated before
-any renderer process or pipe is touched.
+Renderer process policy fails closed: explicit `renderer_command` configuration
+must be a non-empty argv list whose elements are non-empty strings, and renderer
+startup/request/shutdown timeouts must be finite positive numbers. Per-request
+timeout overrides are validated before any renderer process or pipe is touched.
 
 `avatar_directory` is also type-strict: it must be a non-empty string.
 Malformed scalar or container values are rejected before any avatar state
