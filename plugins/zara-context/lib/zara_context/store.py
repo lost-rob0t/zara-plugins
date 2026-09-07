@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 from dataclasses import dataclass
 from typing import Callable, Iterable
@@ -15,6 +16,15 @@ MAX_TTL_SECONDS = 3600.0
 
 class ContextError(RuntimeError):
     pass
+
+
+def _finite_number(value: object, *, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ContextError(f"{name} must be a finite number")
+    number = float(value)
+    if not math.isfinite(number):
+        raise ContextError(f"{name} must be a finite number")
+    return number
 
 
 @dataclass(frozen=True)
@@ -40,10 +50,11 @@ class ContextItem:
 
 class ContextStore:
     def __init__(self, *, clock: Callable[[], float] = time.time, default_ttl: float = 30.0) -> None:
-        if default_ttl <= 0 or default_ttl > MAX_TTL_SECONDS:
+        validated_ttl = _finite_number(default_ttl, name="default context ttl")
+        if validated_ttl <= 0 or validated_ttl > MAX_TTL_SECONDS:
             raise ContextError("default context ttl is out of range")
         self._clock = clock
-        self._default_ttl = float(default_ttl)
+        self._default_ttl = validated_ttl
         self._items: dict[str, ContextItem] = {}
 
     @staticmethod
@@ -61,10 +72,10 @@ class ContextStore:
             raise ContextError("context category is unsupported")
         if not isinstance(source, str) or not source.strip() or len(source.encode("utf-8")) > MAX_SOURCE_BYTES:
             raise ContextError("context source is invalid")
-        confidence = float(confidence)
-        if confidence < 0.0 or confidence > 1.0:
+        validated_confidence = _finite_number(confidence, name="context confidence")
+        if validated_confidence < 0.0 or validated_confidence > 1.0:
             raise ContextError("context confidence must be between 0 and 1")
-        effective_ttl = self._default_ttl if ttl is None else float(ttl)
+        effective_ttl = self._default_ttl if ttl is None else _finite_number(ttl, name="context ttl")
         if effective_ttl <= 0 or effective_ttl > MAX_TTL_SECONDS:
             raise ContextError("context ttl is out of range")
         now = self._clock()
@@ -74,7 +85,7 @@ class ContextStore:
             source=source,
             observed_at=now,
             expires_at=now + effective_ttl,
-            confidence=confidence,
+            confidence=validated_confidence,
         )
         if category not in self._items and len(self._items) >= MAX_ITEMS:
             raise ContextError("context store item limit reached")

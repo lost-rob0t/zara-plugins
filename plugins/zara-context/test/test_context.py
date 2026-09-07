@@ -1,3 +1,4 @@
+import math
 import sys
 import unittest
 from pathlib import Path
@@ -53,6 +54,35 @@ class ContextStoreTest(unittest.TestCase):
             self.store.update("selection", {"text": "x" * 9000}, source="editor")
         with self.assertRaises(ContextError):
             self.store.update("file", {"path": "/tmp/a"}, source="editor", ttl=99999)
+
+    def test_rejects_malformed_default_ttl(self):
+        for value in (True, False, "10", None, math.nan, math.inf, -math.inf):
+            with self.subTest(value=value):
+                with self.assertRaises(ContextError):
+                    ContextStore(clock=self.clock, default_ttl=value)
+
+    def test_rejects_malformed_update_freshness_values_before_storage(self):
+        malformed = (True, False, "1", object(), math.nan, math.inf, -math.inf)
+        for key in ("ttl", "confidence"):
+            for value in malformed:
+                with self.subTest(key=key, value=value):
+                    store = ContextStore(clock=self.clock, default_ttl=10.0)
+                    kwargs = {key: value}
+                    with self.assertRaises(ContextError):
+                        store.update("file", {"path": "/tmp/a"}, source="editor", **kwargs)
+                    self.assertEqual(store.current()["items"], [])
+
+    def test_accepts_finite_numeric_freshness_values(self):
+        store = ContextStore(clock=self.clock, default_ttl=10)
+        item = store.update(
+            "file",
+            {"path": "/tmp/a"},
+            source="editor",
+            confidence=0.5,
+            ttl=2,
+        )
+        self.assertEqual(item.confidence, 0.5)
+        self.assertEqual(item.expires_at, 102.0)
 
     def test_clear_expired_removes_only_expired_context(self):
         self.store.update("file", {"path": "/tmp/a"}, source="editor", ttl=2)
