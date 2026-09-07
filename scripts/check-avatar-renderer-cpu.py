@@ -10,6 +10,7 @@ import os
 import select
 import signal
 import subprocess
+import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -163,7 +164,7 @@ def main() -> int:
     stderr_log = (artifact_dir / "avatar-renderer-stderr.log").open("w")
 
     process = subprocess.Popen(
-        [str(electron), "main.mjs"],
+        [str(electron), "--no-sandbox", "main.mjs"],
         cwd=RENDERER,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -226,6 +227,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    import sys
-
     raise SystemExit(main())
