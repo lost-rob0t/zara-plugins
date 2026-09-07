@@ -11,14 +11,18 @@ class CommsDomain:
     def __init__(self, providers, resolver, *, max_results: int = 50, max_body_bytes: int = 65536) -> None:
         if not isinstance(providers, dict) or not providers:
             raise CommsError("providers must be a non-empty mapping")
-        if not 1 <= int(max_results) <= 200:
+        if type(max_results) is not int:
+            raise CommsError("max_results must be an integer")
+        if type(max_body_bytes) is not int:
+            raise CommsError("max_body_bytes must be an integer")
+        if not 1 <= max_results <= 200:
             raise CommsError("max_results is out of range")
-        if not 256 <= int(max_body_bytes) <= 1_048_576:
+        if not 256 <= max_body_bytes <= 1_048_576:
             raise CommsError("max_body_bytes is out of range")
         self.providers = dict(providers)
         self.resolver = resolver
-        self.max_results = int(max_results)
-        self.max_body_bytes = int(max_body_bytes)
+        self.max_results = max_results
+        self.max_body_bytes = max_body_bytes
 
     @staticmethod
     def _text(value, name, limit=1024, *, allow_empty=False):
@@ -94,7 +98,12 @@ class CommsDomain:
 
     def search(self, query, *, provider=None, limit=None):
         query = self._text(query, "query", 1024)
-        bounded = min(self.max_results, self.max_results if limit is None else int(limit))
+        if limit is None:
+            bounded = self.max_results
+        else:
+            if type(limit) is not int:
+                raise CommsError("result limit must be an integer")
+            bounded = min(self.max_results, limit)
         if bounded < 1:
             raise CommsError("result limit is invalid")
         selected = self.providers.items() if provider is None else [self._provider(provider)]
