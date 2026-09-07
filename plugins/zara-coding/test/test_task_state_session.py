@@ -82,7 +82,8 @@ class TaskStateSessionTest(unittest.TestCase):
         commands = [json.loads(line) for line in process.stdin.getvalue().splitlines()]
         self.assertEqual(rejected, {"status": "rejected", "reason": "verification-evidence-required"})
         self.assertEqual(evidence["evidence"]["provenance"], "verifier")
-        self.assertEqual(commands[1]["provenance"], "verifier")
+        self.assertEqual(commands[1]["op"], "record_verifier_evidence")
+        self.assertNotIn("provenance", commands[1])
         self.assertEqual(completed["task"]["state"], "completed")
 
     def test_generic_evidence_path_cannot_mint_verifier_pass(self) -> None:
@@ -118,7 +119,7 @@ class TaskStateSessionTest(unittest.TestCase):
         evidence = session.record_evidence("task-1", kind="test", status="failed", detail="caller observed failure")
         command = json.loads(process.stdin.getvalue().splitlines()[0])
         self.assertEqual(evidence["evidence"]["provenance"], "caller")
-        self.assertEqual(command["provenance"], "caller")
+        self.assertNotIn("provenance", command)
         self.assertNotIn("capability", command)
 
     def test_external_writer_after_prevalidation_revokes_completion(self) -> None:
