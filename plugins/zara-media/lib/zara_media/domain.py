@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 
 class MediaError(RuntimeError):
     pass
@@ -165,17 +167,17 @@ class MediaDomain:
             raise MediaError("playback action is not allowlisted")
         normalized_value = value
         if action == "seek":
-            try:
-                normalized_value = int(value)
-            except (TypeError, ValueError) as error:
-                raise MediaError("seek value must be milliseconds") from error
+            if type(value) is not int:
+                raise MediaError("seek value must be milliseconds")
+            normalized_value = value
             if normalized_value < 0 or normalized_value > 7 * 24 * 60 * 60 * 1000:
                 raise MediaError("seek value is out of range")
         elif action == "volume":
-            try:
-                normalized_value = float(value)
-            except (TypeError, ValueError) as error:
-                raise MediaError("volume value must be numeric") from error
+            if type(value) not in {int, float}:
+                raise MediaError("volume value must be numeric")
+            normalized_value = float(value)
+            if not math.isfinite(normalized_value):
+                raise MediaError("volume value must be finite")
             if not 0.0 <= normalized_value <= 1.0:
                 raise MediaError("volume value is out of range")
         elif action == "mute":
