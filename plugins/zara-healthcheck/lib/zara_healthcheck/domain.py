@@ -15,23 +15,32 @@ class SystemClock:
         return time.time()
 
 
+def _require_int(name, value):
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise HealthError(f"{name} must be an integer")
+    return value
+
+
 class HealthDomain:
     VALID = {"healthy", "degraded", "unhealthy", "unknown"}
 
     def __init__(self, probes, *, clock=None, history_limit=32, hysteresis_count=2, max_evidence_bytes=16384):
         if not isinstance(probes, dict) or not probes or len(probes) > 128:
             raise HealthError("probes must contain between 1 and 128 configured probes")
-        if not 1 <= int(history_limit) <= 1000:
+        history_limit = _require_int("history_limit", history_limit)
+        hysteresis_count = _require_int("hysteresis_count", hysteresis_count)
+        max_evidence_bytes = _require_int("max_evidence_bytes", max_evidence_bytes)
+        if not 1 <= history_limit <= 1000:
             raise HealthError("history_limit is out of range")
-        if not 1 <= int(hysteresis_count) <= 20:
+        if not 1 <= hysteresis_count <= 20:
             raise HealthError("hysteresis_count is out of range")
-        if not 256 <= int(max_evidence_bytes) <= 1_048_576:
+        if not 256 <= max_evidence_bytes <= 1_048_576:
             raise HealthError("max_evidence_bytes is out of range")
         self.probes = dict(probes)
         self.clock = clock or SystemClock()
-        self.history_limit = int(history_limit)
-        self.hysteresis_count = int(hysteresis_count)
-        self.max_evidence_bytes = int(max_evidence_bytes)
+        self.history_limit = history_limit
+        self.hysteresis_count = hysteresis_count
+        self.max_evidence_bytes = max_evidence_bytes
         self._history = {name: deque(maxlen=self.history_limit) for name in probes}
         self._state = {}
         self._pending = {}
