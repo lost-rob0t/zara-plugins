@@ -49,6 +49,7 @@ class FakeMediaBackend:
             {"media_id": "episode-1", "kind": "episode", "title": "Episode", "artist": None, "show": "Show", "duration_ms": 3600000, "provider": "fake"},
         ]
         self.accept_mutations = True
+        self.catalog_search_calls = 0
 
     def list_players(self):
         return [dict(player) for player in self.players.values()]
@@ -100,6 +101,7 @@ class FakeMediaBackend:
         return {"accepted": True}
 
     def catalog_search(self, query, limit):
+        self.catalog_search_calls += 1
         query = query.lower()
         return [item for item in self.catalog if query in item["title"].lower()][:limit]
 
@@ -168,6 +170,18 @@ class MediaDomainTest(unittest.TestCase):
         with self.assertRaises(MediaError):
             self.media.queue_move("desk", 99, 0)
 
+    def test_queue_indices_are_typed_before_backend_mutation(self):
+        self.media.queue_add("desk", self.backend.catalog[0])
+        self.media.queue_add("desk", self.backend.catalog[1])
+        before = self.media.queue("desk")
+        for value in (True, False, 0.5, "0", None):
+            with self.subTest(value=value):
+                with self.assertRaises(MediaError):
+                    self.media.queue_move("desk", value, 0)
+                with self.assertRaises(MediaError):
+                    self.media.queue_move("desk", 0, value)
+                self.assertEqual(self.media.queue("desk"), before)
+
     def test_catalog_search_is_provider_neutral_and_bounded(self):
         result = self.media.search("episode")
         self.assertEqual(result["status"], "ok")
@@ -175,6 +189,14 @@ class MediaDomainTest(unittest.TestCase):
         self.assertNotIn("access_token", repr(result))
         with self.assertRaises(MediaError):
             self.media.search("x" * 5000)
+
+    def test_search_limit_is_typed_before_backend_dispatch(self):
+        before = self.backend.catalog_search_calls
+        for value in (True, False, 1.5, "1"):
+            with self.subTest(value=value):
+                with self.assertRaises(MediaError):
+                    self.media.search("episode", limit=value)
+                self.assertEqual(self.backend.catalog_search_calls, before)
 
     def test_like_this_query_uses_structured_metadata_only(self):
         query = self.media.like_this_query(
