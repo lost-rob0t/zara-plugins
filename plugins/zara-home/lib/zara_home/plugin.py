@@ -9,11 +9,13 @@ from zara.plugins import PluginMetadata, ServicePlugin
 
 from .domain import HomeError, HomeService
 from .home_assistant import HomeAssistantAdapter
+from .home_assistant_events import HomeAssistantEventStream
 from .home_assistant_transport import HomeAssistantHTTPError, HomeAssistantHTTPTransport
 from .rules import HomeRulePlanner
 
 
 PLUGIN_VERSION = "0.1.0"
+_EVENT_JOIN_TIMEOUT_SECONDS = 15.0
 
 
 class UnavailableHomeProvider:
@@ -27,18 +29,23 @@ class UnavailableHomeProvider:
         raise HomeError(self.reason)
 
 
-def _configured_provider():
+def _configured_components():
     base_url = os.environ.get("ZARA_HOME_ASSISTANT_URL")
     access_token = os.environ.get("ZARA_HOME_ASSISTANT_TOKEN")
     if base_url is None and access_token is None:
-        return UnavailableHomeProvider()
+        return UnavailableHomeProvider(), None
     if not base_url or not access_token:
-        return UnavailableHomeProvider("home-assistant-configuration-incomplete")
+        return UnavailableHomeProvider("home-assistant-configuration-incomplete"), None
     try:
         transport = HomeAssistantHTTPTransport(base_url, access_token)
     except HomeAssistantHTTPError:
-        return UnavailableHomeProvider("home-assistant-configuration-invalid")
-    return HomeAssistantAdapter(transport)
+        return UnavailableHomeProvider("home-assistant-configuration-invalid"), None
+    return HomeAssistantAdapter(transport), HomeAssistantEventStream.from_transport(transport)
+
+
+def _configured_provider():
+    provider, _ = _configured_components()
+    return provider
 
 
 class ZaraHomePlugin(ServicePlugin):
@@ -49,16 +56,29 @@ class ZaraHomePlugin(ServicePlugin):
         description="Provider-neutral smart-home state and capability-safe control",
     )
 
-    def __init__(self, provider=None) -> None:
-        self.provider = provider or _configured_provider()
+    def __init__(self, provider=None, event_stream=None) -> None:
+        if provider is None:
+            provider, event_stream = _configured_components()
+        self.provider = provider
+        self.event_stream = event_stream
         self.home = HomeService(self.provider)
         self.planner = HomeRulePlanner(self.home)
 
     def start(self, runtime) -> None:
-        return None
+        if self.event_stream is not None:
+            self.event_stream.start()
 
     def stop(self) -> None:
-        return None
+        if self.event_stream is None:
+            return
+        self.event_stream.stop()
+        join = getattr(self.event_stream, "join", None)
+        if callable(join):
+            join(_EVENT_JOIN_TIMEOUT_SECONDS)
+            return
+        thread = getattr(self.event_stream, "_thread", None)
+        if thread is not None:
+            thread.join(timeout=_EVENT_JOIN_TIMEOUT_SECONDS)
 
     @staticmethod
     def _json(value: object) -> str:

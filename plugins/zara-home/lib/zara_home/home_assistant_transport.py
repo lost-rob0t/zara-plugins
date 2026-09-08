@@ -47,6 +47,12 @@ class HomeAssistantHTTPTransport:
         self._validate_path(path)
         return self._request_once(method, path, payload, allow_refresh=True)
 
+    def current_access_token(self) -> str:
+        token = self._access_token
+        if not self._valid_bearer_token(token):
+            raise HomeAssistantHTTPError("reauth-required")
+        return token
+
     def _request_once(self, method: str, path: str, payload, *, allow_refresh: bool):
         body = None if payload is None else json.dumps(payload).encode("utf-8")
         request = Request(urljoin(self.base_url + "/", path.lstrip("/")), data=body, method=method)
