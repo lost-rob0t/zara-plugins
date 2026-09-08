@@ -190,7 +190,7 @@ class PipeWirePlayerTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(VoiceError, "format"):
-            player.play(self.artifact(format="mp3"))
+            player.play(self.artifact(audio=b"RIFF", format="mp3"))
         with self.assertRaisesRegex(VoiceError, "limit"):
             player.play(self.artifact(audio=b"RIFF" * 3))
 
