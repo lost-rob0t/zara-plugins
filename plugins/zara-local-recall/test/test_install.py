@@ -1,7 +1,6 @@
 """Deterministic tests for the installer layout."""
 
 import os
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -61,6 +60,16 @@ class InstallerTests(unittest.TestCase):
 
         return mock.patch.object(installer.os, "replace", side_effect=fail)
 
+    def _fail_next_wrapper_publish(self, plugin_entry: Path):
+        original_replace = os.replace
+
+        def fail(source: str | Path, destination: str | Path) -> None:
+            if Path(destination) == plugin_entry and Path(source).name == ".zara_local_recall.py.tmp":
+                raise OSError("injected wrapper publication failure")
+            original_replace(source, destination)
+
+        return mock.patch.object(installer.os, "replace", side_effect=fail)
+
     def test_install_places_entry_and_library(self) -> None:
         with tempfile.TemporaryDirectory() as home_tmp, tempfile.TemporaryDirectory() as xdg_tmp:
             home = Path(home_tmp)
@@ -95,14 +104,7 @@ class InstallerTests(unittest.TestCase):
             config_state = library_dir.parent / "daemon-policy.json"
             config_state.write_text('{"owner_only": true}\n', encoding="utf-8")
 
-            original_rename = Path.rename
-
-            def fail_library_publish(path: Path, target: Path) -> Path:
-                if path.name == ".lib.tmp" and Path(target) == library_dir:
-                    raise OSError("injected library publication failure")
-                return original_rename(path, target)
-
-            with mock.patch.object(Path, "rename", autospec=True, side_effect=fail_library_publish):
+            with self._fail_next_library_publish(library_dir):
                 with self.assertRaisesRegex(OSError, "injected library publication failure"):
                     installer.install(home=home, xdg_config_home=xdg)
 
@@ -122,14 +124,8 @@ class InstallerTests(unittest.TestCase):
             sentinel.write_text("known-good\n", encoding="utf-8")
             config_state = library_dir.parent / "daemon-policy.json"
             config_state.write_text('{"owner_only": true}\n', encoding="utf-8")
-            original_copyfile = shutil.copyfile
 
-            def fail_wrapper_publish(src: str | Path, dst: str | Path, *args: object, **kwargs: object) -> str:
-                if Path(dst) == plugin_entry:
-                    raise OSError("injected wrapper publication failure")
-                return original_copyfile(src, dst, *args, **kwargs)
-
-            with mock.patch.object(installer.shutil, "copyfile", side_effect=fail_wrapper_publish):
+            with self._fail_next_wrapper_publish(plugin_entry):
                 with self.assertRaisesRegex(OSError, "injected wrapper publication failure"):
                     installer.install(home=home, xdg_config_home=xdg)
 
@@ -144,7 +140,7 @@ class InstallerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as home_tmp, tempfile.TemporaryDirectory() as xdg_tmp:
             home = Path(home_tmp)
             xdg = Path(xdg_tmp)
-            config_dir, library_dir, plugin_entry, library_backup, _ = self._seed_old_install(home, xdg)
+            config_dir, library_dir, _plugin_entry, library_backup, _ = self._seed_old_install(home, xdg)
             (config_dir / ".install-transaction.json").write_text(
                 '{"library_existed": true, "wrapper_existed": true}\n', encoding="utf-8"
             )
@@ -160,7 +156,7 @@ class InstallerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as home_tmp, tempfile.TemporaryDirectory() as xdg_tmp:
             home = Path(home_tmp)
             xdg = Path(xdg_tmp)
-            config_dir, library_dir, plugin_entry, library_backup, _ = self._seed_old_install(home, xdg)
+            config_dir, library_dir, _plugin_entry, library_backup, _ = self._seed_old_install(home, xdg)
             (config_dir / ".install-transaction.json").write_text(
                 '{"library_existed": true, "wrapper_existed": true}\n', encoding="utf-8"
             )
