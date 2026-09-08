@@ -122,6 +122,8 @@ class HomeAssistantEventStream:
                 self.connect_once()
                 while not self._stopped:
                     self.poll_once()
+                    if self.fresh:
+                        backoff_index = 0
             except HomeAssistantEventError:
                 self.mark_disconnected()
                 if self._stopped:
