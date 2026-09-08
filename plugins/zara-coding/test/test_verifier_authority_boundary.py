@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import sys
+import threading
 import unittest
 from pathlib import Path
 
@@ -66,6 +67,21 @@ class VerifierAuthorityBoundaryTest(unittest.TestCase):
 
         self.assertFalse(hasattr(task_state_module, "_VERIFIER_ENDPOINTS"))
         self.assertFalse(hasattr(task_state_module, "_verifier_protocol"))
+
+    def test_broker_thread_does_not_expose_bound_owner_or_verifier_queue(self) -> None:
+        process = FakeProcess([])
+        create_task_state_interfaces(
+            Path("/tmp/driver.pl"),
+            process_factory=lambda *args, **kwargs: process,
+        )
+
+        broker_threads = [thread for thread in threading.enumerate() if thread.name == "zara-coding-task-state"]
+        self.assertTrue(broker_threads)
+        for thread in broker_threads:
+            target = getattr(thread, "_target", None)
+            self.assertIsNone(getattr(target, "__self__", None))
+            args = getattr(thread, "_args", ())
+            self.assertFalse(any(value.__class__.__name__ == "Queue" for value in args))
 
     def test_generic_session_rejects_verifier_authority_before_protocol_io(self) -> None:
         process = FakeProcess([])
