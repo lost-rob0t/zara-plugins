@@ -23,7 +23,9 @@ class SwiplBackendTests(unittest.TestCase):
         request = {
             "namespace": "alpha",
             "operation": "query",
-            "goal": "thing(X)",
+            "predicate": "thing",
+            "arity": 1,
+            "arguments": [{"var": "X"}],
             "knowledge_bases": (),
             "state_files": (str(root / "session.pl"), str(root / "persistent.pl")),
             "timeout_seconds": 0.5,
@@ -32,7 +34,7 @@ class SwiplBackendTests(unittest.TestCase):
         request.update(overrides)
         return request
 
-    def test_forwards_goal_and_limit_without_shell_interpolation(self):
+    def test_builds_registered_goal_and_limit_without_shell_interpolation(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             program = self._program(
@@ -42,6 +44,20 @@ class SwiplBackendTests(unittest.TestCase):
             )
             result = SwiplBackend(str(program)).run(self._request(root))
             self.assertEqual(result["results"], ["thing(X)", "3"])
+
+    def test_argument_syntax_is_quoted_as_data(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            program = self._program(
+                root,
+                "import json, os\n"
+                "print(json.dumps({'ok': True, 'results': [os.environ['ZARA_EXPERT_GOAL']], 'trace': []}))\n",
+            )
+            payload = "x),halt,thing(y"
+            result = SwiplBackend(str(program)).run(
+                self._request(root, arguments=[payload])
+            )
+            self.assertEqual(result["results"], ["thing('x),halt,thing(y')"])
 
     def test_explain_requests_trace_mode(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -87,6 +103,13 @@ class SwiplBackendTests(unittest.TestCase):
                 with self.subTest(key=key):
                     with self.assertRaisesRegex(ExpertError, "execution bounds"):
                         backend.run(self._request(root, **{key: True}))
+
+    def test_descriptor_arity_mismatch_fails_before_subprocess(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            backend = SwiplBackend(str(root / "must-not-run"))
+            with self.assertRaisesRegex(ExpertError, "arity mismatch"):
+                backend.run(self._request(root, arity=2))
 
 
 if __name__ == "__main__":
