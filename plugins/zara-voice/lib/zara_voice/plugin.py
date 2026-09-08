@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,8 @@ from .piper import PiperBackend
 
 
 PLUGIN_VERSION = "0.1.0"
+_PIPER_LANGUAGE_RE = re.compile(r"^[A-Za-z0-9]{1,8}(?:-[A-Za-z0-9]{1,8})*$")
+_PIPER_LANGUAGE_MAX_CHARS = 64
 
 
 class UnavailablePlayer:
@@ -122,6 +125,15 @@ class ZaraVoicePlugin(ServicePlugin):
         )
 
 
+def _piper_language() -> str | None:
+    language = os.environ.get("ZARA_VOICE_PIPER_LANGUAGE", "").strip()
+    if not language:
+        return None
+    if len(language) > _PIPER_LANGUAGE_MAX_CHARS or _PIPER_LANGUAGE_RE.fullmatch(language) is None:
+        raise VoiceError("Piper configuration is invalid")
+    return language
+
+
 def _configured_piper() -> tuple[dict[str, Any], tuple[VoiceProfile, ...]]:
     model = os.environ.get("ZARA_VOICE_PIPER_MODEL", "").strip()
     config = os.environ.get("ZARA_VOICE_PIPER_CONFIG", "").strip()
@@ -131,7 +143,7 @@ def _configured_piper() -> tuple[dict[str, Any], tuple[VoiceProfile, ...]]:
         raise VoiceError("Piper configuration is incomplete")
 
     profile_name = os.environ.get("ZARA_VOICE_PIPER_PROFILE", "").strip() or "piper-local"
-    language = os.environ.get("ZARA_VOICE_PIPER_LANGUAGE", "").strip() or None
+    language = _piper_language()
     try:
         backend = PiperBackend(
             model_path=model,
