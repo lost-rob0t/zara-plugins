@@ -49,15 +49,9 @@ class AgentZeroClient:
             with response:
                 data = response.read(self.config.max_response_bytes + 1)
         except urllib.error.HTTPError as error:
-            detail = error.read(min(self.config.max_response_bytes, 4096)).decode(
-                "utf-8", errors="replace"
-            )
-            detail = " ".join(detail.split())[:512]
-            raise AgentZeroBridgeError(
-                f"Agent Zero HTTP {error.code}: {detail or error.reason}"
-            ) from error
+            raise AgentZeroBridgeError(f"Agent Zero HTTP {error.code}") from error
         except (urllib.error.URLError, TimeoutError, OSError) as error:
-            raise AgentZeroBridgeError(f"Agent Zero request failed: {error}") from error
+            raise AgentZeroBridgeError("Agent Zero request failed") from error
 
         if len(data) > self.config.max_response_bytes:
             raise AgentZeroBridgeError("Agent Zero response exceeded configured limit")
@@ -68,7 +62,7 @@ class AgentZeroClient:
         if not isinstance(decoded, dict):
             raise AgentZeroBridgeError("Agent Zero returned a non-object response")
         if "error" in decoded:
-            raise AgentZeroBridgeError(f"Agent Zero error: {str(decoded['error'])[:512]}")
+            raise AgentZeroBridgeError("Agent Zero returned an error response")
         return decoded
 
     def status(self) -> dict[str, Any]:
