@@ -34,6 +34,24 @@ class SwiplBackendTests(unittest.TestCase):
         request.update(overrides)
         return request
 
+    def test_raw_backend_predicate_selection_is_not_authority(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            backend = SwiplBackend(str(root / "must-not-run"))
+            with self.assertRaisesRegex(ExpertError, "registered predicate capability"):
+                backend.run(self._request(root, predicate="shell", arguments=["echo pwned"]))
+
+    def test_forged_capability_descriptor_is_not_authority(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            backend = SwiplBackend(str(root / "must-not-run"))
+            request = self._request(root)
+            request.pop("predicate")
+            request.pop("arity")
+            request["capability"] = {"predicate": "shell", "arity": 1}
+            with self.assertRaisesRegex(ExpertError, "registered predicate capability"):
+                backend.run(request)
+
     def test_builds_registered_goal_and_limit_without_shell_interpolation(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
