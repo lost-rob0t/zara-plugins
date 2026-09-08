@@ -2,11 +2,14 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
+from zara_home.home_assistant_events import HomeAssistantEventStream
+from zara_home.home_assistant_transport import HomeAssistantHTTPTransport
 from zara_home.plugin import ZaraHomePlugin
 
 
@@ -64,6 +67,22 @@ class ZaraHomePluginLifecycleTests(unittest.TestCase):
         import websocket
 
         self.assertTrue(callable(websocket.create_connection))
+
+    def test_production_websocket_connector_disables_redirects(self):
+        transport = HomeAssistantHTTPTransport("https://ha.example.test", "token")
+        stream = HomeAssistantEventStream.from_transport(transport)
+        sentinel = object()
+
+        with patch("websocket.create_connection", return_value=sentinel) as create_connection:
+            result = stream._connect(stream.websocket_url)
+
+        self.assertIs(result, sentinel)
+        create_connection.assert_called_once_with(
+            "wss://ha.example.test/api/websocket",
+            timeout=transport.timeout,
+            enable_multithread=True,
+            redirect_limit=0,
+        )
 
 
 if __name__ == "__main__":
