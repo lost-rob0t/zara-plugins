@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
+import zara_expert.domain as expert_domain
 from zara_expert.backend import SwiplBackend
 from zara_expert.domain import ExpertError, ExpertHost
 
@@ -61,6 +62,33 @@ class SwiplBackendTests(unittest.TestCase):
             request["capability"] = {"predicate": "shell", "arity": 1}
             with self.assertRaisesRegex(ExpertError, "registered predicate capability"):
                 backend.run(request)
+
+    def test_imported_capability_factory_cannot_mint_backend_authority(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            backend = SwiplBackend(str(root / "must-not-run"))
+            self.assertFalse(
+                hasattr(expert_domain, "_issue_predicate_capability"),
+                "generic same-process code must not be able to import a capability mint",
+            )
+            self.assertFalse(
+                hasattr(expert_domain, "_CAPABILITY_ISSUER"),
+                "generic same-process code must not be able to recover issuer authority",
+            )
+            self.assertFalse(
+                hasattr(backend, "register_predicate") or hasattr(backend, "issue_capability"),
+                "raw backend must not expose a replacement authority-minting API",
+            )
+
+    def test_registered_predicate_metadata_cannot_be_mutated_into_shell_authority(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            host = self._host(root, root / "must-not-run")
+            predicates = getattr(host, "_predicates", None)
+            self.assertIsNone(
+                predicates,
+                "generic same-process code must not recover mutable callable predicate authority from the host",
+            )
 
     def test_builds_registered_goal_and_limit_without_shell_interpolation(self):
         with tempfile.TemporaryDirectory() as temporary:
