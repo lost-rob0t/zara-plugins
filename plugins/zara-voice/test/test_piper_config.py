@@ -107,6 +107,32 @@ class PiperDiscoveryConfigTests(unittest.TestCase):
         self.assertEqual(profiles[0]["name"], "piper-local")
         self.assertEqual(profiles[0]["backend_profile"], "piper-local")
 
+    def test_language_metadata_rejects_oversized_value_without_echo(self):
+        secret = "x" * 65
+        with self._env(
+            ZARA_VOICE_PIPER_MODEL=str(self.model),
+            ZARA_VOICE_PIPER_CONFIG=str(self.config),
+            ZARA_VOICE_PIPER_LANGUAGE=secret,
+        ):
+            with self.assertRaises(VoiceError) as caught:
+                zara_voice_entrypoint.create_plugin()
+
+        self.assertEqual(str(caught.exception), "Piper configuration is invalid")
+        self.assertNotIn(secret, str(caught.exception))
+
+    def test_language_metadata_rejects_malformed_value_without_echo(self):
+        secret = "en-US\nPRIVATE_TOKEN"
+        with self._env(
+            ZARA_VOICE_PIPER_MODEL=str(self.model),
+            ZARA_VOICE_PIPER_CONFIG=str(self.config),
+            ZARA_VOICE_PIPER_LANGUAGE=secret,
+        ):
+            with self.assertRaises(VoiceError) as caught:
+                zara_voice_entrypoint.create_plugin()
+
+        self.assertEqual(str(caught.exception), "Piper configuration is invalid")
+        self.assertNotIn(secret, str(caught.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
