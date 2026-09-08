@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -9,9 +10,12 @@ from langchain_core.tools import StructuredTool
 from zara.plugins import PluginMetadata, ServicePlugin
 
 from .domain import VoiceError, VoicePolicy, VoiceProfile, VoiceService
+from .piper import PiperBackend
 
 
 PLUGIN_VERSION = "0.1.0"
+_PIPER_LANGUAGE_RE = re.compile(r"^[A-Za-z0-9]{1,8}(?:-[A-Za-z0-9]{1,8})*$")
+_PIPER_LANGUAGE_MAX_CHARS = 64
 
 
 class UnavailablePlayer:
@@ -121,5 +125,44 @@ class ZaraVoicePlugin(ServicePlugin):
         )
 
 
+def _piper_language() -> str | None:
+    language = os.environ.get("ZARA_VOICE_PIPER_LANGUAGE", "").strip()
+    if not language:
+        return None
+    if len(language) > _PIPER_LANGUAGE_MAX_CHARS or _PIPER_LANGUAGE_RE.fullmatch(language) is None:
+        raise VoiceError("Piper configuration is invalid")
+    return language
+
+
+def _configured_piper() -> tuple[dict[str, Any], tuple[VoiceProfile, ...]]:
+    model = os.environ.get("ZARA_VOICE_PIPER_MODEL", "").strip()
+    config = os.environ.get("ZARA_VOICE_PIPER_CONFIG", "").strip()
+    if not model and not config:
+        return {}, ()
+    if not model or not config:
+        raise VoiceError("Piper configuration is incomplete")
+
+    profile_name = os.environ.get("ZARA_VOICE_PIPER_PROFILE", "").strip() or "piper-local"
+    language = _piper_language()
+    try:
+        backend = PiperBackend(
+            model_path=model,
+            config_path=config,
+            use_cuda=False,
+        )
+        profile = VoiceProfile(
+            name=profile_name,
+            backend="piper-local",
+            backend_profile=profile_name,
+            language=language,
+        )
+    except VoiceError:
+        raise
+    except (TypeError, ValueError):
+        raise VoiceError("Piper configuration is invalid") from None
+    return {"piper-local": backend}, (profile,)
+
+
 def create_plugin():
-    return ZaraVoicePlugin()
+    backends, profiles = _configured_piper()
+    return ZaraVoicePlugin(backends=backends, profiles=profiles)

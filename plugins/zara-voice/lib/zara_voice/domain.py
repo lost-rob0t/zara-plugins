@@ -123,7 +123,8 @@ class VoiceService:
         artifact["artifact_id"] = artifact_id
         self._artifacts[artifact_id] = dict(artifact)
         request_id = artifact.get("request_id")
-        if isinstance(request_id, str) and request_id:
+        callback = getattr(backend, "cancel", None)
+        if isinstance(request_id, str) and request_id and callable(callback):
             self._request_backends[request_id] = backend
         if cache:
             self._cache(artifact_id, artifact["audio"])
@@ -149,9 +150,13 @@ class VoiceService:
         if backend is None:
             return {"kind": "synthesis", "id": request_id, "cancelled": False}
         callback = getattr(backend, "cancel", None)
-        if callback is None:
+        if not callable(callback):
+            self._request_backends.pop(request_id, None)
             return {"kind": "synthesis", "id": request_id, "cancelled": False}
-        return {"kind": "synthesis", "id": request_id, "cancelled": bool(callback(request_id))}
+        cancelled = bool(callback(request_id))
+        if cancelled:
+            self._request_backends.pop(request_id, None)
+        return {"kind": "synthesis", "id": request_id, "cancelled": cancelled}
 
     def _validate_backend_result(self, result: Any, profile: VoiceProfile, locality: str) -> dict[str, Any]:
         if not isinstance(result, dict):

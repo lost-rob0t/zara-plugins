@@ -34,6 +34,21 @@ class FakeBackend:
         return True
 
 
+class NonCancellableBackend:
+    name = "non-cancellable"
+    locality = "local"
+    capabilities = frozenset()
+
+    def synthesize(self, request):
+        return {
+            "audio": b"RIFFfake",
+            "format": "wav",
+            "sample_rate_hz": 24000,
+            "duration_seconds": 0.4,
+            "request_id": "completed-1",
+        }
+
+
 class FakeRemoteBackend(FakeBackend):
     name = "fake-remote"
     locality = "remote"
@@ -143,6 +158,26 @@ class VoiceServiceTests(unittest.TestCase):
         result = self.voice.cancel(request_id=artifact["request_id"])
         self.assertTrue(result["cancelled"])
         self.assertEqual(self.backend.cancelled, ["req-1"])
+        self.assertNotIn("req-1", self.voice._request_backends)
+
+    def test_completed_non_cancellable_synthesis_does_not_retain_request_state(self):
+        backend = NonCancellableBackend()
+        voice = VoiceService(
+            backends={"non-cancellable": backend},
+            player=self.player,
+            cache_root=self.root,
+            policy=VoicePolicy(max_text_chars=64, max_audio_bytes=64, max_duration_seconds=2.0, max_cache_bytes=128),
+        )
+        voice.register_profile(VoiceProfile(name="local", backend="non-cancellable", backend_profile="voice-a"))
+
+        artifact = voice.synthesize("hello", profile="local", cache=False)
+
+        self.assertEqual(artifact["request_id"], "completed-1")
+        self.assertNotIn("completed-1", voice._request_backends)
+        self.assertEqual(
+            voice.cancel(request_id="completed-1"),
+            {"kind": "synthesis", "id": "completed-1", "cancelled": False},
+        )
 
     def test_cache_eviction_is_bounded(self):
         for index in range(20):
