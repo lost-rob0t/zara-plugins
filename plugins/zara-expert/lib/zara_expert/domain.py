@@ -5,7 +5,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping, Sequence
 
 
 class ExpertError(RuntimeError):
@@ -13,7 +13,8 @@ class ExpertError(RuntimeError):
 
 
 _NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
-_TERM_RE = re.compile(r"^[a-z][a-zA-Z0-9_]*(?:\([^\n;:.]*\))?$")
+_PREDICATE_RE = re.compile(r"^[a-z][a-zA-Z0-9_]{0,63}$")
+_VARIABLE_RE = re.compile(r"^[A-Z_][a-zA-Z0-9_]{0,63}$")
 _GROUND_FACT_RE = re.compile(r"^[a-z][a-z0-9_]*(?:\([a-z0-9_' -]+(?:,[a-z0-9_' -]+)*\))?$")
 _FORBIDDEN = (
     ":-",
@@ -30,6 +31,8 @@ _FORBIDDEN = (
     "open(",
     "process_create(",
 )
+_MAX_ARGUMENTS = 16
+_MAX_ARGUMENT_TEXT = 4096
 
 
 class ExpertHost:
@@ -57,18 +60,32 @@ class ExpertHost:
         self._query_timeout_seconds = timeout
         self._max_results = max_results
         self._knowledge_bases: dict[str, tuple[str, ...]] = {}
+        self._predicates: dict[str, dict[str, int]] = {}
 
-    def register(self, namespace: str, knowledge_bases: Iterable[Path]) -> None:
+    def register(
+        self,
+        namespace: str,
+        knowledge_bases: Iterable[Path],
+        *,
+        predicates: Mapping[str, int] | None = None,
+    ) -> None:
         namespace = self._validate_namespace(namespace)
         files = tuple(str(Path(path).resolve()) for path in knowledge_bases)
+        capabilities: dict[str, int] = {}
+        for predicate, arity in (predicates or {}).items():
+            predicate = self._validate_predicate(predicate)
+            if isinstance(arity, bool) or not isinstance(arity, int) or arity < 0 or arity > _MAX_ARGUMENTS:
+                raise ExpertError(f"invalid arity for predicate {predicate!r}")
+            capabilities[predicate] = arity
         self._knowledge_bases[namespace] = files
+        self._predicates[namespace] = capabilities
         self.state_files(namespace)
 
-    def query(self, namespace: str, goal: str) -> dict[str, Any]:
-        return self._run(namespace, "query", goal)
+    def query(self, namespace: str, predicate: str, arguments: Sequence[Any] | None = None) -> dict[str, Any]:
+        return self._run(namespace, "query", predicate, arguments)
 
-    def explain(self, namespace: str, goal: str) -> dict[str, Any]:
-        return self._run(namespace, "explain", goal)
+    def explain(self, namespace: str, predicate: str, arguments: Sequence[Any] | None = None) -> dict[str, Any]:
+        return self._run(namespace, "explain", predicate, arguments)
 
     def assert_fact(self, namespace: str, fact: str, *, persistent: bool = False) -> bool:
         namespace = self._validate_namespace(namespace)
@@ -108,16 +125,33 @@ class ExpertHost:
                 self._atomic_write(path, [])
         return session_path, persistent_path
 
-    def _run(self, namespace: str, operation: str, goal: str) -> dict[str, Any]:
+    def _run(
+        self,
+        namespace: str,
+        operation: str,
+        predicate: str,
+        arguments: Sequence[Any] | None,
+    ) -> dict[str, Any]:
         namespace = self._validate_namespace(namespace)
         if namespace not in self._knowledge_bases:
             raise ExpertError(f"expert namespace {namespace!r} is not registered")
-        goal = self._validate_query(goal)
+        predicate = self._validate_predicate(predicate)
+        capabilities = self._predicates.get(namespace, {})
+        if predicate not in capabilities:
+            raise ExpertError(f"predicate {predicate!r} is not registered for namespace {namespace!r}")
+        normalized_arguments = self._validate_arguments(arguments)
+        arity = capabilities[predicate]
+        if len(normalized_arguments) != arity:
+            raise ExpertError(
+                f"predicate {predicate!r} arity mismatch: registered {arity}, received {len(normalized_arguments)}"
+            )
         session_path, persistent_path = self.state_files(namespace)
         request = {
             "namespace": namespace,
             "operation": operation,
-            "goal": goal,
+            "predicate": predicate,
+            "arity": arity,
+            "arguments": normalized_arguments,
             "knowledge_bases": self._knowledge_bases[namespace],
             "state_files": (str(session_path), str(persistent_path)),
             "timeout_seconds": self._query_timeout_seconds,
@@ -140,16 +174,41 @@ class ExpertHost:
         return namespace
 
     @staticmethod
-    def _validate_query(goal: str) -> str:
-        if not isinstance(goal, str):
-            raise ExpertError("query must be text")
-        normalized = goal.strip()
-        lowered = normalized.lower()
-        if not normalized or any(token in lowered for token in _FORBIDDEN):
-            raise ExpertError("unsafe or malformed Prolog query")
-        if not _TERM_RE.fullmatch(normalized):
-            raise ExpertError("unsafe or malformed Prolog query")
-        return normalized
+    def _validate_predicate(predicate: str) -> str:
+        if not isinstance(predicate, str) or not _PREDICATE_RE.fullmatch(predicate):
+            raise ExpertError("invalid expert predicate")
+        return predicate
+
+    @classmethod
+    def _validate_arguments(cls, arguments: Sequence[Any] | None) -> list[Any]:
+        if arguments is None:
+            return []
+        if isinstance(arguments, (str, bytes)) or not isinstance(arguments, (list, tuple)):
+            raise ExpertError("expert arguments must be a list")
+        if len(arguments) > _MAX_ARGUMENTS:
+            raise ExpertError("too many expert arguments")
+        return [cls._validate_argument(argument) for argument in arguments]
+
+    @staticmethod
+    def _validate_argument(argument: Any) -> Any:
+        if argument is None or isinstance(argument, bool):
+            return argument
+        if isinstance(argument, int):
+            return argument
+        if isinstance(argument, float):
+            if not math.isfinite(argument):
+                raise ExpertError("expert numeric argument must be finite")
+            return argument
+        if isinstance(argument, str):
+            if len(argument) > _MAX_ARGUMENT_TEXT or "\x00" in argument:
+                raise ExpertError("expert text argument is too large or malformed")
+            return argument
+        if isinstance(argument, dict) and set(argument) == {"var"}:
+            variable = argument["var"]
+            if not isinstance(variable, str) or not _VARIABLE_RE.fullmatch(variable):
+                raise ExpertError("invalid expert variable descriptor")
+            return {"var": variable}
+        raise ExpertError("expert argument must be a scalar or variable descriptor")
 
     @staticmethod
     def _validate_fact(fact: str) -> str:
