@@ -71,9 +71,27 @@ class HomeAssistantEventLifecycleTest(unittest.TestCase):
         stream.connect_once()
         self.assertEqual(sock.timeout, 3.0)
 
-    def test_run_forever_reconnects_with_bounded_backoff(self):
+    def test_run_forever_resets_backoff_after_fresh_session(self):
         first = FakeSocket(handshake(1))
         second = FakeSocket(handshake(2))
+        waits = []
+
+        def wait(delay):
+            waits.append(delay)
+            return len(waits) >= 2
+
+        stream, connects = self.make_stream([first, second], wait=wait)
+        stream.run_forever()
+
+        self.assertEqual(len(connects), 2)
+        self.assertEqual(waits, [1.0, 1.0])
+        self.assertTrue(first.closed)
+        self.assertTrue(second.closed)
+        self.assertFalse(stream.fresh)
+
+    def test_run_forever_escalates_backoff_before_session_becomes_fresh(self):
+        first = FakeSocket([json.dumps({"type": "auth_required"}), EOFError("disconnect")])
+        second = FakeSocket([json.dumps({"type": "auth_required"}), EOFError("disconnect")])
         waits = []
 
         def wait(delay):
