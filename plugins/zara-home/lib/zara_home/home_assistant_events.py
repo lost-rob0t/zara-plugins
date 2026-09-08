@@ -28,6 +28,7 @@ class HomeAssistantEventStream:
         *,
         connect: Callable[[str], Any],
         reconcile: Callable[[], list[dict[str, Any]]],
+        access_token_provider: Callable[[], str] | None = None,
         max_frame_bytes: int = 1024 * 1024,
         io_timeout_seconds: float = 10.0,
         reconnect_backoff: tuple[float, ...] = (1.0, 2.0, 5.0, 10.0),
@@ -42,6 +43,8 @@ class HomeAssistantEventStream:
             raise HomeAssistantEventError("invalid-base-url")
         if not HomeAssistantHTTPTransport._valid_bearer_token(access_token):
             raise HomeAssistantEventError("invalid-access-token")
+        if access_token_provider is not None and not callable(access_token_provider):
+            raise HomeAssistantEventError("invalid-access-token-provider")
         if not isinstance(max_frame_bytes, int) or max_frame_bytes < 256 or max_frame_bytes > 4 * 1024 * 1024:
             raise HomeAssistantEventError("invalid-frame-limit")
         if not isinstance(io_timeout_seconds, (int, float)) or isinstance(io_timeout_seconds, bool) or io_timeout_seconds <= 0 or io_timeout_seconds > 60:
@@ -63,6 +66,7 @@ class HomeAssistantEventStream:
         scheme = "wss" if parsed.scheme == "https" else "ws"
         self.websocket_url = urlunsplit((scheme, parsed.netloc, "/api/websocket", "", ""))
         self._access_token = access_token
+        self._access_token_provider = access_token_provider or (lambda: self._access_token)
         self._connect = connect
         self._reconcile = reconcile
         self._max_frame_bytes = max_frame_bytes
@@ -97,9 +101,10 @@ class HomeAssistantEventStream:
 
         return cls(
             transport.base_url,
-            transport._access_token,
+            transport.current_access_token(),
             connect=connect,
             reconcile=lambda: transport.request("GET", "/api/states"),
+            access_token_provider=transport.current_access_token,
             io_timeout_seconds=transport.timeout,
         )
 
@@ -147,7 +152,13 @@ class HomeAssistantEventStream:
             first = self._read_frame(sock)
             if first.get("type") != "auth_required":
                 raise HomeAssistantEventError("invalid-auth-phase")
-            sock.send(json.dumps({"type": "auth", "access_token": self._access_token}))
+            try:
+                access_token = self._access_token_provider()
+            except Exception:
+                raise HomeAssistantEventError("reauth-required") from None
+            if not HomeAssistantHTTPTransport._valid_bearer_token(access_token):
+                raise HomeAssistantEventError("reauth-required")
+            sock.send(json.dumps({"type": "auth", "access_token": access_token}))
             auth = self._read_frame(sock)
             if auth.get("type") == "auth_invalid":
                 raise HomeAssistantEventError("reauth-required")
