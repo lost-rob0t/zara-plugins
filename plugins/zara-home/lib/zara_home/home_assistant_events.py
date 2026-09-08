@@ -95,6 +95,7 @@ class HomeAssistantEventStream:
                     url,
                     timeout=transport.timeout,
                     enable_multithread=True,
+                    redirect_limit=0,
                 )
             except Exception:
                 raise HomeAssistantEventError("provider-unavailable") from None
