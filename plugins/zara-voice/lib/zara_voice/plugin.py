@@ -57,7 +57,9 @@ class ZaraVoicePlugin(ServicePlugin):
         return None
 
     def stop(self) -> None:
-        return None
+        close = getattr(self.player, "close", None)
+        if callable(close):
+            close()
 
     @staticmethod
     def _json(value: object) -> str:

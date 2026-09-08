@@ -112,13 +112,24 @@ class WebDriverBrowserBackend:
             raise BrowserError("WebDriver returned oversized window handle")
 
         tabs: list[dict[str, object]] = []
+        primary_error: Exception | None = None
         try:
             for handle in handles:
                 tabs.append(self._tab(handle))
-            return tabs
-        finally:
-            if active in handles:
+        except Exception as error:
+            primary_error = error
+
+        if active in handles:
+            try:
                 self._switch(active)
+            except Exception as restoration_error:
+                if primary_error is not None:
+                    raise primary_error from restoration_error
+                raise
+
+        if primary_error is not None:
+            raise primary_error
+        return tabs
 
     def open_tab(self, url: str) -> dict[str, object]:
         created = self._request("POST", "/window/new", {"type": "tab"})

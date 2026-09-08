@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
 from zara_voice.domain import VoiceError, VoicePolicy, VoiceProfile, VoiceService
+from zara_voice.plugin import ZaraVoicePlugin
 
 
 class FakeBackend:
@@ -42,6 +43,7 @@ class FakePlayer:
     def __init__(self):
         self.played = []
         self.cancelled = []
+        self.closed = False
 
     def play(self, artifact):
         self.played.append(dict(artifact))
@@ -50,6 +52,15 @@ class FakePlayer:
     def cancel(self, playback_id):
         self.cancelled.append(playback_id)
         return True
+
+    def close(self):
+        self.closed = True
+
+
+class FailingClosePlayer(FakePlayer):
+    def close(self):
+        self.closed = True
+        raise VoiceError("player cleanup incomplete")
 
 
 class VoiceServiceTests(unittest.TestCase):
@@ -138,6 +149,23 @@ class VoiceServiceTests(unittest.TestCase):
             self.voice.synthesize(f"hello {index}", profile="mara", cache=True)
         total = sum(path.stat().st_size for path in self.root.glob("*.audio"))
         self.assertLessEqual(total, 128)
+
+    def test_plugin_stop_closes_injected_player(self):
+        player = FakePlayer()
+        plugin = ZaraVoicePlugin(player=player, cache_root=self.root)
+
+        plugin.stop()
+
+        self.assertTrue(player.closed)
+
+    def test_plugin_stop_surfaces_incomplete_player_cleanup(self):
+        player = FailingClosePlayer()
+        plugin = ZaraVoicePlugin(player=player, cache_root=self.root)
+
+        with self.assertRaisesRegex(VoiceError, "cleanup incomplete"):
+            plugin.stop()
+
+        self.assertTrue(player.closed)
 
 
 if __name__ == "__main__":
