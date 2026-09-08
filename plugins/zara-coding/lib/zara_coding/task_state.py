@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
+import queue
 import select
 import subprocess
 import threading
-import weakref
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Callable, TextIO
@@ -145,51 +145,92 @@ class _TaskStateProtocol:
             process.wait(timeout=2)
 
 
-class _EndpointToken:
-    pass
+class _TaskStateEndpoint:
+    def __init__(self, requests: queue.Queue[tuple[dict[str, object], queue.Queue[object]]]) -> None:
+        self._requests = requests
+
+    def request(self, command: dict[str, object]) -> dict[str, object]:
+        reply: queue.Queue[object] = queue.Queue(maxsize=1)
+        self._requests.put((dict(command), reply))
+        result = reply.get()
+        if isinstance(result, BaseException):
+            raise result
+        if not isinstance(result, dict):
+            raise CodingError("zara-coding task-state broker returned malformed response")
+        return result
 
 
-_CALLER_ENDPOINTS: weakref.WeakKeyDictionary[_EndpointToken, _TaskStateProtocol] = weakref.WeakKeyDictionary()
-_VERIFIER_ENDPOINTS: weakref.WeakKeyDictionary[_EndpointToken, _TaskStateProtocol] = weakref.WeakKeyDictionary()
+class _TaskStateBroker:
+    def __init__(self, protocol: _TaskStateProtocol) -> None:
+        self._protocol = protocol
+        self._caller_requests: queue.Queue[tuple[dict[str, object], queue.Queue[object]]] = queue.Queue()
+        self._verifier_requests: queue.Queue[tuple[dict[str, object], queue.Queue[object]]] = queue.Queue()
+        self._thread = threading.Thread(target=self._serve, name="zara-coding-task-state", daemon=True)
+        self._thread.start()
+
+    def caller_endpoint(self) -> _TaskStateEndpoint:
+        return _TaskStateEndpoint(self._caller_requests)
+
+    def verifier_endpoint(self) -> _TaskStateEndpoint:
+        return _TaskStateEndpoint(self._verifier_requests)
+
+    def _serve(self) -> None:
+        while True:
+            handled = self._serve_one(self._caller_requests, verifier=False, timeout=0.01)
+            self._serve_one(self._verifier_requests, verifier=True, timeout=0.0 if handled else 0.01)
+
+    def _serve_one(
+        self,
+        requests: queue.Queue[tuple[dict[str, object], queue.Queue[object]]],
+        *,
+        verifier: bool,
+        timeout: float,
+    ) -> bool:
+        try:
+            command, reply = requests.get(timeout=timeout)
+        except queue.Empty:
+            return False
+        try:
+            reply.put(self._dispatch(command, verifier=verifier))
+        except BaseException as exc:
+            reply.put(exc)
+        return True
+
+    def _dispatch(self, command: dict[str, object], *, verifier: bool) -> dict[str, object]:
+        control = command.pop("__control__", None)
+        if control is not None:
+            if verifier:
+                raise PermissionError("verifier authority cannot control task-state runtime")
+            return self._control(control, command)
+        if verifier:
+            trusted = dict(command)
+            trusted["op"] = "record_verifier_evidence"
+            trusted.pop("provenance", None)
+            return self._protocol.request(trusted)
+        if command.get("op") == "record_verifier_evidence" or command.get("provenance") == "verifier":
+            raise PermissionError("verifier authority is not available through the generic task-state protocol")
+        return self._protocol.request(command)
+
+    def _control(self, control: object, command: dict[str, object]) -> dict[str, object]:
+        if control == "running":
+            return {"status": "ok", "running": self._protocol.running}
+        if control == "start":
+            self._protocol.start()
+            return {"status": "ok"}
+        if control == "stop":
+            self._protocol.stop()
+            return {"status": "ok"}
+        if control == "fence":
+            message = command.get("message")
+            if not isinstance(message, str) or not message:
+                raise CodingError("zara-coding task-state fence requires a message")
+            self._protocol.fence(message)
+        raise CodingError("zara-coding task-state broker received unknown control operation")
 
 
-def _register_caller(protocol: _TaskStateProtocol) -> _EndpointToken:
-    token = _EndpointToken()
-    _CALLER_ENDPOINTS[token] = protocol
-    return token
-
-
-def _register_verifier(protocol: _TaskStateProtocol) -> _EndpointToken:
-    token = _EndpointToken()
-    _VERIFIER_ENDPOINTS[token] = protocol
-    return token
-
-
-def _caller_protocol(token: _EndpointToken) -> _TaskStateProtocol:
-    try:
-        return _CALLER_ENDPOINTS[token]
-    except KeyError as exc:
-        raise CodingError("zara-coding task-state caller endpoint is unavailable") from exc
-
-
-def _verifier_protocol(token: _EndpointToken) -> _TaskStateProtocol:
-    try:
-        return _VERIFIER_ENDPOINTS[token]
-    except KeyError as exc:
-        raise PermissionError("verifier authority is unavailable") from exc
-
-
-def _caller_request(token: _EndpointToken, command: dict[str, object]) -> dict[str, object]:
-    if command.get("op") == "record_verifier_evidence" or command.get("provenance") == "verifier":
-        raise PermissionError("verifier authority is not available through the generic task-state protocol")
-    return _caller_protocol(token).request(command)
-
-
-def _verifier_request(token: _EndpointToken, command: dict[str, object]) -> dict[str, object]:
-    trusted = dict(command)
-    trusted["op"] = "record_verifier_evidence"
-    trusted.pop("provenance", None)
-    return _verifier_protocol(token).request(trusted)
+def _new_endpoints(protocol: _TaskStateProtocol) -> tuple[_TaskStateEndpoint, _TaskStateEndpoint]:
+    broker = _TaskStateBroker(protocol)
+    return broker.caller_endpoint(), broker.verifier_endpoint()
 
 
 class TaskStateSession:
@@ -211,7 +252,7 @@ class TaskStateSession:
         process_factory: ProcessFactory | None = None,
         response_timeout_seconds: float = 5.0,
         readiness_waiter: ReadinessWaiter | None = None,
-        _endpoint: _EndpointToken | None = None,
+        _endpoint: _TaskStateEndpoint | None = None,
     ) -> None:
         driver_path, executable_text, timeout, factory, waiter = self._validated_runtime(
             driver,
@@ -228,7 +269,7 @@ class TaskStateSession:
                 response_timeout_seconds=timeout,
                 readiness_waiter=waiter,
             )
-            _endpoint = _register_caller(protocol)
+            _endpoint, _unused_verifier_endpoint = _new_endpoints(protocol)
         self.driver = driver_path
         self.executable = executable_text
         self.response_timeout_seconds = timeout
@@ -237,13 +278,13 @@ class TaskStateSession:
 
     @property
     def running(self) -> bool:
-        return _caller_protocol(self._endpoint).running
+        return self._endpoint.request({"__control__": "running"}).get("running") is True
 
     def start(self) -> None:
-        _caller_protocol(self._endpoint).start()
+        self._endpoint.request({"__control__": "start"})
 
     def stop(self) -> None:
-        _caller_protocol(self._endpoint).stop()
+        self._endpoint.request({"__control__": "stop"})
 
     def status(self) -> dict[str, object]:
         return self._request({"op": "status"})
@@ -326,10 +367,14 @@ class TaskStateSession:
         response = self._request({"op": "invalidate_completion", "task_id": task_id})
         if response.get("status") == "ok":
             return
-        _caller_protocol(self._endpoint).fence("zara-coding task-state could not invalidate stale completion")
+        self._endpoint.request(
+            {"__control__": "fence", "message": "zara-coding task-state could not invalidate stale completion"}
+        )
 
     def _request(self, command: dict[str, object]) -> dict[str, object]:
-        return _caller_request(self._endpoint, command)
+        if command.get("op") == "record_verifier_evidence" or command.get("provenance") == "verifier":
+            raise PermissionError("verifier authority is not available through the generic task-state protocol")
+        return self._endpoint.request(command)
 
     @classmethod
     def _validated_runtime(
@@ -400,18 +445,17 @@ class TaskStateSession:
 
 
 class TaskStateVerifier:
-    def __init__(self, endpoint: _EndpointToken) -> None:
+    def __init__(self, endpoint: _TaskStateEndpoint) -> None:
         self._endpoint = endpoint
 
     def record_evidence(self, task_id: str, *, kind: str, status: str, detail: str) -> dict[str, object]:
-        return _verifier_request(
-            self._endpoint,
+        return self._endpoint.request(
             {
                 "task_id": TaskStateSession._bounded_string(task_id, "task_id", TaskStateSession.MAX_ID_CHARS),
                 "kind": TaskStateSession._bounded_string(kind, "kind", TaskStateSession.MAX_ITEM_CHARS),
                 "status": TaskStateSession._bounded_evidence_status(status),
                 "detail": TaskStateSession._bounded_string(detail, "detail", TaskStateSession.MAX_DETAIL_CHARS),
-            },
+            }
         )
 
 
@@ -437,11 +481,12 @@ def create_task_state_interfaces(
         response_timeout_seconds=timeout,
         readiness_waiter=waiter,
     )
+    caller_endpoint, verifier_endpoint = _new_endpoints(protocol)
     session = TaskStateSession(
         driver_path,
         executable=executable_text,
         response_timeout_seconds=timeout,
-        _endpoint=_register_caller(protocol),
+        _endpoint=caller_endpoint,
     )
-    verifier = TaskStateVerifier(_register_verifier(protocol))
+    verifier = TaskStateVerifier(verifier_endpoint)
     return session, verifier
