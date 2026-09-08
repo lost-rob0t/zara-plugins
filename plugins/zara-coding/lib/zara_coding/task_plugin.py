@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from langchain_core.tools import StructuredTool
@@ -65,7 +65,7 @@ class TaskStateCodingPlugin(ZaraCodingPlugin):
             StructuredTool.from_function(
                 func=self.task_create,
                 name="coding.task.create",
-                description="Create bounded Prolog-owned symbolic coding task state bound to a freshly inspected repository identity.",
+                description="Create bounded Prolog-owned symbolic coding task state. Each completion criterion is a verifier key that requires its own current verifier-owned passing evidence.",
             ),
             StructuredTool.from_function(
                 func=self.task_get,
@@ -75,12 +75,12 @@ class TaskStateCodingPlugin(ZaraCodingPlugin):
             StructuredTool.from_function(
                 func=self.task_record_evidence,
                 name="coding.task.record-evidence",
-                description="Record bounded failed verification observations. Passing evidence is verifier-owned and cannot be caller-authored through this public tool.",
+                description="Record bounded caller-authored failed observations. Passing evidence is verifier-owned and cannot be caller-authored through this public tool.",
             ),
             StructuredTool.from_function(
                 func=self.task_complete,
                 name="coding.task.complete",
-                description="Complete one symbolic coding task only when Prolog state contains verifier-owned passing verification evidence.",
+                description="Complete one symbolic coding task only when every declared verifier key has current verifier-owned passing evidence and the repository still matches the task snapshot.",
             ),
         )
 
@@ -133,12 +133,68 @@ class TaskStateCodingPlugin(ZaraCodingPlugin):
         if status == "passed":
             raise ValueError("passing task evidence is verifier-owned")
         return json.dumps(
-            self._require_task_state().record_evidence(task_id, kind=kind, status=status, detail=detail),
+            self._require_task_state().record_evidence(
+                task_id,
+                kind=kind,
+                status=status,
+                detail=detail,
+            ),
             sort_keys=True,
         )
 
     def task_complete(self, task_id: str) -> str:
-        return json.dumps(self._require_task_state().complete_task(task_id), sort_keys=True)
+        session = self._require_task_state()
+        task_response = session.get_task(task_id)
+        if task_response.get("status") != "ok":
+            return json.dumps(task_response, sort_keys=True)
+
+        task = task_response.get("task")
+        repository = task.get("repository") if isinstance(task, Mapping) else None
+        if not isinstance(repository, Mapping) or set(repository) != {"root", "head", "branch"}:
+            return json.dumps(
+                {"status": "rejected", "reason": "task-repository-snapshot-unavailable"},
+                sort_keys=True,
+            )
+
+        expected_repository = {
+            "root": repository["root"],
+            "head": repository["head"],
+            "branch": repository["branch"],
+        }
+        observed = self._require_inspector().inspect(Path(expected_repository["root"]))
+        observed_repository = {
+            "root": observed["root"],
+            "head": observed["head"],
+            "branch": observed["branch"],
+        }
+        if observed_repository != expected_repository or bool(observed.get("dirty")):
+            return json.dumps(
+                {
+                    "status": "rejected",
+                    "reason": "repository-snapshot-stale",
+                    "expected_repository": expected_repository,
+                    "observed_repository": observed_repository,
+                },
+                sort_keys=True,
+            )
+
+        return json.dumps(
+            session.complete_task(
+                task_id,
+                expected_repository=expected_repository,
+                repository_validator=self._repository_matches_snapshot,
+            ),
+            sort_keys=True,
+        )
+
+    def _repository_matches_snapshot(self, expected_repository: Mapping[str, str]) -> bool:
+        observed = self._require_inspector().inspect(Path(expected_repository["root"]))
+        return (
+            observed.get("root") == expected_repository["root"]
+            and observed.get("head") == expected_repository["head"]
+            and observed.get("branch") == expected_repository["branch"]
+            and not bool(observed.get("dirty"))
+        )
 
     def _require_task_state(self) -> TaskStateSession:
         if self.task_state is None:

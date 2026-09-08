@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
 from zara_coding.domain import CodingError
-from zara_coding.task_state import TaskStateSession
+from zara_coding.task_state import TaskStateSession, create_task_state_interfaces
 
 
 class FakeProcess:
@@ -21,23 +21,26 @@ class FakeProcess:
         self.returncode = None
         self.terminated = False
 
-    def poll(self):
-        return self.returncode
+    def poll(self): return self.returncode
+    def terminate(self) -> None: self.terminated = True; self.returncode = 0
+    def wait(self, timeout=None) -> int: self.returncode = 0; return 0
 
-    def terminate(self) -> None:
-        self.terminated = True
-        self.returncode = 0
 
-    def wait(self, timeout=None) -> int:
-        self.returncode = 0
-        return 0
+class MutatingStdin(io.StringIO):
+    def __init__(self, on_complete) -> None:
+        super().__init__()
+        self._on_complete = on_complete
+
+    def write(self, value: str) -> int:
+        if '"op":"complete"' in value:
+            self._on_complete()
+        return super().write(value)
 
 
 class RecordingStdout:
     def __init__(self, response: dict[str, object]) -> None:
         self._line = json.dumps(response) + "\n"
         self.readline_sizes: list[int] = []
-
     def readline(self, size: int = -1) -> str:
         self.readline_sizes.append(size)
         return self._line[:size] if size >= 0 else self._line
@@ -45,135 +48,115 @@ class RecordingStdout:
 
 class TaskStateSessionTest(unittest.TestCase):
     def test_one_process_persists_across_task_operations(self) -> None:
-        process = FakeProcess(
-            [
-                {"status": "ok", "task": {"id": "task-1", "state": "open"}},
-                {"status": "ok", "task": {"id": "task-1", "state": "open"}},
-            ]
-        )
+        process = FakeProcess([{"status": "ok", "task": {"id": "task-1", "state": "open"}}, {"status": "ok", "task": {"id": "task-1", "state": "open"}}])
         calls = []
-
-        def process_factory(argv, **kwargs):
-            calls.append((argv, kwargs))
-            return process
-
+        def process_factory(argv, **kwargs): calls.append((argv, kwargs)); return process
         session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=process_factory)
-        created = session.create_task(
-            "task-1",
-            goal="fix failing test",
-            constraints=["repo-bound"],
-            dependencies=["dep-1"],
-            completion_criteria=["tests-green"],
-        )
+        created = session.create_task("task-1", goal="fix failing test", constraints=["repo-bound"], dependencies=["dep-1"], completion_criteria=["test"])
         fetched = session.get_task("task-1")
-
-        self.assertEqual(created["task"]["id"], "task-1")
-        self.assertEqual(fetched["task"]["id"], "task-1")
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(created["task"]["id"], "task-1"); self.assertEqual(fetched["task"]["id"], "task-1"); self.assertEqual(len(calls), 1)
         commands = [json.loads(line) for line in process.stdin.getvalue().splitlines()]
-        self.assertEqual(commands[0]["op"], "create")
-        self.assertEqual(commands[1], {"op": "get", "task_id": "task-1"})
+        self.assertEqual(commands[0]["op"], "create"); self.assertEqual(commands[1], {"op": "get", "task_id": "task-1"})
 
     def test_completion_fails_closed_until_verification_evidence_exists(self) -> None:
-        process = FakeProcess(
-            [
-                {"status": "rejected", "reason": "verification-evidence-required"},
-                {"status": "ok", "evidence": {"kind": "test", "status": "passed"}},
-                {"status": "ok", "task": {"id": "task-1", "state": "completed"}},
-            ]
+        process = FakeProcess([
+            {"status": "rejected", "reason": "verification-evidence-required"},
+            {"status": "ok", "evidence": {"kind": "test", "status": "passed", "provenance": "verifier"}},
+            {"status": "ok", "task": {"id": "task-1", "state": "completed"}},
+        ])
+        session, verifier = create_task_state_interfaces(
+            Path("/tmp/driver.pl"),
+            process_factory=lambda *args, **kwargs: process,
         )
-        session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
-
         rejected = session.complete_task("task-1")
-        evidence = session.record_evidence("task-1", kind="test", status="passed", detail="unit suite")
+        evidence = verifier.record_evidence("task-1", kind="test", status="passed", detail="unit suite")
         completed = session.complete_task("task-1")
-
+        commands = [json.loads(line) for line in process.stdin.getvalue().splitlines()]
         self.assertEqual(rejected, {"status": "rejected", "reason": "verification-evidence-required"})
-        self.assertEqual(evidence["status"], "ok")
+        self.assertEqual(evidence["evidence"]["provenance"], "verifier")
+        self.assertEqual(commands[1]["op"], "record_verifier_evidence")
+        self.assertNotIn("provenance", commands[1])
         self.assertEqual(completed["task"]["state"], "completed")
 
-    def test_evidence_status_rejects_unsupported_values_before_writing(self) -> None:
+    def test_generic_evidence_path_cannot_mint_verifier_pass(self) -> None:
         process = FakeProcess([])
         session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
+        with self.assertRaisesRegex(ValueError, "passing task evidence is verifier-owned"):
+            session.record_evidence("task-1", kind="test", status="passed", detail="model says green")
+        self.assertEqual(process.stdin.getvalue(), "")
 
+    def test_generic_evidence_is_caller_owned_by_construction(self) -> None:
+        process = FakeProcess([
+            {"status": "ok", "evidence": {"kind": "test", "status": "failed", "provenance": "caller"}},
+        ])
+        session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
+        evidence = session.record_evidence("task-1", kind="test", status="failed", detail="caller observed failure")
+        command = json.loads(process.stdin.getvalue().splitlines()[0])
+        self.assertEqual(evidence["evidence"]["provenance"], "caller")
+        self.assertNotIn("provenance", command)
+        self.assertNotIn("capability", command)
+
+    def test_external_writer_after_prevalidation_revokes_completion(self) -> None:
+        repository = {"root": "/tmp/repo", "head": "h1", "branch": "main"}
+        state = {"matches": True}
+        process = FakeProcess([
+            {"status": "ok", "task": {"id": "task-race", "state": "completed"}},
+            {"status": "ok", "task": {"id": "task-race", "state": "open"}},
+        ])
+        process.stdin = MutatingStdin(lambda: state.__setitem__("matches", False))
+        session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
+        result = session.complete_task(
+            "task-race",
+            expected_repository=repository,
+            repository_validator=lambda expected: state["matches"],
+        )
+        commands = [json.loads(line) for line in process.stdin.getvalue().splitlines()]
+        self.assertEqual(result, {"status": "rejected", "reason": "repository-snapshot-stale"})
+        self.assertEqual(commands, [{"op": "complete", "task_id": "task-race"}, {"op": "invalidate_completion", "task_id": "task-race"}])
+
+    def test_evidence_status_rejects_unsupported_values_before_writing(self) -> None:
+        process = FakeProcess([]); session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
         with self.assertRaisesRegex(ValueError, "status must be one of"):
             session.record_evidence("task-1", kind="test", status="unknown", detail="ambiguous")
-
         self.assertEqual(process.stdin.getvalue(), "")
 
     def test_protocol_rejects_oversized_fields_before_writing(self) -> None:
-        process = FakeProcess([])
-        session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
-
+        process = FakeProcess([]); session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
         with self.assertRaisesRegex(ValueError, "goal exceeds"):
             session.create_task("task-1", goal="x" * 4097)
-
         self.assertEqual(process.stdin.getvalue(), "")
 
     def test_protocol_bounds_stdout_read_before_allocating_response(self) -> None:
-        process = FakeProcess([])
-        stdout = RecordingStdout({"status": "ok", "state": "ready"})
-        process.stdout = stdout
+        process = FakeProcess([]); stdout = RecordingStdout({"status": "ok", "state": "ready"}); process.stdout = stdout
         session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
-
         self.assertEqual(session.status(), {"status": "ok", "state": "ready"})
         self.assertEqual(stdout.readline_sizes, [TaskStateSession.MAX_RESPONSE_CHARS + 1])
 
     def test_protocol_rejects_unknown_response_status_and_fences_process(self) -> None:
-        process = FakeProcess([{"status": "maybe", "state": "ready"}])
-        session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
-
-        with self.assertRaisesRegex(CodingError, "unknown status"):
-            session.status()
-
+        process = FakeProcess([{"status": "maybe", "state": "ready"}]); session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
+        with self.assertRaisesRegex(CodingError, "unknown status"): session.status()
         self.assertTrue(process.terminated)
-        with self.assertRaisesRegex(CodingError, "exited unexpectedly"):
-            session.status()
+        with self.assertRaisesRegex(CodingError, "exited unexpectedly"): session.status()
 
     def test_unexpected_process_exit_is_not_silently_replaced(self) -> None:
-        first = FakeProcess([{"status": "ok", "state": "ready"}])
-        replacement = FakeProcess([{"status": "rejected", "reason": "task-not-found"}])
-        processes = iter((first, replacement))
-        calls = 0
-
+        first = FakeProcess([{"status": "ok", "state": "ready"}]); replacement = FakeProcess([{"status": "rejected", "reason": "task-not-found"}]); processes = iter((first, replacement)); calls = 0
         def process_factory(*args, **kwargs):
-            nonlocal calls
-            calls += 1
-            return next(processes)
-
+            nonlocal calls; calls += 1; return next(processes)
         session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=process_factory)
-        self.assertEqual(session.status(), {"status": "ok", "state": "ready"})
-        first.returncode = 1
-
-        with self.assertRaisesRegex(CodingError, "exited unexpectedly"):
-            session.get_task("task-1")
-
+        self.assertEqual(session.status(), {"status": "ok", "state": "ready"}); first.returncode = 1
+        with self.assertRaisesRegex(CodingError, "exited unexpectedly"): session.get_task("task-1")
         self.assertEqual(calls, 1)
 
     def test_protocol_timeout_terminates_and_fences_owned_process(self) -> None:
         process = FakeProcess([])
-        session = TaskStateSession(
-            Path("/tmp/driver.pl"),
-            process_factory=lambda *args, **kwargs: process,
-            response_timeout_seconds=0.1,
-            readiness_waiter=lambda stream, timeout: False,
-        )
-
-        with self.assertRaisesRegex(CodingError, "response timed out"):
-            session.status()
-
+        session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process, response_timeout_seconds=0.1, readiness_waiter=lambda stream, timeout: False)
+        with self.assertRaisesRegex(CodingError, "response timed out"): session.status()
         self.assertTrue(process.terminated)
-        with self.assertRaisesRegex(CodingError, "exited unexpectedly"):
-            session.status()
+        with self.assertRaisesRegex(CodingError, "exited unexpectedly"): session.status()
 
     def test_stop_terminates_the_owned_process(self) -> None:
-        process = FakeProcess([])
-        session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
-
-        session.start()
-        session.stop()
-
-        self.assertTrue(process.terminated)
+        process = FakeProcess([]); session = TaskStateSession(Path("/tmp/driver.pl"), process_factory=lambda *args, **kwargs: process)
+        session.start(); session.stop(); self.assertTrue(process.terminated)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import queue
 import select
 import subprocess
 import threading
@@ -9,7 +10,6 @@ from pathlib import Path
 from typing import Callable, TextIO
 
 from .domain import CodingError
-
 
 ProcessFactory = Callable[..., subprocess.Popen[str]]
 ReadinessWaiter = Callable[[TextIO, float], bool]
@@ -23,45 +23,24 @@ def _default_readiness_waiter(stream: TextIO, timeout: float) -> bool:
     return bool(ready)
 
 
-class TaskStateSession:
-    MAX_ID_CHARS = 128
-    MAX_GOAL_CHARS = 4096
-    MAX_ITEM_CHARS = 1024
-    MAX_LIST_ITEMS = 64
-    MAX_DETAIL_CHARS = 4096
-    MAX_RESPONSE_CHARS = 131072
-    MAX_RESPONSE_TIMEOUT_SECONDS = 60.0
-    EVIDENCE_STATUSES = frozenset({"failed", "passed"})
+class _TaskStateProtocol:
     RESPONSE_STATUSES = frozenset({"ok", "rejected"})
+    MAX_RESPONSE_CHARS = 131072
 
     def __init__(
         self,
         driver: Path,
         *,
-        executable: str = "swipl",
-        process_factory: ProcessFactory | None = None,
-        response_timeout_seconds: float = 5.0,
-        readiness_waiter: ReadinessWaiter | None = None,
+        executable: str,
+        process_factory: ProcessFactory,
+        response_timeout_seconds: float,
+        readiness_waiter: ReadinessWaiter,
     ) -> None:
-        if (
-            not isinstance(executable, str)
-            or not executable.strip()
-            or any(character in executable for character in ("\x00", "\n", "\r"))
-        ):
-            raise ValueError("executable must be non-empty single-line text without NUL")
-        if (
-            isinstance(response_timeout_seconds, bool)
-            or not isinstance(response_timeout_seconds, (int, float))
-            or not 0 < response_timeout_seconds <= self.MAX_RESPONSE_TIMEOUT_SECONDS
-        ):
-            raise ValueError(
-                f"response_timeout_seconds must be greater than zero and at most {self.MAX_RESPONSE_TIMEOUT_SECONDS}"
-            )
-        self.driver = Path(driver).expanduser().resolve()
+        self.driver = driver
         self.executable = executable
-        self.response_timeout_seconds = float(response_timeout_seconds)
-        self._process_factory = process_factory or subprocess.Popen
-        self._readiness_waiter = readiness_waiter or _default_readiness_waiter
+        self.response_timeout_seconds = response_timeout_seconds
+        self._process_factory = process_factory
+        self._readiness_waiter = readiness_waiter
         self._process: subprocess.Popen[str] | None = None
         self._lock = threading.RLock()
 
@@ -101,56 +80,13 @@ class TaskStateSession:
                 return
             self._terminate_process(process)
 
-    def status(self) -> dict[str, object]:
-        return self._request({"op": "status"})
+    def fence(self, message: str) -> None:
+        process = self._process
+        if process is not None:
+            self._fail_protocol(process, message)
+        raise CodingError(message)
 
-    def create_task(
-        self,
-        task_id: str,
-        *,
-        goal: str,
-        repository: Mapping[str, str] | None = None,
-        constraints: Sequence[str] = (),
-        dependencies: Sequence[str] = (),
-        completion_criteria: Sequence[str] = (),
-    ) -> dict[str, object]:
-        command = {
-            "op": "create",
-            "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS),
-            "goal": self._bounded_string(goal, "goal", self.MAX_GOAL_CHARS),
-            "repository": self._bounded_repository(repository),
-            "constraints": self._bounded_strings(constraints, "constraints"),
-            "dependencies": self._bounded_strings(dependencies, "dependencies"),
-            "completion_criteria": self._bounded_strings(completion_criteria, "completion_criteria"),
-        }
-        return self._request(command)
-
-    def get_task(self, task_id: str) -> dict[str, object]:
-        return self._request(
-            {"op": "get", "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS)}
-        )
-
-    def record_evidence(self, task_id: str, *, kind: str, status: str, detail: str) -> dict[str, object]:
-        evidence_status = self._bounded_string(status, "status", self.MAX_ITEM_CHARS)
-        if evidence_status not in self.EVIDENCE_STATUSES:
-            allowed = ", ".join(sorted(self.EVIDENCE_STATUSES))
-            raise ValueError(f"status must be one of: {allowed}")
-        return self._request(
-            {
-                "op": "record_evidence",
-                "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS),
-                "kind": self._bounded_string(kind, "kind", self.MAX_ITEM_CHARS),
-                "status": evidence_status,
-                "detail": self._bounded_string(detail, "detail", self.MAX_DETAIL_CHARS),
-            }
-        )
-
-    def complete_task(self, task_id: str) -> dict[str, object]:
-        return self._request(
-            {"op": "complete", "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS)}
-        )
-
-    def _request(self, command: dict[str, object]) -> dict[str, object]:
+    def request(self, command: dict[str, object]) -> dict[str, object]:
         with self._lock:
             self.start()
             process = self._process
@@ -208,6 +144,268 @@ class TaskStateSession:
             process.kill()
             process.wait(timeout=2)
 
+
+class _TaskStateEndpoint:
+    def __init__(self, requests: queue.Queue[tuple[dict[str, object], queue.Queue[object]]]) -> None:
+        self._requests = requests
+
+    def request(self, command: dict[str, object]) -> dict[str, object]:
+        reply: queue.Queue[object] = queue.Queue(maxsize=1)
+        self._requests.put((dict(command), reply))
+        result = reply.get()
+        if isinstance(result, BaseException):
+            raise result
+        if not isinstance(result, dict):
+            raise CodingError("zara-coding task-state broker returned malformed response")
+        return result
+
+
+class _TaskStateBroker:
+    def __init__(self, protocol: _TaskStateProtocol) -> None:
+        self._protocol = protocol
+        self._caller_requests: queue.Queue[tuple[dict[str, object], queue.Queue[object]]] = queue.Queue()
+        self._verifier_requests: queue.Queue[tuple[dict[str, object], queue.Queue[object]]] = queue.Queue()
+        self._thread = threading.Thread(target=self._serve, name="zara-coding-task-state", daemon=True)
+        self._thread.start()
+
+    def caller_endpoint(self) -> _TaskStateEndpoint:
+        return _TaskStateEndpoint(self._caller_requests)
+
+    def verifier_endpoint(self) -> _TaskStateEndpoint:
+        return _TaskStateEndpoint(self._verifier_requests)
+
+    def _serve(self) -> None:
+        while True:
+            handled = self._serve_one(self._caller_requests, verifier=False, timeout=0.01)
+            self._serve_one(self._verifier_requests, verifier=True, timeout=0.0 if handled else 0.01)
+
+    def _serve_one(
+        self,
+        requests: queue.Queue[tuple[dict[str, object], queue.Queue[object]]],
+        *,
+        verifier: bool,
+        timeout: float,
+    ) -> bool:
+        try:
+            command, reply = requests.get(timeout=timeout)
+        except queue.Empty:
+            return False
+        try:
+            reply.put(self._dispatch(command, verifier=verifier))
+        except BaseException as exc:
+            reply.put(exc)
+        return True
+
+    def _dispatch(self, command: dict[str, object], *, verifier: bool) -> dict[str, object]:
+        control = command.pop("__control__", None)
+        if control is not None:
+            if verifier:
+                raise PermissionError("verifier authority cannot control task-state runtime")
+            return self._control(control, command)
+        if verifier:
+            trusted = dict(command)
+            trusted["op"] = "record_verifier_evidence"
+            trusted.pop("provenance", None)
+            return self._protocol.request(trusted)
+        if command.get("op") == "record_verifier_evidence" or command.get("provenance") == "verifier":
+            raise PermissionError("verifier authority is not available through the generic task-state protocol")
+        return self._protocol.request(command)
+
+    def _control(self, control: object, command: dict[str, object]) -> dict[str, object]:
+        if control == "running":
+            return {"status": "ok", "running": self._protocol.running}
+        if control == "start":
+            self._protocol.start()
+            return {"status": "ok"}
+        if control == "stop":
+            self._protocol.stop()
+            return {"status": "ok"}
+        if control == "fence":
+            message = command.get("message")
+            if not isinstance(message, str) or not message:
+                raise CodingError("zara-coding task-state fence requires a message")
+            self._protocol.fence(message)
+        raise CodingError("zara-coding task-state broker received unknown control operation")
+
+
+def _new_endpoints(protocol: _TaskStateProtocol) -> tuple[_TaskStateEndpoint, _TaskStateEndpoint]:
+    broker = _TaskStateBroker(protocol)
+    return broker.caller_endpoint(), broker.verifier_endpoint()
+
+
+class TaskStateSession:
+    MAX_ID_CHARS = 128
+    MAX_GOAL_CHARS = 4096
+    MAX_ITEM_CHARS = 1024
+    MAX_LIST_ITEMS = 64
+    MAX_DETAIL_CHARS = 4096
+    MAX_RESPONSE_CHARS = _TaskStateProtocol.MAX_RESPONSE_CHARS
+    MAX_RESPONSE_TIMEOUT_SECONDS = 60.0
+    EVIDENCE_STATUSES = frozenset({"failed", "passed"})
+    RESPONSE_STATUSES = _TaskStateProtocol.RESPONSE_STATUSES
+
+    def __init__(
+        self,
+        driver: Path,
+        *,
+        executable: str = "swipl",
+        process_factory: ProcessFactory | None = None,
+        response_timeout_seconds: float = 5.0,
+        readiness_waiter: ReadinessWaiter | None = None,
+        _endpoint: _TaskStateEndpoint | None = None,
+    ) -> None:
+        driver_path, executable_text, timeout, factory, waiter = self._validated_runtime(
+            driver,
+            executable=executable,
+            process_factory=process_factory,
+            response_timeout_seconds=response_timeout_seconds,
+            readiness_waiter=readiness_waiter,
+        )
+        if _endpoint is None:
+            protocol = _TaskStateProtocol(
+                driver_path,
+                executable=executable_text,
+                process_factory=factory,
+                response_timeout_seconds=timeout,
+                readiness_waiter=waiter,
+            )
+            _endpoint, _unused_verifier_endpoint = _new_endpoints(protocol)
+        self.driver = driver_path
+        self.executable = executable_text
+        self.response_timeout_seconds = timeout
+        self._endpoint = _endpoint
+        self._lock = threading.RLock()
+
+    @property
+    def running(self) -> bool:
+        return self._endpoint.request({"__control__": "running"}).get("running") is True
+
+    def start(self) -> None:
+        self._endpoint.request({"__control__": "start"})
+
+    def stop(self) -> None:
+        self._endpoint.request({"__control__": "stop"})
+
+    def status(self) -> dict[str, object]:
+        return self._request({"op": "status"})
+
+    def create_task(
+        self,
+        task_id: str,
+        *,
+        goal: str,
+        repository: Mapping[str, str] | None = None,
+        constraints: Sequence[str] = (),
+        dependencies: Sequence[str] = (),
+        completion_criteria: Sequence[str] = (),
+    ) -> dict[str, object]:
+        return self._request(
+            {
+                "op": "create",
+                "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS),
+                "goal": self._bounded_string(goal, "goal", self.MAX_GOAL_CHARS),
+                "repository": self._bounded_repository(repository),
+                "constraints": self._bounded_strings(constraints, "constraints"),
+                "dependencies": self._bounded_strings(dependencies, "dependencies"),
+                "completion_criteria": self._bounded_strings(completion_criteria, "completion_criteria"),
+            }
+        )
+
+    def get_task(self, task_id: str) -> dict[str, object]:
+        return self._request(
+            {"op": "get", "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS)}
+        )
+
+    def record_evidence(self, task_id: str, *, kind: str, status: str, detail: str) -> dict[str, object]:
+        evidence_status = self._bounded_evidence_status(status)
+        if evidence_status == "passed":
+            raise ValueError("passing task evidence is verifier-owned")
+        return self._request(
+            {
+                "op": "record_evidence",
+                "task_id": self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS),
+                "kind": self._bounded_string(kind, "kind", self.MAX_ITEM_CHARS),
+                "status": evidence_status,
+                "detail": self._bounded_string(detail, "detail", self.MAX_DETAIL_CHARS),
+            }
+        )
+
+    def complete_task(
+        self,
+        task_id: str,
+        *,
+        expected_repository: Mapping[str, str] | None = None,
+        repository_validator: Callable[[Mapping[str, str]], bool] | None = None,
+    ) -> dict[str, object]:
+        bounded_task_id = self._bounded_string(task_id, "task_id", self.MAX_ID_CHARS)
+        with self._lock:
+            bounded_repository = None
+            if expected_repository is not None or repository_validator is not None:
+                if expected_repository is None or repository_validator is None:
+                    raise ValueError("expected_repository and repository_validator must be provided together")
+                bounded_repository = self._bounded_repository(expected_repository)
+                if bounded_repository is None or not repository_validator(bounded_repository):
+                    return {"status": "rejected", "reason": "repository-snapshot-stale"}
+
+            response = self._request({"op": "complete", "task_id": bounded_task_id})
+            if response.get("status") != "ok" or bounded_repository is None or repository_validator is None:
+                return response
+
+            try:
+                repository_current = repository_validator(bounded_repository)
+            except Exception as exc:
+                self._invalidate_completion_or_fence(bounded_task_id)
+                raise CodingError("zara-coding repository validation failed after completion") from exc
+
+            if repository_current:
+                return response
+
+            self._invalidate_completion_or_fence(bounded_task_id)
+            return {"status": "rejected", "reason": "repository-snapshot-stale"}
+
+    def _invalidate_completion_or_fence(self, task_id: str) -> None:
+        response = self._request({"op": "invalidate_completion", "task_id": task_id})
+        if response.get("status") == "ok":
+            return
+        self._endpoint.request(
+            {"__control__": "fence", "message": "zara-coding task-state could not invalidate stale completion"}
+        )
+
+    def _request(self, command: dict[str, object]) -> dict[str, object]:
+        if command.get("op") == "record_verifier_evidence" or command.get("provenance") == "verifier":
+            raise PermissionError("verifier authority is not available through the generic task-state protocol")
+        return self._endpoint.request(command)
+
+    @classmethod
+    def _validated_runtime(
+        cls,
+        driver: Path,
+        *,
+        executable: str,
+        process_factory: ProcessFactory | None,
+        response_timeout_seconds: float,
+        readiness_waiter: ReadinessWaiter | None,
+    ) -> tuple[Path, str, float, ProcessFactory, ReadinessWaiter]:
+        if not isinstance(executable, str) or not executable.strip() or any(
+            character in executable for character in ("\x00", "\n", "\r")
+        ):
+            raise ValueError("executable must be non-empty single-line text without NUL")
+        if (
+            isinstance(response_timeout_seconds, bool)
+            or not isinstance(response_timeout_seconds, (int, float))
+            or not 0 < response_timeout_seconds <= cls.MAX_RESPONSE_TIMEOUT_SECONDS
+        ):
+            raise ValueError(
+                f"response_timeout_seconds must be greater than zero and at most {cls.MAX_RESPONSE_TIMEOUT_SECONDS}"
+            )
+        return (
+            Path(driver).expanduser().resolve(),
+            executable,
+            float(response_timeout_seconds),
+            process_factory or subprocess.Popen,
+            readiness_waiter or _default_readiness_waiter,
+        )
+
     @classmethod
     def _bounded_repository(cls, repository: Mapping[str, str] | None) -> dict[str, str] | None:
         if repository is None:
@@ -221,6 +419,13 @@ class TaskStateSession:
             "head": cls._bounded_string(repository["head"], "repository.head", cls.MAX_ID_CHARS),
             "branch": cls._bounded_string(repository["branch"], "repository.branch", cls.MAX_ITEM_CHARS),
         }
+
+    @classmethod
+    def _bounded_evidence_status(cls, status: str) -> str:
+        evidence_status = cls._bounded_string(status, "status", cls.MAX_ITEM_CHARS)
+        if evidence_status not in cls.EVIDENCE_STATUSES:
+            raise ValueError(f"status must be one of: {', '.join(sorted(cls.EVIDENCE_STATUSES))}")
+        return evidence_status
 
     @classmethod
     def _bounded_string(cls, value: str, name: str, maximum: int) -> str:
@@ -237,3 +442,51 @@ class TaskStateSession:
         if len(values) > cls.MAX_LIST_ITEMS:
             raise ValueError(f"{name} exceeds {cls.MAX_LIST_ITEMS} item limit")
         return [cls._bounded_string(value, name, cls.MAX_ITEM_CHARS) for value in values]
+
+
+class TaskStateVerifier:
+    def __init__(self, endpoint: _TaskStateEndpoint) -> None:
+        self._endpoint = endpoint
+
+    def record_evidence(self, task_id: str, *, kind: str, status: str, detail: str) -> dict[str, object]:
+        return self._endpoint.request(
+            {
+                "task_id": TaskStateSession._bounded_string(task_id, "task_id", TaskStateSession.MAX_ID_CHARS),
+                "kind": TaskStateSession._bounded_string(kind, "kind", TaskStateSession.MAX_ITEM_CHARS),
+                "status": TaskStateSession._bounded_evidence_status(status),
+                "detail": TaskStateSession._bounded_string(detail, "detail", TaskStateSession.MAX_DETAIL_CHARS),
+            }
+        )
+
+
+def create_task_state_interfaces(
+    driver: Path,
+    *,
+    executable: str = "swipl",
+    process_factory: ProcessFactory | None = None,
+    response_timeout_seconds: float = 5.0,
+    readiness_waiter: ReadinessWaiter | None = None,
+) -> tuple[TaskStateSession, TaskStateVerifier]:
+    driver_path, executable_text, timeout, factory, waiter = TaskStateSession._validated_runtime(
+        driver,
+        executable=executable,
+        process_factory=process_factory,
+        response_timeout_seconds=response_timeout_seconds,
+        readiness_waiter=readiness_waiter,
+    )
+    protocol = _TaskStateProtocol(
+        driver_path,
+        executable=executable_text,
+        process_factory=factory,
+        response_timeout_seconds=timeout,
+        readiness_waiter=waiter,
+    )
+    caller_endpoint, verifier_endpoint = _new_endpoints(protocol)
+    session = TaskStateSession(
+        driver_path,
+        executable=executable_text,
+        response_timeout_seconds=timeout,
+        _endpoint=caller_endpoint,
+    )
+    verifier = TaskStateVerifier(verifier_endpoint)
+    return session, verifier
