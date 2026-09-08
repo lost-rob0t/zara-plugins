@@ -38,14 +38,15 @@ class PredicateAuthorityTests(unittest.TestCase):
         self.assertEqual(self.backend.calls, [])
 
     def test_meta_module_directive_and_builtin_names_are_not_authority(self):
+        variable = {"var": "X"}
         for predicate in ("call", "once", "system", "open", "process_create", "consult", "assertz", "retract"):
             with self.subTest(predicate=predicate):
                 with self.assertRaises(ExpertError):
-                    self.host.query("alpha", predicate, ["$X"])
+                    self.host.query("alpha", predicate, [variable])
         for predicate in ("user:thing", ":-", "thing/1", "thing(X)"):
             with self.subTest(predicate=predicate):
                 with self.assertRaises(ExpertError):
-                    self.host.query("alpha", predicate, ["$X"])
+                    self.host.query("alpha", predicate, [variable])
         self.assertEqual(self.backend.calls, [])
 
     def test_arity_is_owned_by_registration(self):
@@ -64,15 +65,17 @@ class PredicateAuthorityTests(unittest.TestCase):
         self.assertNotIn("goal", request)
 
     def test_registered_query_uses_structured_descriptor(self):
-        self.host.query("alpha", "verify", ["build", "$Result"])
+        variable = {"var": "Result"}
+        self.host.query("alpha", "verify", ["build", variable])
         request = self.backend.calls[-1]
         self.assertEqual(request["predicate"], "verify")
-        self.assertEqual(request["arguments"], ["build", "$Result"])
+        self.assertEqual(request["arguments"], ["build", variable])
         self.assertEqual(request["arity"], 2)
         self.assertNotIn("goal", request)
 
     def test_explain_uses_same_registered_authority_path(self):
-        self.host.explain("alpha", "verify", ["build", "$Result"])
+        variable = {"var": "Result"}
+        self.host.explain("alpha", "verify", ["build", variable])
         request = self.backend.calls[-1]
         self.assertEqual(request["operation"], "explain")
         self.assertEqual(request["predicate"], "verify")
