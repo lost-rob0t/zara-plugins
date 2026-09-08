@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import selectors
 import shutil
 import subprocess
@@ -11,6 +12,10 @@ from pathlib import Path
 from typing import Any
 
 from .domain import ExpertError
+
+
+_PREDICATE_RE = re.compile(r"^[a-z][a-zA-Z0-9_]{0,63}$")
+_VARIABLE_RE = re.compile(r"^[A-Z_][a-zA-Z0-9_]{0,63}$")
 
 
 class SwiplBackend:
@@ -43,7 +48,7 @@ class SwiplBackend:
             raise ExpertError("expert execution bounds are invalid")
         timeout = float(timeout_value)
         max_results = max_results_value
-        goal = str(request["goal"])
+        goal = self._build_goal(request)
         source_files = [*request.get("knowledge_bases", ()), *request.get("state_files", ())]
 
         command = [self.program, "-q", "-f", "none"]
@@ -66,6 +71,7 @@ class SwiplBackend:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 env=environment,
+                shell=False,
             )
         except FileNotFoundError as exc:
             raise ExpertError(f"SWI-Prolog executable not found: {self.program}") from exc
@@ -81,6 +87,46 @@ class SwiplBackend:
         if not isinstance(payload, dict) or payload.get("ok") is not True:
             raise ExpertError("SWI-Prolog returned an invalid expert result")
         return payload
+
+    @classmethod
+    def _build_goal(cls, request: dict[str, Any]) -> str:
+        predicate = request.get("predicate")
+        arguments = request.get("arguments")
+        arity = request.get("arity")
+        if not isinstance(predicate, str) or not _PREDICATE_RE.fullmatch(predicate):
+            raise ExpertError("invalid registered predicate descriptor")
+        if not isinstance(arguments, list):
+            raise ExpertError("invalid expert argument descriptor")
+        if isinstance(arity, bool) or not isinstance(arity, int) or arity != len(arguments):
+            raise ExpertError("expert predicate descriptor arity mismatch")
+        if not arguments:
+            return predicate
+        encoded = ",".join(cls._encode_argument(argument) for argument in arguments)
+        return f"{predicate}({encoded})"
+
+    @staticmethod
+    def _encode_argument(argument: Any) -> str:
+        if argument is None:
+            return "@(null)"
+        if argument is True:
+            return "true"
+        if argument is False:
+            return "false"
+        if isinstance(argument, int):
+            return str(argument)
+        if isinstance(argument, float):
+            if not math.isfinite(argument):
+                raise ExpertError("expert numeric argument must be finite")
+            return repr(argument)
+        if isinstance(argument, str):
+            escaped = argument.replace("\\", "\\\\").replace("'", "\\'")
+            return f"'{escaped}'"
+        if isinstance(argument, dict) and set(argument) == {"var"}:
+            variable = argument["var"]
+            if not isinstance(variable, str) or not _VARIABLE_RE.fullmatch(variable):
+                raise ExpertError("invalid expert variable descriptor")
+            return variable
+        raise ExpertError("unsupported expert argument descriptor")
 
     def _communicate_bounded(self, process: subprocess.Popen, timeout: float) -> tuple[bytes, bytes]:
         stdout = bytearray()
