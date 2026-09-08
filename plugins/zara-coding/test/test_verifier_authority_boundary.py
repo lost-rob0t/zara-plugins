@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
+import zara_coding.task_state as task_state_module
 from zara_coding.task_state import TaskStateSession, create_task_state_interfaces
 
 
@@ -55,6 +56,16 @@ class VerifierAuthorityBoundaryTest(unittest.TestCase):
             if closure is None:
                 continue
             self.assertFalse(any(cell.cell_contents.__class__.__name__ == "_TaskStateProtocol" for cell in closure))
+
+    def test_module_does_not_publish_verifier_endpoint_registry(self) -> None:
+        process = FakeProcess([])
+        create_task_state_interfaces(
+            Path("/tmp/driver.pl"),
+            process_factory=lambda *args, **kwargs: process,
+        )
+
+        self.assertFalse(hasattr(task_state_module, "_VERIFIER_ENDPOINTS"))
+        self.assertFalse(hasattr(task_state_module, "_verifier_protocol"))
 
     def test_generic_session_rejects_verifier_authority_before_protocol_io(self) -> None:
         process = FakeProcess([])
