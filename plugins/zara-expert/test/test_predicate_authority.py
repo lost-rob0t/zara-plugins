@@ -60,17 +60,21 @@ class PredicateAuthorityTests(unittest.TestCase):
         payload = "x),halt,thing(y"
         self.host.query("alpha", "thing", [payload])
         request = self.backend.calls[-1]
-        self.assertEqual(request["predicate"], "thing")
         self.assertEqual(request["arguments"], [payload])
+        self.assertIn("capability", request)
+        self.assertNotIn("predicate", request)
         self.assertNotIn("goal", request)
 
-    def test_registered_query_uses_structured_descriptor(self):
+    def test_registered_query_uses_opaque_capability(self):
         variable = {"var": "Result"}
         self.host.query("alpha", "verify", ["build", variable])
         request = self.backend.calls[-1]
-        self.assertEqual(request["predicate"], "verify")
+        capability = request["capability"]
+        self.assertEqual(capability.predicate, "verify")
+        self.assertEqual(capability.arity, 2)
         self.assertEqual(request["arguments"], ["build", variable])
-        self.assertEqual(request["arity"], 2)
+        self.assertNotIn("predicate", request)
+        self.assertNotIn("arity", request)
         self.assertNotIn("goal", request)
 
     def test_explain_uses_same_registered_authority_path(self):
@@ -78,8 +82,10 @@ class PredicateAuthorityTests(unittest.TestCase):
         self.host.explain("alpha", "verify", ["build", variable])
         request = self.backend.calls[-1]
         self.assertEqual(request["operation"], "explain")
-        self.assertEqual(request["predicate"], "verify")
-        self.assertEqual(request["arity"], 2)
+        self.assertEqual(request["capability"].predicate, "verify")
+        self.assertEqual(request["capability"].arity, 2)
+        self.assertNotIn("predicate", request)
+        self.assertNotIn("arity", request)
         self.assertNotIn("goal", request)
 
     def test_deep_or_oversized_arguments_fail_before_backend(self):
