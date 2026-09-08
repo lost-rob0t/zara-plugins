@@ -9,6 +9,7 @@ from langchain_core.tools import StructuredTool
 from zara.plugins import PluginMetadata, ServicePlugin
 
 from .domain import VoiceError, VoicePolicy, VoiceProfile, VoiceService
+from .piper import PiperBackend
 
 
 PLUGIN_VERSION = "0.1.0"
@@ -121,5 +122,35 @@ class ZaraVoicePlugin(ServicePlugin):
         )
 
 
+def _configured_piper() -> tuple[dict[str, Any], tuple[VoiceProfile, ...]]:
+    model = os.environ.get("ZARA_VOICE_PIPER_MODEL", "").strip()
+    config = os.environ.get("ZARA_VOICE_PIPER_CONFIG", "").strip()
+    if not model and not config:
+        return {}, ()
+    if not model or not config:
+        raise VoiceError("Piper configuration is incomplete")
+
+    profile_name = os.environ.get("ZARA_VOICE_PIPER_PROFILE", "").strip() or "piper-local"
+    language = os.environ.get("ZARA_VOICE_PIPER_LANGUAGE", "").strip() or None
+    try:
+        backend = PiperBackend(
+            model_path=model,
+            config_path=config,
+            use_cuda=False,
+        )
+        profile = VoiceProfile(
+            name=profile_name,
+            backend="piper-local",
+            backend_profile=profile_name,
+            language=language,
+        )
+    except VoiceError:
+        raise
+    except (TypeError, ValueError):
+        raise VoiceError("Piper configuration is invalid") from None
+    return {"piper-local": backend}, (profile,)
+
+
 def create_plugin():
-    return ZaraVoicePlugin()
+    backends, profiles = _configured_piper()
+    return ZaraVoicePlugin(backends=backends, profiles=profiles)
