@@ -33,6 +33,27 @@ _FORBIDDEN = (
 )
 _MAX_ARGUMENTS = 16
 _MAX_ARGUMENT_TEXT = 4096
+_CAPABILITY_ISSUER = object()
+
+
+class _RegisteredPredicateCapability:
+    __slots__ = ("namespace", "predicate", "arity", "_issuer")
+
+    def __init__(self, namespace: str, predicate: str, arity: int, *, _issuer: object) -> None:
+        if _issuer is not _CAPABILITY_ISSUER:
+            raise ExpertError("registered predicate capabilities are host-issued")
+        self.namespace = namespace
+        self.predicate = predicate
+        self.arity = arity
+        self._issuer = _issuer
+
+
+def _issue_predicate_capability(namespace: str, predicate: str, arity: int) -> _RegisteredPredicateCapability:
+    return _RegisteredPredicateCapability(namespace, predicate, arity, _issuer=_CAPABILITY_ISSUER)
+
+
+def _is_registered_predicate_capability(value: Any) -> bool:
+    return isinstance(value, _RegisteredPredicateCapability) and value._issuer is _CAPABILITY_ISSUER
 
 
 class ExpertHost:
@@ -60,7 +81,7 @@ class ExpertHost:
         self._query_timeout_seconds = timeout
         self._max_results = max_results
         self._knowledge_bases: dict[str, tuple[str, ...]] = {}
-        self._predicates: dict[str, dict[str, int]] = {}
+        self._predicates: dict[str, dict[str, _RegisteredPredicateCapability]] = {}
 
     def register(
         self,
@@ -71,12 +92,12 @@ class ExpertHost:
     ) -> None:
         namespace = self._validate_namespace(namespace)
         files = tuple(str(Path(path).resolve()) for path in knowledge_bases)
-        capabilities: dict[str, int] = {}
+        capabilities: dict[str, _RegisteredPredicateCapability] = {}
         for predicate, arity in (predicates or {}).items():
             predicate = self._validate_predicate(predicate)
             if isinstance(arity, bool) or not isinstance(arity, int) or arity < 0 or arity > _MAX_ARGUMENTS:
                 raise ExpertError(f"invalid arity for predicate {predicate!r}")
-            capabilities[predicate] = arity
+            capabilities[predicate] = _issue_predicate_capability(namespace, predicate, arity)
         self._knowledge_bases[namespace] = files
         self._predicates[namespace] = capabilities
         self.state_files(namespace)
@@ -137,20 +158,19 @@ class ExpertHost:
             raise ExpertError(f"expert namespace {namespace!r} is not registered")
         predicate = self._validate_predicate(predicate)
         capabilities = self._predicates.get(namespace, {})
-        if predicate not in capabilities:
+        capability = capabilities.get(predicate)
+        if capability is None:
             raise ExpertError(f"predicate {predicate!r} is not registered for namespace {namespace!r}")
         normalized_arguments = self._validate_arguments(arguments)
-        arity = capabilities[predicate]
-        if len(normalized_arguments) != arity:
+        if len(normalized_arguments) != capability.arity:
             raise ExpertError(
-                f"predicate {predicate!r} arity mismatch: registered {arity}, received {len(normalized_arguments)}"
+                f"predicate {predicate!r} arity mismatch: registered {capability.arity}, received {len(normalized_arguments)}"
             )
         session_path, persistent_path = self.state_files(namespace)
         request = {
             "namespace": namespace,
             "operation": operation,
-            "predicate": predicate,
-            "arity": arity,
+            "capability": capability,
             "arguments": normalized_arguments,
             "knowledge_bases": self._knowledge_bases[namespace],
             "state_files": (str(session_path), str(persistent_path)),
