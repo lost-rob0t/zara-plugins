@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 
 from langchain_core.tools import StructuredTool
 from zara.plugins import PluginMetadata, ServicePlugin
 
 from .domain import CalendarDomain, CalendarError
+from .google import GoogleCalendarBackend
 
 
 PLUGIN_VERSION = "0.1.0"
@@ -18,6 +20,24 @@ class UnavailableCalendarBackend:
         raise CalendarError(self.reason)
 
 
+def _backend_from_environment():
+    access_token = os.environ.get("ZARA_CALENDAR_GOOGLE_ACCESS_TOKEN")
+    refresh_token = os.environ.get("ZARA_CALENDAR_GOOGLE_REFRESH_TOKEN")
+    client_id = os.environ.get("ZARA_CALENDAR_GOOGLE_CLIENT_ID")
+    client_secret = os.environ.get("ZARA_CALENDAR_GOOGLE_CLIENT_SECRET")
+    if not any((access_token, refresh_token, client_id, client_secret)):
+        return None
+    if not all((access_token, refresh_token, client_id, client_secret)):
+        raise CalendarError("google calendar credentials are incomplete")
+    return GoogleCalendarBackend(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        client_id=client_id,
+        client_secret=client_secret,
+        default_calendar_id=os.environ.get("ZARA_CALENDAR_GOOGLE_CALENDAR_ID", "primary"),
+    )
+
+
 class ZaraCalendarPlugin(ServicePlugin):
     metadata = PluginMetadata(
         name="zara-calendar",
@@ -27,7 +47,7 @@ class ZaraCalendarPlugin(ServicePlugin):
     )
 
     def __init__(self, backend=None) -> None:
-        self.backend = backend or UnavailableCalendarBackend()
+        self.backend = backend or _backend_from_environment() or UnavailableCalendarBackend()
         self.domain = CalendarDomain(self.backend)
 
     def start(self, runtime) -> None:
