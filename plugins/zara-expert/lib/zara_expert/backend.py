@@ -11,10 +11,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .domain import ExpertError
+from .domain import ExpertError, _is_registered_predicate_capability
 
 
-_PREDICATE_RE = re.compile(r"^[a-z][a-zA-Z0-9_]{0,63}$")
 _VARIABLE_RE = re.compile(r"^[A-Z_][a-zA-Z0-9_]{0,63}$")
 
 
@@ -34,6 +33,13 @@ class SwiplBackend:
         if operation not in {"query", "explain"}:
             raise ExpertError(f"unsupported expert operation: {operation!r}")
 
+        capability = request.get("capability")
+        if not _is_registered_predicate_capability(capability):
+            raise ExpertError("backend requires a registered predicate capability")
+        namespace = request.get("namespace")
+        if namespace != capability.namespace:
+            raise ExpertError("registered predicate capability namespace mismatch")
+
         timeout_value = request["timeout_seconds"]
         max_results_value = request["max_results"]
         if (
@@ -48,7 +54,7 @@ class SwiplBackend:
             raise ExpertError("expert execution bounds are invalid")
         timeout = float(timeout_value)
         max_results = max_results_value
-        goal = self._build_goal(request)
+        goal = self._build_goal(capability, request.get("arguments"))
         source_files = [*request.get("knowledge_bases", ()), *request.get("state_files", ())]
 
         command = [self.program, "-q", "-f", "none"]
@@ -89,20 +95,17 @@ class SwiplBackend:
         return payload
 
     @classmethod
-    def _build_goal(cls, request: dict[str, Any]) -> str:
-        predicate = request.get("predicate")
-        arguments = request.get("arguments")
-        arity = request.get("arity")
-        if not isinstance(predicate, str) or not _PREDICATE_RE.fullmatch(predicate):
-            raise ExpertError("invalid registered predicate descriptor")
+    def _build_goal(cls, capability: Any, arguments: Any) -> str:
+        if not _is_registered_predicate_capability(capability):
+            raise ExpertError("backend requires a registered predicate capability")
         if not isinstance(arguments, list):
             raise ExpertError("invalid expert argument descriptor")
-        if isinstance(arity, bool) or not isinstance(arity, int) or arity != len(arguments):
+        if capability.arity != len(arguments):
             raise ExpertError("expert predicate descriptor arity mismatch")
         if not arguments:
-            return predicate
+            return capability.predicate
         encoded = ",".join(cls._encode_argument(argument) for argument in arguments)
-        return f"{predicate}({encoded})"
+        return f"{capability.predicate}({encoded})"
 
     @staticmethod
     def _encode_argument(argument: Any) -> str:
