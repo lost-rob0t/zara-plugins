@@ -67,6 +67,8 @@ class PiperBackend:
             audio = output.getvalue()
         except VoiceError:
             raise
+        except wave.Error:
+            raise VoiceError("Piper returned invalid WAV audio") from None
         except Exception:
             raise VoiceError("Piper synthesis failed") from None
 
