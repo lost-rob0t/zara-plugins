@@ -1,0 +1,21 @@
+name: Prolog policy
+on:
+  pull_request:
+    paths: ['plugins/zara-policy/**', '.github/workflows/prolog-policy.yml']
+  push:
+    branches: ['feat/811-prolog-policy-advice']
+    paths: ['plugins/zara-policy/**', '.github/workflows/prolog-policy.yml']
+permissions:
+  contents: read
+jobs:
+  native-policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install native SWI-Prolog
+        run: sudo apt-get update && sudo apt-get install -y swi-prolog-nox
+      - name: Run native and transport tests
+        env:
+          ZARA_POLICY_REQUIRE_SWIPL: '1'
+        run: python3 -m unittest discover -s plugins/zara-policy/test -t plugins/zara-policy/test -v
