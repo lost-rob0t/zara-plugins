@@ -97,6 +97,19 @@ class SendAcknowledgementRedactionTest(unittest.TestCase):
         self.assertEqual(provider.get_calls, [])
         self.assertNotIn(secret, repr(result))
 
+    def test_control_character_message_id_fails_closed_without_provider_readback(self):
+        provider = Provider(
+            {"accepted": True, "message_id": "msg-1\nforged-log-line"},
+            message(),
+        )
+
+        result = CommsDomain({"gmail": provider}, Resolver()).send(draft())
+
+        self.assertTrue(result["accepted"])
+        self.assertFalse(result["verified"])
+        self.assertEqual(result["evidence"], {"accepted": True})
+        self.assertEqual(provider.get_calls, [])
+
 
 if __name__ == "__main__":
     unittest.main()
