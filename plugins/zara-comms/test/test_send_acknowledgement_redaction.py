@@ -7,7 +7,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
-from zara.agent.tools.registry import ToolRegistry
 from zara_comms.domain import CommsDomain, CommsError
 from zara_comms.plugin import ZaraCommsPlugin
 
@@ -144,16 +143,14 @@ class SendAcknowledgementRedactionTest(unittest.TestCase):
         self.assertIsNone(provider.send_calls[0]["conversation_id"])
         self.assertIsNone(provider.send_calls[0]["reply_to"])
 
-    def test_send_tool_registers_as_approval_required_by_default(self):
+    def test_send_tool_declares_approval_required_metadata(self):
         provider = Provider({"accepted": False})
         plugin = ZaraCommsPlugin(providers={"gmail": provider}, resolver=Resolver())
-        tools = list(plugin.tools())
-        registry = ToolRegistry()
-        registry.register_tools(tools)
+        by_name = {tool.name: tool for tool in plugin.tools()}
 
-        self.assertTrue(registry.requires_approval("comms.send"))
+        self.assertTrue((by_name["comms.send"].metadata or {}).get("zara_requires_approval"))
         for name in ("comms.status", "comms.search", "comms.get", "comms.draft", "comms.draft_reply"):
-            self.assertFalse(registry.requires_approval(name), name)
+            self.assertFalse((by_name[name].metadata or {}).get("zara_requires_approval"), name)
 
 
 if __name__ == "__main__":
