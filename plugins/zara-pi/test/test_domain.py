@@ -159,6 +159,35 @@ class PiDomainTests(unittest.TestCase):
                 bridge.interrupt("dev", "call-old")
             self.assertEqual(len(executor.calls), 3)
 
+    def test_interrupt_keeps_session_busy_until_completion_is_observed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            nonce = "0123456789abcdef0123456789abcdef"
+            executor = FakeExecutor([
+                ExecResult(0, "", ""),
+                ExecResult(0, "ZARA_PI/1\n", ""),
+                ExecResult(0, f"call-1:{nonce}\n", ""),
+                ExecResult(0, "", ""),
+                ExecResult(0, "", ""),
+                ExecResult(0, "ZARA_PI/1\n", ""),
+                ExecResult(0, f"call-1:{nonce}\n", ""),
+            ])
+            bridge = TmuxBridge(self.policy(root), executor=executor)
+            interrupted = bridge.interrupt("dev", "call-1")
+            self.assertEqual(interrupted["status"], "interrupt_sent")
+            self.assertIs(interrupted["terminated_confirmed"], False)
+            self.assertNotIn(
+                ("/bin/tmux", "set-option", "-u", "-t", "zara-pi-dev", "@zara_pi_invocation"),
+                [call[0] for call in executor.calls],
+            )
+            with self.assertRaisesRegex(PiError, "active invocation"):
+                bridge.bash(
+                    session_id="dev",
+                    invocation_id="call-2",
+                    command="pwd",
+                    cwd=root,
+                )
+
     def test_close_requires_owned_session_and_uses_exact_target(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
