@@ -160,6 +160,37 @@ class VoiceServiceTests(unittest.TestCase):
         self.assertEqual(self.backend.cancelled, ["req-1"])
         self.assertNotIn("req-1", self.voice._request_backends)
 
+    def test_duplicate_active_request_id_across_backends_fails_closed(self):
+        first = FakeBackend()
+        second = FakeBackend()
+        voice = VoiceService(
+            backends={"first": first, "second": second},
+            player=self.player,
+            cache_root=self.root,
+            policy=VoicePolicy(max_text_chars=64, max_audio_bytes=64, max_duration_seconds=2.0, max_cache_bytes=128),
+        )
+        voice.register_profile(VoiceProfile(name="first", backend="first", backend_profile="a"))
+        voice.register_profile(VoiceProfile(name="second", backend="second", backend_profile="b"))
+
+        voice.synthesize("one", profile="first", cache=False)
+        with self.assertRaisesRegex(VoiceError, "request id"):
+            voice.synthesize("two", profile="second", cache=False)
+
+        self.assertIs(voice._request_backends["req-1"], first)
+        self.assertTrue(voice.cancel(request_id="req-1")["cancelled"])
+        self.assertEqual(first.cancelled, ["req-1"])
+        self.assertEqual(second.cancelled, [])
+
+    def test_same_backend_cannot_reuse_active_request_id(self):
+        self.voice.synthesize("one", profile="mara", cache=False)
+
+        with self.assertRaisesRegex(VoiceError, "request id"):
+            self.voice.synthesize("two", profile="mara", cache=False)
+
+        self.assertIs(self.voice._request_backends["req-1"], self.backend)
+        self.assertTrue(self.voice.cancel(request_id="req-1")["cancelled"])
+        self.assertEqual(self.backend.cancelled, ["req-1"])
+
     def test_completed_non_cancellable_synthesis_does_not_retain_request_state(self):
         backend = NonCancellableBackend()
         voice = VoiceService(
