@@ -15,26 +15,25 @@
         let
           pkgs = import nixpkgs { inherit system; };
 
-          # Match Zara's pinned runtime. Declared plugin dependencies are
-          # included in the installer/test interpreter and in the immutable
-          # runtime library exported by each plugin package.
-          python = pkgs.python313;
-
-          # Registry dependency names normally resolve from the Python package
-          # set. Piper is packaged by nixpkgs as a top-level Python application,
-          # so convert the pinned inference-only build into a Python module for
-          # the same interpreter rather than pulling its training/server extras.
-          pythonDependencyFor = packages: dependency:
-            if dependency == "piper-tts" then
-              packages.toPythonModule (
+          # Match Zara's pinned runtime. Extend this interpreter's package set
+          # with the top-level Piper application converted into an inference-
+          # only Python module, so python.withPackages can actually link its
+          # site-packages and propagated dependencies into immutable runtimes.
+          python = pkgs.python313.override {
+            packageOverrides = final: prev: {
+              piper-tts = final.toPythonModule (
                 pkgs.piper-tts.override {
+                  python3Packages = final;
                   withTrain = false;
                   withHTTP = false;
                   withAlignment = false;
                 }
-              )
-            else
-              packages.${dependency};
+              );
+            };
+          };
+
+          pythonDependencyFor = packages: dependency:
+            packages.${dependency};
 
           pythonFor = entry:
             let
