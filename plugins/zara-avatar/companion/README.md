@@ -40,7 +40,7 @@ security proof.
 
 ## Build
 
-Use JDK 21, Gradle 9.5.1, Android SDK 37 and Build Tools 36.0.0.
+Use JDK 21, Gradle 9.5.1, Android SDK 36 and Build Tools 36.0.0.
 The Android Gradle Plugin is pinned to 9.2.0. Renderer packages come from the
 existing adjacent `renderer/package-lock.json` with npm integrity checks.
 No Electron binary, npm packages or build outputs belong in Git.
@@ -101,6 +101,11 @@ broadcast, JavaScript bridge, localhost server, or exported Binder shortcut.
 
 Local RED: the new motion tests failed because `motion.mjs` did not exist.
 Local GREEN: 16 JavaScript behavior/model tests and 3 Python packaging tests.
+Those same 19 tests also passed in GitHub Actions runs 35184314172 and
+35184511672. The first run exposed an obsolete SDK `tools` default (fixed);
+the second could not resolve `platforms;android-37`. Companion now explicitly
+compiles against SDK 36, retaining targetSdk 36 and all implemented behavior.
+No silent SDK fallback or skipped build/lint gate is introduced.
 The package tests use explicit fake dependency files, not a real npm install;
 no GPU/device/Android build claim follows from them.
 

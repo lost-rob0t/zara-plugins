@@ -1,7 +1,7 @@
 plugins { id("com.android.application") }
 android {
     namespace = "ai.zara.companion"
-    compileSdk = 37
+    compileSdk = 36
     defaultConfig {
         applicationId = "ai.zara.companion"
         minSdk = 29
