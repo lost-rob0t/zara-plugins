@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import socket
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
@@ -12,6 +13,8 @@ API_ORIGIN = "https://www.googleapis.com"
 API_ROOT = API_ORIGIN + "/calendar/v3"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 _TOKEN_RE = re.compile(r"^[\x21-\x7e]+$")
+_RATE_LIMIT_REASONS = {"rateLimitExceeded", "userRateLimitExceeded"}
+_RETRYABLE_SERVER_CODES = {500, 502, 503, 504}
 
 
 class GoogleCalendarError(RuntimeError):
@@ -29,8 +32,20 @@ class GoogleCalendarBackend:
         default_calendar_id: str = "primary",
         timeout_seconds: float = 10.0,
         max_response_bytes: int = 1_048_576,
+        max_retries: int = 2,
+        base_backoff_seconds: float = 0.25,
+        max_backoff_seconds: float = 2.0,
+        sleeper=time.sleep,
         opener=urlopen,
     ) -> None:
+        if type(max_retries) is not int or not 0 <= max_retries <= 5:
+            raise GoogleCalendarError("max_retries is out of range")
+        if not isinstance(base_backoff_seconds, (int, float)) or not 0 < base_backoff_seconds <= 10:
+            raise GoogleCalendarError("base_backoff_seconds is out of range")
+        if not isinstance(max_backoff_seconds, (int, float)) or not base_backoff_seconds <= max_backoff_seconds <= 30:
+            raise GoogleCalendarError("max_backoff_seconds is out of range")
+        if not callable(sleeper):
+            raise GoogleCalendarError("sleeper must be callable")
         self._access_token = access_token
         self._refresh_token = refresh_token
         self._client_id = client_id
@@ -38,6 +53,10 @@ class GoogleCalendarBackend:
         self.default_calendar_id = default_calendar_id
         self.timeout_seconds = timeout_seconds
         self.max_response_bytes = max_response_bytes
+        self.max_retries = max_retries
+        self.base_backoff_seconds = float(base_backoff_seconds)
+        self.max_backoff_seconds = float(max_backoff_seconds)
+        self._sleeper = sleeper
         self._opener = opener
 
     @staticmethod
@@ -117,8 +136,20 @@ class GoogleCalendarBackend:
         refresh = self._credential(self._refresh_token)
         client_id = self._credential(self._client_id)
         client_secret = self._credential(self._client_secret)
-        body = urlencode({"grant_type": "refresh_token", "refresh_token": refresh, "client_id": client_id, "client_secret": client_secret}).encode()
-        request = Request(TOKEN_URL, data=body, method="POST", headers={"Content-Type": "application/x-www-form-urlencoded"})
+        body = urlencode(
+            {
+                "grant_type": "refresh_token",
+                "refresh_token": refresh,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            }
+        ).encode()
+        request = Request(
+            TOKEN_URL,
+            data=body,
+            method="POST",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
         try:
             with self._opener(request, self.timeout_seconds) as response:
                 payload = self._read_json(response)
@@ -127,7 +158,48 @@ class GoogleCalendarBackend:
         token = payload.get("access_token")
         self._access_token = self._credential(token)
 
-    def _request(self, method, path, *, query=None, payload=None, expected_version=None, allow_404=False, refreshed=False):
+    def _google_error_reason(self, error):
+        try:
+            body = error.read(self.max_response_bytes + 1)
+            if len(body) > self.max_response_bytes:
+                return None
+            payload = json.loads(body.decode("utf-8"))
+        except (AttributeError, UnicodeDecodeError, json.JSONDecodeError, OSError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        envelope = payload.get("error")
+        if not isinstance(envelope, dict):
+            return None
+        errors = envelope.get("errors")
+        if not isinstance(errors, list):
+            return None
+        for item in errors:
+            reason = item.get("reason") if isinstance(item, dict) else None
+            if isinstance(reason, str):
+                return reason
+        return None
+
+    def _wait_before_retry(self, attempt):
+        delay = min(self.base_backoff_seconds * (2**attempt), self.max_backoff_seconds)
+        self._sleeper(delay)
+
+    @staticmethod
+    def _safe_to_retry_after_ambiguous_failure(method, path):
+        return method in {"GET", "HEAD"} or (method == "POST" and path == "/freeBusy")
+
+    def _request(
+        self,
+        method,
+        path,
+        *,
+        query=None,
+        payload=None,
+        expected_version=None,
+        allow_404=False,
+        refreshed=False,
+        attempt=0,
+    ):
         if not isinstance(path, str) or not path.startswith("/") or "://" in path:
             raise GoogleCalendarError("invalid provider path")
         token = self._credential(self._access_token)
@@ -150,19 +222,80 @@ class GoogleCalendarBackend:
                 return None
             if error.code == 401 and not refreshed:
                 self._refresh()
-                return self._request(method, path, query=query, payload=payload, expected_version=expected_version, allow_404=allow_404, refreshed=True)
+                return self._request(
+                    method,
+                    path,
+                    query=query,
+                    payload=payload,
+                    expected_version=expected_version,
+                    allow_404=allow_404,
+                    refreshed=True,
+                    attempt=attempt,
+                )
             if error.code in (409, 412):
                 raise GoogleCalendarError("stale-version") from error
             if error.code == 401:
                 raise GoogleCalendarError("reauth-required") from error
+
+            reason = self._google_error_reason(error) if error.code == 403 else None
+            rate_limited = error.code == 429 or (error.code == 403 and reason in _RATE_LIMIT_REASONS)
+            if rate_limited:
+                if attempt < self.max_retries:
+                    self._wait_before_retry(attempt)
+                    return self._request(
+                        method,
+                        path,
+                        query=query,
+                        payload=payload,
+                        expected_version=expected_version,
+                        allow_404=allow_404,
+                        refreshed=refreshed,
+                        attempt=attempt + 1,
+                    )
+                raise GoogleCalendarError(f"provider-http-{error.code}") from error
+
+            if error.code in _RETRYABLE_SERVER_CODES:
+                if not self._safe_to_retry_after_ambiguous_failure(method, path):
+                    raise GoogleCalendarError("mutation-outcome-unknown") from error
+                if attempt < self.max_retries:
+                    self._wait_before_retry(attempt)
+                    return self._request(
+                        method,
+                        path,
+                        query=query,
+                        payload=payload,
+                        expected_version=expected_version,
+                        allow_404=allow_404,
+                        refreshed=refreshed,
+                        attempt=attempt + 1,
+                    )
             raise GoogleCalendarError(f"provider-http-{error.code}") from error
         except (URLError, socket.timeout, TimeoutError, OSError) as error:
+            if not self._safe_to_retry_after_ambiguous_failure(method, path):
+                raise GoogleCalendarError("mutation-outcome-unknown") from error
+            if attempt < self.max_retries:
+                self._wait_before_retry(attempt)
+                return self._request(
+                    method,
+                    path,
+                    query=query,
+                    payload=payload,
+                    expected_version=expected_version,
+                    allow_404=allow_404,
+                    refreshed=refreshed,
+                    attempt=attempt + 1,
+                )
             raise GoogleCalendarError("provider-unavailable") from error
 
     def search_events(self, start, end, text, calendar_id, limit):
         calendar = calendar_id or self.default_calendar_id
         path = f"/calendars/{quote(calendar, safe='')}/events"
-        base_query = {"timeMin": start, "timeMax": end, "singleEvents": "true", "maxResults": min(limit, 2500)}
+        base_query = {
+            "timeMin": start,
+            "timeMax": end,
+            "singleEvents": "true",
+            "maxResults": min(limit, 2500),
+        }
         if text:
             base_query["q"] = text
         results = []
@@ -198,7 +331,13 @@ class GoogleCalendarBackend:
             "start": {"dateTime": event["start"], "timeZone": event["timezone"]},
             "end": {"dateTime": event["end"], "timeZone": event["timezone"]},
             "attendees": [{"email": value} for value in event["attendees"]],
-            "reminders": {"useDefault": False, "overrides": [{"method": "popup", "minutes": value["minutes_before"]} for value in event["reminders"]]},
+            "reminders": {
+                "useDefault": False,
+                "overrides": [
+                    {"method": "popup", "minutes": value["minutes_before"]}
+                    for value in event["reminders"]
+                ],
+            },
         }
         if event["recurrence"] is not None:
             payload["recurrence"] = [event["recurrence"]["rrule"]]
@@ -206,26 +345,55 @@ class GoogleCalendarBackend:
 
     def create_event(self, event):
         calendar = event["calendar_id"]
-        payload = self._request("POST", f"/calendars/{quote(calendar, safe='')}/events", payload=self._write_payload(event))
+        payload = self._request(
+            "POST",
+            f"/calendars/{quote(calendar, safe='')}/events",
+            payload=self._write_payload(event),
+        )
         normalized = self._normalize_event(payload, calendar)
-        return {"accepted": True, "event_id": normalized["event_id"], "version": normalized["version"]}
+        return {
+            "accepted": True,
+            "event_id": normalized["event_id"],
+            "version": normalized["version"],
+        }
 
     def update_event(self, event_id, expected_version, patch):
         current = self.get_event(event_id)
         if current is None:
             raise GoogleCalendarError("event does not exist")
         current.update(patch)
-        payload = self._request("PATCH", f"/calendars/{quote(current['calendar_id'], safe='')}/events/{quote(event_id, safe='')}", payload=self._write_payload(current), expected_version=expected_version)
+        payload = self._request(
+            "PATCH",
+            f"/calendars/{quote(current['calendar_id'], safe='')}/events/{quote(event_id, safe='')}",
+            payload=self._write_payload(current),
+            expected_version=expected_version,
+        )
         normalized = self._normalize_event(payload, current["calendar_id"])
-        return {"accepted": True, "event_id": event_id, "version": normalized["version"]}
+        return {
+            "accepted": True,
+            "event_id": event_id,
+            "version": normalized["version"],
+        }
 
     def delete_event(self, event_id, expected_version):
         path = f"/calendars/{quote(self.default_calendar_id, safe='')}/events/{quote(event_id, safe='')}"
         self._request("DELETE", path, expected_version=expected_version)
-        return {"accepted": True, "event_id": event_id, "version": expected_version}
+        return {
+            "accepted": True,
+            "event_id": event_id,
+            "version": expected_version,
+        }
 
     def free_busy(self, start, end, calendar_ids):
-        payload = self._request("POST", "/freeBusy", payload={"timeMin": start, "timeMax": end, "items": [{"id": value} for value in calendar_ids]})
+        payload = self._request(
+            "POST",
+            "/freeBusy",
+            payload={
+                "timeMin": start,
+                "timeMax": end,
+                "items": [{"id": value} for value in calendar_ids],
+            },
+        )
         calendars = payload.get("calendars")
         if not isinstance(calendars, dict):
             raise GoogleCalendarError("provider returned malformed free/busy data")
@@ -237,5 +405,11 @@ class GoogleCalendarBackend:
             for busy in entry.get("busy", []):
                 if not isinstance(busy, dict) or not isinstance(busy.get("start"), str) or not isinstance(busy.get("end"), str):
                     raise GoogleCalendarError("provider returned malformed free/busy data")
-                result.append({"calendar_id": calendar_id, "start": busy["start"], "end": busy["end"]})
+                result.append(
+                    {
+                        "calendar_id": calendar_id,
+                        "start": busy["start"],
+                        "end": busy["end"],
+                    }
+                )
         return result
