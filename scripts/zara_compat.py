@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import signal
+import subprocess
 import sys
 import tempfile
 from contextlib import contextmanager
@@ -34,6 +37,8 @@ class CompatibilityError(RuntimeError):
 
 
 _MISSING = object()
+_MAX_WORKER_RESULT_BYTES = 64 * 1024
+_WORKER_STATUSES = {"passed", "contract-error"}
 
 
 def load_registry(path: Path) -> list[dict[str, Any]]:
@@ -129,20 +134,43 @@ def require_tool_names(
         tool_name = str(
             read_compatibility_attribute(tool, "name", "", timeout=timeout)
         )
-        if not tool_name.strip():
-            raise CompatibilityError(f"{name}: tool has an empty name")
-        if tool_name != tool_name.strip():
-            raise CompatibilityError(
-                f"{name}: tool name {tool_name!r} has surrounding whitespace"
-            )
-        if tool_name in local:
-            raise CompatibilityError(f"{name}: duplicate tool name {tool_name!r}")
-        owner = seen.get(tool_name)
-        if owner is not None:
-            raise CompatibilityError(
-                f"{name}: tool name {tool_name!r} collides with published plugin {owner}"
-            )
-        local.add(tool_name)
+        _require_one_tool_name(name, tool_name, local, seen)
+    for tool_name in local:
+        seen[tool_name] = name
+
+
+def _require_one_tool_name(
+    name: str,
+    tool_name: str,
+    local: set[str],
+    seen: dict[str, str],
+) -> None:
+    if not tool_name.strip():
+        raise CompatibilityError(f"{name}: tool has an empty name")
+    if tool_name != tool_name.strip():
+        raise CompatibilityError(
+            f"{name}: tool name {tool_name!r} has surrounding whitespace"
+        )
+    if tool_name in local:
+        raise CompatibilityError(f"{name}: duplicate tool name {tool_name!r}")
+    owner = seen.get(tool_name)
+    if owner is not None:
+        raise CompatibilityError(
+            f"{name}: tool name {tool_name!r} collides with published plugin {owner}"
+        )
+    local.add(tool_name)
+
+
+def require_reported_tool_names(
+    name: str,
+    tool_names: list[str],
+    seen: dict[str, str],
+) -> None:
+    local: set[str] = set()
+    for tool_name in tool_names:
+        if not isinstance(tool_name, str):
+            raise CompatibilityError(f"{name}: compatibility worker returned a non-string tool name")
+        _require_one_tool_name(name, tool_name, local, seen)
     for tool_name in local:
         seen[tool_name] = name
 
@@ -233,6 +261,7 @@ def plugin_import_environment(
     *,
     runtime_root: Path | None = None,
 ):
+    """Legacy unit-test helper; production compatibility imports happen in child processes."""
     _, library = plugin_paths(root, entry, runtime_root=runtime_root)
     previous_path = list(sys.path)
     previous_modules = set(sys.modules)
@@ -275,6 +304,105 @@ def _qualified_type(value: object) -> str:
     return f"{kind.__module__}.{kind.__qualname__}"
 
 
+def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    else:
+        process.kill()
+
+
+def run_compatibility_process(
+    command: list[str],
+    result_path: Path,
+    *,
+    timeout: float,
+) -> dict[str, Any]:
+    """Run one compatibility worker behind a hard process/crash boundary."""
+    if timeout <= 0:
+        raise ValueError("timeout must be positive")
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.unlink(missing_ok=True)
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=(os.name == "posix"),
+    )
+    try:
+        return_code = process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_process_group(process)
+        process.wait(timeout=2.0)
+        return {"status": "timeout"}
+
+    if return_code < 0:
+        number = -return_code
+        try:
+            signal_name = signal.Signals(number).name
+        except ValueError:
+            signal_name = f"SIG{number}"
+        return {"status": "crashed", "signal": signal_name}
+
+    if not result_path.is_file():
+        return {"status": "invalid-result", "reason": f"worker exited {return_code} without a result"}
+    try:
+        size = result_path.stat().st_size
+    except OSError as error:
+        return {"status": "invalid-result", "reason": f"could not stat worker result: {type(error).__name__}"}
+    if size > _MAX_WORKER_RESULT_BYTES:
+        return {"status": "invalid-result", "reason": "worker result is too large"}
+    try:
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        return {"status": "invalid-result", "reason": f"worker result is not valid JSON: {type(error).__name__}"}
+    if not isinstance(result, dict) or result.get("status") not in _WORKER_STATUSES:
+        return {"status": "invalid-result", "reason": "worker result has an invalid status"}
+    if result["status"] == "passed":
+        tool_names = result.get("tool_names")
+        if not isinstance(tool_names, list) or not all(isinstance(item, str) for item in tool_names):
+            return {"status": "invalid-result", "reason": "passed worker result has invalid tool_names"}
+    elif not isinstance(result.get("error"), str):
+        return {"status": "invalid-result", "reason": "contract-error result has no bounded error"}
+    return result
+
+
+def run_plugin_compatibility(
+    root: Path,
+    zara_source: Path,
+    entry: dict[str, Any],
+    result_path: Path,
+    *,
+    runtime_root: Path | None = None,
+    call_timeout: float = 5.0,
+) -> dict[str, Any]:
+    worker = Path(__file__).with_name("zara_compat_worker.py")
+    command = [
+        sys.executable,
+        str(worker),
+        "--root",
+        str(root),
+        "--zara-source",
+        str(zara_source),
+        "--entry-json",
+        json.dumps(entry, separators=(",", ":")),
+        "--result",
+        str(result_path),
+    ]
+    if runtime_root is not None:
+        command.extend(("--runtime-root", str(runtime_root)))
+    return run_compatibility_process(
+        command,
+        result_path,
+        timeout=max(0.1, call_timeout * 6.0),
+    )
+
+
 def check_registry(
     root: Path,
     zara_source: Path,
@@ -286,24 +414,18 @@ def check_registry(
     runtime_root = runtime_root.resolve() if runtime_root is not None else None
     zara_source = validate_zara_source(zara_source)
     entries = load_registry(root / "plugins.json")
-    (
-        BaseTool,
-        api_version,
-        PluginMetadata,
-        ServicePlugin,
-        iter_plugin_files,
-        load_plugin_module,
-    ) = _load_runtime_contracts(zara_source)
+    _, api_version, _, _, iter_plugin_files, _ = _load_runtime_contracts(zara_source)
 
     failures: list[str] = []
     seen_tool_names: dict[str, str] = {}
     with tempfile.TemporaryDirectory(prefix="zara-plugin-compat-") as temporary_home:
         home = Path(temporary_home)
         search_path = home / ".zarathushtra" / "plugins"
+        result_root = home / "compat-results"
         search_path.mkdir(parents=True, exist_ok=True)
         expected_discovery: dict[Path, str] = {}
         with temporary_runtime_environment(home):
-            for entry in entries:
+            for index, entry in enumerate(entries):
                 name = str(entry.get("name", "?"))
                 if str(entry.get("api_version", "")) != api_version:
                     failures.append(
@@ -323,80 +445,34 @@ def check_registry(
                         f"{name}: could not project packaged entrypoint into Zara plugin search path: {error}"
                     )
                     continue
-                try:
-                    with plugin_import_environment(root, entry, runtime_root=runtime_root):
-                        module = invoke_compatibility_call(
-                            load_plugin_module,
-                            entrypoint,
-                            timeout=call_timeout,
+
+                result = run_plugin_compatibility(
+                    root,
+                    zara_source,
+                    entry,
+                    result_root / f"{index:04d}.json",
+                    runtime_root=runtime_root,
+                    call_timeout=call_timeout,
+                )
+                status = result.get("status")
+                if status == "passed":
+                    try:
+                        require_reported_tool_names(
+                            name,
+                            result["tool_names"],
+                            seen_tool_names,
                         )
-                        if entry.get("plugin_type") == "service":
-                            factory = read_compatibility_attribute(
-                                module,
-                                "create_plugin",
-                                _MISSING,
-                                timeout=call_timeout,
-                            )
-                            if factory is _MISSING or not callable(factory):
-                                raise CompatibilityError("service entrypoint has no create_plugin()")
-                            instance = construct_service_plugin(factory, timeout=call_timeout)
-                            if not isinstance(instance, ServicePlugin):
-                                raise CompatibilityError(
-                                    f"create_plugin() returned {type(instance).__name__}, not Zara ServicePlugin"
-                                )
-                            metadata = read_compatibility_attribute(
-                                instance,
-                                "metadata",
-                                timeout=call_timeout,
-                            )
-                            if not isinstance(metadata, PluginMetadata):
-                                expected = f"{PluginMetadata.__module__}.{PluginMetadata.__qualname__}"
-                                observed = _qualified_type(metadata)
-                                raise CompatibilityError(
-                                    "service metadata is not Zara PluginMetadata "
-                                    f"(expected {expected}, observed {observed})"
-                                )
-                            require_metadata(entry, metadata, timeout=call_timeout)
-                            require_service_activation_contract(
-                                name,
-                                instance,
-                                timeout=call_timeout,
-                            )
-                            tools = collect_service_tools(instance, timeout=call_timeout)
-                            invalid = [
-                                type(tool).__name__
-                                for tool in tools
-                                if not isinstance(tool, BaseTool)
-                            ]
-                            if invalid:
-                                raise CompatibilityError(
-                                    f"tools() returned non-BaseTool values: {', '.join(invalid)}"
-                                )
-                            require_tool_names(
-                                name,
-                                tools,
-                                seen_tool_names,
-                                timeout=call_timeout,
-                            )
-                            with fake_dependency_environment(name):
-                                exercise_service_lifecycle(
-                                    instance,
-                                    CompatibilityRuntime(name),
-                                    timeout=call_timeout,
-                                )
-                        else:
-                            require_legacy_tool_entrypoint(
-                                name,
-                                module,
-                                BaseTool,
-                                seen_tool_names,
-                                timeout=call_timeout,
-                            )
-                except TimeoutError as error:
-                    failures.append(f"{name}: {type(error).__name__}: {error}")
-                    return failures
-                except Exception as error:
-                    failures.append(f"{name}: {type(error).__name__}: {error}")
+                    except CompatibilityError as error:
+                        failures.append(str(error))
+                elif status == "contract-error":
+                    failures.append(f"{name}: {result['error']}")
+                elif status == "crashed":
+                    failures.append(f"{name}: compatibility worker crashed ({result.get('signal', 'unknown signal')})")
+                elif status == "timeout":
+                    failures.append(f"{name}: TimeoutError: compatibility worker exceeded its process deadline")
+                else:
+                    failures.append(f"{name}: invalid compatibility worker result: {result.get('reason', 'unknown error')}")
+
             try:
                 require_search_path_discovery(
                     expected_discovery,
