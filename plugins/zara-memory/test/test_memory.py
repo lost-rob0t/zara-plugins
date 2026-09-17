@@ -49,6 +49,19 @@ class FakeBackend:
         return {"removed": True, "projection_ids": [f"projection:{memory_id}"]}
 
 
+class StaleForgetBackend(FakeBackend):
+    def forget(self, *, memory_id, scope, owner):
+        item = self.items.get(memory_id)
+        if item is None or item["scope"] != scope or item["owner"] != owner:
+            return {"removed": False, "projection_ids": []}
+        return {"removed": True, "projection_ids": [f"projection:{memory_id}"]}
+
+
+class AckOnlyBackend:
+    def forget(self, *, memory_id, scope, owner):
+        return {"removed": True, "projection_ids": [f"projection:{memory_id}"]}
+
+
 class TypeConfusedBackend(FakeBackend):
     def remember(self, **kwargs):
         item = super().remember(**kwargs)
@@ -245,6 +258,36 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertTrue(result["removed"])
         self.assertEqual(result["projection_ids"], [f"projection:{item['id']}"])
         self.assertEqual(self.memory.recall(scope="project", owner="repo-a"), [])
+
+    def test_forget_rejects_ack_when_target_remains_recallable(self):
+        backend = StaleForgetBackend()
+        backend.items["mem-1"] = {
+            "id": "mem-1",
+            "scope": "project",
+            "owner": "repo-a",
+            "text": "stale memory",
+            "facts": ["workflow_state(plan)"],
+            "provenance": {"source": "operator"},
+            "type": "coding.workflow",
+            "created_at": "2026-09-05T00:00:00Z",
+        }
+        memory = MemoryService(backend)
+        memory.register_schema(
+            MemorySchema(
+                name="coding.workflow",
+                allowed_scopes=frozenset({"project"}),
+                allowed_fact_predicates=frozenset({"workflow_state"}),
+            )
+        )
+
+        with self.assertRaisesRegex(MemoryError, "still recallable"):
+            memory.forget("mem-1", scope="project", owner="repo-a")
+
+    def test_forget_requires_scoped_recall_to_verify_acknowledged_removal(self):
+        memory = MemoryService(AckOnlyBackend())
+
+        with self.assertRaisesRegex(MemoryError, "does not support recall/search"):
+            memory.forget("mem-1", scope="project", owner="repo-a")
 
     def test_transient_context_is_never_persisted_implicitly(self):
         self.memory.observe_context({"active_file": "/tmp/example.py"})
