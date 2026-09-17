@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 import socket
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
 from urllib.error import HTTPError, URLError
+from urllib.request import Request
 
 from zara_calendar.google import GoogleCalendarBackend, GoogleCalendarError
 
@@ -52,9 +55,22 @@ def event_payload(event_id="e1", version="v1"):
     }
 
 
+def writable_event(calendar_id="primary"):
+    return {
+        "calendar_id": calendar_id,
+        "title": "x",
+        "start": "2026-09-08T10:00:00+00:00",
+        "end": "2026-09-08T11:00:00+00:00",
+        "timezone": "UTC",
+        "attendees": [],
+        "recurrence": None,
+        "reminders": [],
+    }
+
+
 class GoogleCalendarBackendTests(unittest.TestCase):
-    def make_backend(self, opener, *, sleeper=lambda _: None, **kwargs):
-        return GoogleCalendarBackend(
+    def make_backend(self, opener, *, sleeper=lambda _: None, jitter_source=lambda: 1.0, **kwargs):
+        backend = GoogleCalendarBackend(
             access_token="token",
             refresh_token="refresh",
             client_id="id",
@@ -63,6 +79,8 @@ class GoogleCalendarBackendTests(unittest.TestCase):
             sleeper=sleeper,
             **kwargs,
         )
+        backend._jitter_source = jitter_source
+        return backend
 
     def test_rejects_unsafe_access_token_before_send(self):
         opener = ScriptedOpener([])
@@ -76,6 +94,48 @@ class GoogleCalendarBackendTests(unittest.TestCase):
         with self.assertRaisesRegex(GoogleCalendarError, "invalid credential"):
             backend.get_event("event-1")
         self.assertEqual(opener.requests, [])
+
+    def test_default_transport_rejects_redirect_without_forwarding_authorization(self):
+        leaked_authorization = []
+
+        class RedirectFixture(BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path == "/start":
+                    self.send_response(302)
+                    self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/leak")
+                    self.end_headers()
+                    return
+                leaked_authorization.append(self.headers.get("Authorization"))
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b"{}")
+
+            def log_message(self, *args):
+                return None
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), RedirectFixture)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            backend = GoogleCalendarBackend(
+                access_token="token",
+                refresh_token="refresh",
+                client_id="id",
+                client_secret="secret",
+            )
+            request = Request(
+                f"http://127.0.0.1:{server.server_port}/start",
+                headers={"Authorization": "Bearer secret"},
+            )
+            with self.assertRaises(HTTPError) as raised:
+                backend._opener(request, 1.0)
+            self.assertEqual(raised.exception.code, 302)
+            self.assertEqual(leaked_authorization, [])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
 
     def test_401_refreshes_once_and_uses_new_token(self):
         first = http_error(401)
@@ -142,6 +202,20 @@ class GoogleCalendarBackendTests(unittest.TestCase):
         self.assertTrue(opener.requests[0][0].full_url.startswith("https://www.googleapis.com/calendar/v3/calendars/"))
         self.assertNotIn("evil.example/x/events", opener.requests[0][0].full_url)
 
+    def test_create_rejects_non_default_calendar_before_send(self):
+        opener = ScriptedOpener([])
+        backend = self.make_backend(opener)
+        with self.assertRaisesRegex(GoogleCalendarError, "non-default calendar mutations are unsupported"):
+            backend.create_event(writable_event("secondary"))
+        self.assertEqual(opener.requests, [])
+
+    def test_update_rejects_calendar_retarget_before_send(self):
+        opener = ScriptedOpener([])
+        backend = self.make_backend(opener)
+        with self.assertRaisesRegex(GoogleCalendarError, "non-default calendar mutations are unsupported"):
+            backend.update_event("e1", "v1", {"calendar_id": "secondary"})
+        self.assertEqual(opener.requests, [])
+
     def test_get_retries_429_and_5xx_with_bounded_exponential_backoff(self):
         delays = []
         opener = ScriptedOpener([
@@ -154,6 +228,23 @@ class GoogleCalendarBackendTests(unittest.TestCase):
         self.assertEqual(event["event_id"], "e1")
         self.assertEqual(delays, [0.25, 0.5])
         self.assertEqual(len(opener.requests), 3)
+
+    def test_retry_backoff_uses_injected_bounded_jitter(self):
+        delays = []
+        jitter = iter([0.0, 0.5])
+        opener = ScriptedOpener([
+            http_error(429),
+            http_error(500),
+            Response(200, event_payload()),
+        ])
+        backend = self.make_backend(
+            opener,
+            sleeper=delays.append,
+            jitter_source=lambda: next(jitter),
+        )
+        backend.get_event("e1")
+        self.assertEqual(delays, [0.125, 0.375])
+        self.assertTrue(all(0 < delay <= 0.5 for delay in delays))
 
     def test_rate_limit_403_retries_but_permission_403_does_not(self):
         rate_payload = {
@@ -200,18 +291,8 @@ class GoogleCalendarBackendTests(unittest.TestCase):
     def test_ambiguous_mutation_5xx_is_not_retried(self):
         opener = ScriptedOpener([http_error(500)])
         backend = self.make_backend(opener)
-        event = {
-            "calendar_id": "primary",
-            "title": "x",
-            "start": "2026-09-08T10:00:00+00:00",
-            "end": "2026-09-08T11:00:00+00:00",
-            "timezone": "UTC",
-            "attendees": [],
-            "recurrence": None,
-            "reminders": [],
-        }
         with self.assertRaisesRegex(GoogleCalendarError, "mutation-outcome-unknown"):
-            backend.create_event(event)
+            backend.create_event(writable_event())
         self.assertEqual(len(opener.requests), 1)
 
     def test_rate_limited_mutation_is_retried_because_provider_rejected_it(self):
@@ -221,16 +302,7 @@ class GoogleCalendarBackendTests(unittest.TestCase):
             Response(200, event_payload()),
         ])
         backend = self.make_backend(opener, sleeper=delays.append)
-        evidence = backend.create_event({
-            "calendar_id": "primary",
-            "title": "x",
-            "start": "2026-09-08T10:00:00+00:00",
-            "end": "2026-09-08T11:00:00+00:00",
-            "timezone": "UTC",
-            "attendees": [],
-            "recurrence": None,
-            "reminders": [],
-        })
+        evidence = backend.create_event(writable_event())
         self.assertTrue(evidence["accepted"])
         self.assertEqual(delays, [0.25])
 

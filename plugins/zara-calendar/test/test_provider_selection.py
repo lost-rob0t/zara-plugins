@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import os
+import sys
 import unittest
+from pathlib import Path
 from unittest.mock import patch
+
+LIB_ROOT = Path(__file__).resolve().parents[1] / "lib"
+sys.path.insert(0, str(LIB_ROOT))
 
 from zara_calendar.caldav import CalDavCalendarBackend
 from zara_calendar.domain import CalendarError

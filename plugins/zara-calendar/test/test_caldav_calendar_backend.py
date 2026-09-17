@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import base64
+import sys
 import unittest
 from io import BytesIO
+from pathlib import Path
 from urllib.error import HTTPError, URLError
+
+LIB_ROOT = Path(__file__).resolve().parents[1] / "lib"
+sys.path.insert(0, str(LIB_ROOT))
 
 from zara_calendar.caldav import CalDavCalendarBackend, CalDavCalendarError
 

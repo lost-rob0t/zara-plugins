@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import math
+import random
 import re
 import socket
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 API_ORIGIN = "https://www.googleapis.com"
@@ -19,6 +21,15 @@ _RETRYABLE_SERVER_CODES = {500, 502, 503, 504}
 
 class GoogleCalendarError(RuntimeError):
     pass
+
+
+class _RejectRedirects(HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, message, headers, new_url):
+        return None
+
+
+def _open_no_redirect(request, timeout):
+    return build_opener(_RejectRedirects()).open(request, timeout=timeout)
 
 
 class GoogleCalendarBackend:
@@ -36,7 +47,7 @@ class GoogleCalendarBackend:
         base_backoff_seconds: float = 0.25,
         max_backoff_seconds: float = 2.0,
         sleeper=time.sleep,
-        opener=urlopen,
+        opener=_open_no_redirect,
     ) -> None:
         if type(max_retries) is not int or not 0 <= max_retries <= 5:
             raise GoogleCalendarError("max_retries is out of range")
@@ -46,6 +57,8 @@ class GoogleCalendarBackend:
             raise GoogleCalendarError("max_backoff_seconds is out of range")
         if not callable(sleeper):
             raise GoogleCalendarError("sleeper must be callable")
+        if not callable(opener):
+            raise GoogleCalendarError("opener must be callable")
         self._access_token = access_token
         self._refresh_token = refresh_token
         self._client_id = client_id
@@ -57,6 +70,7 @@ class GoogleCalendarBackend:
         self.base_backoff_seconds = float(base_backoff_seconds)
         self.max_backoff_seconds = float(max_backoff_seconds)
         self._sleeper = sleeper
+        self._jitter_source = random.random
         self._opener = opener
 
     @staticmethod
@@ -181,7 +195,11 @@ class GoogleCalendarBackend:
         return None
 
     def _wait_before_retry(self, attempt):
-        delay = min(self.base_backoff_seconds * (2**attempt), self.max_backoff_seconds)
+        ceiling = min(self.base_backoff_seconds * (2**attempt), self.max_backoff_seconds)
+        jitter = self._jitter_source()
+        if type(jitter) not in (int, float) or not math.isfinite(jitter) or not 0.0 <= jitter <= 1.0:
+            raise GoogleCalendarError("jitter source returned invalid value")
+        delay = ceiling * (0.5 + 0.5 * float(jitter))
         self._sleeper(delay)
 
     @staticmethod
@@ -324,6 +342,11 @@ class GoogleCalendarBackend:
         payload = self._request("GET", path, allow_404=True)
         return None if payload is None else self._normalize_event(payload, self.default_calendar_id)
 
+    def _require_default_calendar(self, calendar_id):
+        if calendar_id != self.default_calendar_id:
+            raise GoogleCalendarError("non-default calendar mutations are unsupported")
+        return calendar_id
+
     @staticmethod
     def _write_payload(event):
         payload = {
@@ -344,7 +367,7 @@ class GoogleCalendarBackend:
         return payload
 
     def create_event(self, event):
-        calendar = event["calendar_id"]
+        calendar = self._require_default_calendar(event["calendar_id"])
         payload = self._request(
             "POST",
             f"/calendars/{quote(calendar, safe='')}/events",
@@ -358,10 +381,13 @@ class GoogleCalendarBackend:
         }
 
     def update_event(self, event_id, expected_version, patch):
+        if "calendar_id" in patch:
+            self._require_default_calendar(patch["calendar_id"])
         current = self.get_event(event_id)
         if current is None:
             raise GoogleCalendarError("event does not exist")
         current.update(patch)
+        self._require_default_calendar(current["calendar_id"])
         payload = self._request(
             "PATCH",
             f"/calendars/{quote(current['calendar_id'], safe='')}/events/{quote(event_id, safe='')}",
