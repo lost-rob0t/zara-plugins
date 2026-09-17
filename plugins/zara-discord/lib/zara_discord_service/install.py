@@ -216,47 +216,53 @@ def install(
     wrapper_staging = plugin_entry.with_name(".zara_discord.py.tmp")
     _remove_path(staging)
     _remove_path(wrapper_staging)
-    staging.mkdir()
-    source_package = Path(__file__).resolve().parent
-    plugin_root = source_package.parents[1]
-    shutil.copytree(
-        source_package,
-        staging / "zara_discord_service",
-        copy_function=_copy_writable,
-        ignore=_ignore_bytecode,
-    )
 
-    discord_spec = importlib.util.find_spec("discord")
-    if discord_spec is None or discord_spec.submodule_search_locations is None:
-        raise RuntimeError("discord.py is not installed in the installer environment")
-    discord_source = Path(next(iter(discord_spec.submodule_search_locations)))
-    shutil.copytree(
-        discord_source,
-        staging / "discord",
-        copy_function=_copy_writable,
-        ignore=_ignore_bytecode,
-    )
-    audioop_spec = importlib.util.find_spec("audioop")
-    if audioop_spec is None or audioop_spec.submodule_search_locations is None:
-        raise RuntimeError("Python audioop compatibility package is not installed")
-    audioop_source = Path(next(iter(audioop_spec.submodule_search_locations)))
-    shutil.copytree(
-        audioop_source,
-        staging / "audioop",
-        copy_function=_copy_writable,
-        ignore=_ignore_bytecode,
-    )
-    for path in staging.rglob("*"):
-        os.chmod(path, 0o755 if path.is_dir() else 0o644)
+    try:
+        staging.mkdir()
+        source_package = Path(__file__).resolve().parent
+        plugin_root = source_package.parents[1]
+        shutil.copytree(
+            source_package,
+            staging / "zara_discord_service",
+            copy_function=_copy_writable,
+            ignore=_ignore_bytecode,
+        )
 
-    wrapper_source = plugin_root / "zara-plugin" / "zara_discord.py"
-    shutil.copy2(wrapper_source, wrapper_staging)
-    _publish_install(
-        staging=staging,
-        library_dir=library_dir,
-        wrapper_staging=wrapper_staging,
-        plugin_entry=plugin_entry,
-    )
+        discord_spec = importlib.util.find_spec("discord")
+        if discord_spec is None or discord_spec.submodule_search_locations is None:
+            raise RuntimeError("discord.py is not installed in the installer environment")
+        discord_source = Path(next(iter(discord_spec.submodule_search_locations)))
+        shutil.copytree(
+            discord_source,
+            staging / "discord",
+            copy_function=_copy_writable,
+            ignore=_ignore_bytecode,
+        )
+        audioop_spec = importlib.util.find_spec("audioop")
+        if audioop_spec is None or audioop_spec.submodule_search_locations is None:
+            raise RuntimeError("Python audioop compatibility package is not installed")
+        audioop_source = Path(next(iter(audioop_spec.submodule_search_locations)))
+        shutil.copytree(
+            audioop_source,
+            staging / "audioop",
+            copy_function=_copy_writable,
+            ignore=_ignore_bytecode,
+        )
+        for path in staging.rglob("*"):
+            os.chmod(path, 0o755 if path.is_dir() else 0o644)
+
+        wrapper_source = plugin_root / "zara-plugin" / "zara_discord.py"
+        shutil.copy2(wrapper_source, wrapper_staging)
+        _publish_install(
+            staging=staging,
+            library_dir=library_dir,
+            wrapper_staging=wrapper_staging,
+            plugin_entry=plugin_entry,
+        )
+    except BaseException:
+        _remove_path(staging)
+        _remove_path(wrapper_staging)
+        raise
 
     readme = config_dir / "README.txt"
     readme.write_text(
