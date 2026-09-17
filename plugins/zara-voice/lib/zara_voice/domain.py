@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
+_MAX_IN_MEMORY_ARTIFACTS = 32
+
+
 class VoiceError(RuntimeError):
     pass
 
@@ -55,6 +58,7 @@ class VoiceService:
         self.policy = policy or VoicePolicy()
         self._profiles: dict[str, VoiceProfile] = {}
         self._artifacts: dict[str, dict[str, Any]] = {}
+        self._artifact_bytes = 0
         self._request_backends: dict[str, Any] = {}
 
     def register_profile(self, profile: VoiceProfile) -> None:
@@ -127,7 +131,7 @@ class VoiceService:
 
         artifact_id = self._artifact_id(artifact, text)
         artifact["artifact_id"] = artifact_id
-        self._artifacts[artifact_id] = dict(artifact)
+        self._retain_artifact(artifact_id, artifact)
         if isinstance(request_id, str) and request_id and callable(callback):
             self._request_backends[request_id] = backend
         if cache:
@@ -195,6 +199,28 @@ class VoiceService:
             "backend_profile": profile.backend_profile,
             "locality": locality,
         }
+
+    def _retain_artifact(self, artifact_id: str, artifact: dict[str, Any]) -> None:
+        previous = self._artifacts.pop(artifact_id, None)
+        if previous is not None:
+            previous_audio = previous.get("audio")
+            if isinstance(previous_audio, bytes):
+                self._artifact_bytes -= len(previous_audio)
+
+        retained = dict(artifact)
+        self._artifacts[artifact_id] = retained
+        self._artifact_bytes += len(retained["audio"])
+        self._evict_artifacts()
+
+    def _evict_artifacts(self) -> None:
+        byte_limit = max(self.policy.max_audio_bytes, self.policy.max_cache_bytes)
+        while self._artifacts and (
+            len(self._artifacts) > _MAX_IN_MEMORY_ARTIFACTS
+            or self._artifact_bytes > byte_limit
+        ):
+            oldest_id = next(iter(self._artifacts))
+            oldest = self._artifacts.pop(oldest_id)
+            self._artifact_bytes -= len(oldest["audio"])
 
     def _cache(self, artifact_id: str, audio: bytes) -> None:
         self.cache_root.mkdir(parents=True, exist_ok=True)
