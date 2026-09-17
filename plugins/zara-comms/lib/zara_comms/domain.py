@@ -194,9 +194,18 @@ class CommsDomain:
             "body": self._text(draft.get("body", ""), "body", self.max_body_bytes, allow_empty=True),
             "reply_to": draft.get("reply_to"),
         }
-        evidence = adapter.send(normalized)
-        accepted = isinstance(evidence, dict) and evidence.get("accepted") is True
-        message = self.get(provider_name, evidence.get("message_id")) if accepted and evidence.get("message_id") else None
+        provider_evidence = adapter.send(normalized)
+        accepted = isinstance(provider_evidence, dict) and provider_evidence.get("accepted") is True
+        message_id = None
+        if accepted and isinstance(provider_evidence, dict) and provider_evidence.get("message_id") is not None:
+            try:
+                message_id = self._text(provider_evidence.get("message_id"), "message id", 256)
+            except CommsError:
+                message_id = None
+        evidence = {"accepted": accepted}
+        if message_id is not None:
+            evidence["message_id"] = message_id
+        message = self.get(provider_name, message_id) if accepted and message_id is not None else None
         verified = accepted and message is not None
         if verified:
             verified = (
