@@ -14,7 +14,7 @@ from zara.plugins.api import PluginMetadata, ServicePlugin
 class PolicyPlugin(ServicePlugin):
     metadata = PluginMetadata(
         name="zara-policy", version="0.1.0",
-        description="Executable Prolog output matching with bounded model revisions",
+        description="Executable Prolog final-answer matching with bounded model advice",
     )
 
     def __init__(self) -> None:
