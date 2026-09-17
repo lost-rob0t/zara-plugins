@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import socket
 from urllib.error import HTTPError, URLError
@@ -33,12 +34,18 @@ class HomeAssistantHTTPTransport:
             raise HomeAssistantHTTPError("invalid-base-url")
         if not self._valid_bearer_token(access_token):
             raise HomeAssistantHTTPError("invalid-access-token")
-        if timeout <= 0 or timeout > 60:
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not math.isfinite(timeout)
+            or timeout <= 0
+            or timeout > 60
+        ):
             raise HomeAssistantHTTPError("invalid-timeout")
         self.base_url = base_url.rstrip("/")
         self._access_token = access_token
         self._refresh_token = refresh_token
-        self.timeout = timeout
+        self.timeout = float(timeout)
         self._opener = build_opener(_RejectRedirects())
 
     def request(self, method: str, path: str, payload=None):
