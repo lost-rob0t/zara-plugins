@@ -1,0 +1,28 @@
+name: Prolog policy contract
+on:
+  pull_request:
+    paths:
+      - 'plugins/zara-prolog/**'
+      - 'plugins/zara-policy/**'
+      - 'profiles/prolog-policy/**'
+      - 'plugins.json'
+      - '.github/workflows/prolog-policy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native Prolog test runtime
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends swi-prolog-nox
+      - name: Validate complete registry
+        run: python3 scripts/validate-registry.py
+      - name: Require native semantics and run deterministic tests
+        env:
+          ZARA_REQUIRE_SWIPL: '1'
+        run: |
+          python3 -m unittest discover -s plugins/zara-prolog/test -t plugins/zara-prolog/test
+          python3 -m unittest discover -s plugins/zara-policy/test -t plugins/zara-policy/test

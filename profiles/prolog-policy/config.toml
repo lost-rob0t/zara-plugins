@@ -1,0 +1,14 @@
+# Startup profile for installed zara-prolog and zara-policy services.
+# Merge these tables with existing config; preserve existing autoload entries.
+# Plugin-private executable settings are in their own XDG config.pl files.
+[prolog]
+main_file = "main.pl"
+load_on_startup = true
+
+[modules]
+search_paths = ["~/.zarathushtra/plugins", "~/.zarathushtra/modules"]
+autoload = ["zara_prolog_entrypoint.py", "zara_policy_entrypoint.py"]
+
+[hooks]
+enabled = true
+allow_override = true
