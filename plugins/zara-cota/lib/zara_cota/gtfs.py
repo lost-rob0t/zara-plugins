@@ -250,7 +250,7 @@ class StaticSnapshot:
             return False
         rule = self.calendars.get(service_id)
         if rule is None:
-            return not self.calendars
+            return False
         value = day.strftime("%Y%m%d")
         if value < rule.start_date or value > rule.end_date:
             return False
