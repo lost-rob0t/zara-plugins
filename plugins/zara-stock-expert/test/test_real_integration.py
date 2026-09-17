@@ -29,7 +29,6 @@ class RealMarketExpertIntegrationTest(unittest.TestCase):
     def test_provider_tool_kb_money_and_prolog_on_real_runtime(self):
         from zara.plugins import PluginRuntime, RuntimeStatus
         from zara.runtime.bridge import RuntimeEventBus
-        from zara_stock_expert.service import StockService
         import zara.plugins.builtin.market_data
         import zara_expert.backend
         self.assertIsNotNone(shutil.which('swipl'))
@@ -58,6 +57,7 @@ class RealMarketExpertIntegrationTest(unittest.TestCase):
                     plugin.start(runtime)
                     tools = {tool.name: tool for tool in plugin.tools()}
                     self.assertTrue(tools['stock.fetch_quote'].metadata['zara_requires_approval'])
+                    self.assertFalse((tools['stock.daily_investor'].metadata or {}).get('zara_requires_approval', False))
                     first = json.loads(tools['stock.fetch_quote'].invoke({'instrument': 'XNAS:EXAMPLE'}))
                     second = json.loads(tools['stock.fetch_quote'].invoke({'instrument': 'XNAS:EXAMPLE'}))
                     self.assertEqual(first, second)
@@ -82,6 +82,15 @@ class RealMarketExpertIntegrationTest(unittest.TestCase):
                     self.assertEqual(forecast['provenance'], 'model_forecast')
                     models = json.loads(tools['stock.neural_models'].invoke({'instrument': 'XNAS:EXAMPLE'}))
                     self.assertEqual(len(models['models']), 1)
+                    daily = json.loads(tools['stock.daily_investor'].invoke({}))
+                    self.assertTrue(daily['authorization']['authorized'])
+                    self.assertEqual(daily['authorization']['mode'], 'research')
+                    self.assertFalse(daily['execution_eligible'])
+                    self.assertFalse(daily['live_execution'])
+                    self.assertEqual(len(daily['instruments']), 1)
+                    self.assertEqual(daily['instruments'][0]['instrument'], 'XNAS:EXAMPLE')
+                    self.assertEqual(daily['instruments'][0]['daily_note']['provenance'], 'model_note')
+                    self.assertGreaterEqual(transport.call_count, 3)
                     exact = json.loads(tools['stock.money'].invoke({'operation': 'add', 'arguments_json':
                         '{"left":{"amount":"0.1","currency":"USD"},"right":{"amount":"0.2","currency":"USD"}}'}))
                     self.assertEqual(exact['amount'], '0.30')
