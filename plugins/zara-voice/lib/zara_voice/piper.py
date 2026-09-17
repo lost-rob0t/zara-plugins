@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import importlib
 import io
+import json
 import uuid
 import wave
 from pathlib import Path
 from typing import Any, Callable
 
 from .domain import VoiceError
+
+
+_MAX_CONFIG_BYTES = 1024 * 1024
 
 
 class _BoundedBytesIO(io.BytesIO):
@@ -51,6 +55,7 @@ class PiperBackend:
             raise VoiceError("Piper voice model is unavailable")
         if not self._config_path.is_file():
             raise VoiceError("Piper voice config is unavailable")
+        self._validate_strict_local_config()
 
     def synthesize(self, request: Any) -> dict[str, Any]:
         if not isinstance(request, dict):
@@ -80,6 +85,23 @@ class PiperBackend:
             "duration_seconds": duration,
             "request_id": uuid.uuid4().hex,
         }
+
+    def _validate_strict_local_config(self) -> None:
+        try:
+            with self._config_path.open("rb") as config_file:
+                raw_config = config_file.read(_MAX_CONFIG_BYTES + 1)
+            if len(raw_config) > _MAX_CONFIG_BYTES:
+                raise VoiceError("Piper voice config is invalid")
+            config = json.loads(raw_config)
+        except VoiceError:
+            raise
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError):
+            raise VoiceError("Piper voice config is invalid") from None
+
+        if not isinstance(config, dict):
+            raise VoiceError("Piper voice config is invalid")
+        if config.get("phoneme_type") == "pinyin":
+            raise VoiceError("Piper voice requires unsupported runtime resources")
 
     def _get_voice(self) -> Any:
         if self._voice is not None:
