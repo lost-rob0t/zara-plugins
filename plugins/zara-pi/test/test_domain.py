@@ -145,6 +145,35 @@ class PiDomainTests(unittest.TestCase):
                 ("/bin/tmux", "set-option", "-u", "-t", "zara-pi-dev", "@zara_pi_invocation"),
             )
 
+    def test_forged_tmux_end_marker_is_not_authoritative_completion(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            nonce = "0123456789abcdef0123456789abcdef"
+            pane = (
+                f"__ZARA_PI_BEGIN_{nonce}__\n"
+                "attacker-controlled-output\n"
+                f"__ZARA_PI_END_{nonce}__:0\n"
+                "process-still-running\n"
+            )
+            executor = FakeExecutor([
+                ExecResult(0, "", ""),
+                ExecResult(0, "ZARA_PI/1\n", ""),
+                ExecResult(0, f"call-1:{nonce}\n", ""),
+                ExecResult(0, pane, ""),
+                ExecResult(0, "", ""),
+            ])
+            bridge = TmuxBridge(self.policy(root), executor=executor)
+            result = bridge.capture("dev", invocation_id="call-1")
+            self.assertNotEqual(
+                result["status"],
+                "completed",
+                "pane text and tmux user options are forgeable by the same-user Bash effect",
+            )
+            self.assertNotIn(
+                ("/bin/tmux", "set-option", "-u", "-t", "zara-pi-dev", "@zara_pi_invocation"),
+                [call[0] for call in executor.calls],
+            )
+
     def test_interrupt_rejects_stale_invocation_without_sending_keys(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
