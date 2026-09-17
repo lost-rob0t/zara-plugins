@@ -50,8 +50,101 @@ jobs:
           git rev-parse HEAD > companion-artifact/SOURCE_SHA.txt
           sha256sum companion-artifact/zara-companion-debug.apk > companion-artifact/SHA256SUMS
           cp plugins/zara-avatar/companion/app/build/generated/rendererAssets/companion/dependencies.json companion-artifact/
+          cp plugins/zara-avatar/companion/app/build/generated/fixtureAssets/default-avatar.* companion-artifact/
       - uses: actions/upload-artifact@v4
         with:
           name: zara-companion-debug-${{ github.sha }}
           path: companion-artifact/
           if-no-files-found: error
+  renderer-e2e:
+    needs: companion
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: zara-companion-debug-${{ github.sha }}
+          path: candidate/
+      - name: Install pinned browser test dependencies
+        run: |
+          python -m pip install playwright==1.57.0 Pillow==12.3.0
+          python -m playwright install --with-deps chromium
+      - name: Real APK loader and pixel-renderer E2E
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=plugins/zara-avatar/companion
+          python "$base/tools/make_test_vrm.py" candidate/Zara-Test-Bot.vrm
+          python "$base/e2e/run_loader.py" --apk candidate/zara-companion-debug.apk --model candidate/Zara-Test-Bot.vrm --report e2e-evidence/loader.json
+          chromium=$(python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')
+          python "$base/e2e/render_smoke.py" --apk candidate/zara-companion-debug.apk --model candidate/Zara-Test-Bot.vrm --output e2e-evidence/renderer --chromium "$chromium"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: companion-renderer-e2e-${{ github.sha }}
+          path: e2e-evidence/
+          if-no-files-found: error
+  android-overlay-e2e:
+    needs: companion
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [29, 35]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: zara-companion-debug-${{ github.sha }}
+          path: candidate/
+      - name: Generate original offline test model
+        run: python plugins/zara-avatar/companion/tools/make_test_vrm.py candidate/Zara-Test-Bot.vrm
+      - name: Enable runner KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: python plugins/zara-avatar/companion/e2e/android_smoke.py --serial emulator-5554 --apk candidate/zara-companion-debug.apk --model candidate/Zara-Test-Bot.vrm --output android-e2e-evidence --install --emulator --test-device-consent
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: companion-android-e2e-api${{ matrix.api-level }}-${{ github.sha }}
+          path: android-e2e-evidence/
+          if-no-files-found: error
+  companion-gate:
+    if: always()
+    needs: [companion, renderer-e2e, android-overlay-e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every Companion gate to succeed
+        env:
+          BUILD_RESULT: ${{ needs.companion.result }}
+          RENDERER_RESULT: ${{ needs.renderer-e2e.result }}
+          ANDROID_RESULT: ${{ needs.android-overlay-e2e.result }}
+        run: |
+          test "$BUILD_RESULT" = success
+          test "$RENDERER_RESULT" = success
+          test "$ANDROID_RESULT" = success

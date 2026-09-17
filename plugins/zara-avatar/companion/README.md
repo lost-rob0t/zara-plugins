@@ -3,7 +3,12 @@
 Tracking: zara-plugins #805; host contract: Zara #924; architecture: Zara #923.
 
 **Implemented source, not yet shipping-accepted.** A separate Android app named
-**Zara Companion**, package `ai.zara.companion`, version `0.1.0-alpha.1`.
+**Zara Companion**, package `ai.zara.companion`, source version `0.1.0-alpha.2`.
+The earlier downloadable alpha.1 APK does not contain the bundled-model button.
+Use the exact current PR artifact and its source/checksum receipt; passing old
+alpha.1 checks is not evidence that the alpha.2 build or new E2E jobs passed.
+See [E2E.md](E2E.md) for the automated and physical-device acceptance boundaries.
+
 This is an Android consumer of the existing `zara-avatar` renderer dependencies,
 not a second Python plugin registry entry. The existing Electron renderer and
 published plugin catalog are unchanged.
@@ -30,7 +35,12 @@ facial presets are not synthesized or claimed as visually working. Actual
 audio-driven lip sync remains a host integration gate; the demo generates no
 speech and does not listen to the microphone. Dances have no bundled music.
 
-Import your own licensed VRM. No third-party avatar or motion assets are bundled.
+The build generates an original 54 KiB **Zara Test Bot** VRM offline and
+includes **Use bundled test bot**. It is real VRM 1.0 geometric test content with
+humanoid bones and expression morphs, dedicated under CC0-1.0. It is not a
+production character or the pixiv sample. The existing alpha.1 APK requires
+manual import of the supplied `Zara-Test-Bot.vrm`. No third-party avatar or
+motion assets are bundled.
 VRM 1.0 and VRM 0.x embedded GLB containers are accepted within documented budgets:
 32 MiB file, 1 MiB JSON, 1024 nodes, depth 64, 2 million accessor elements,
 4096-pixel image sides and 32 million total source texels. External resources,
@@ -66,7 +76,8 @@ be checked separately from the pure JavaScript/Python tests.
 
 ## Use
 
-Open Companion, allow the overlay, import a VRM, and tap **Show companion**.
+Open Companion, allow the overlay, select **Use bundled test bot** or import a
+VRM, and tap **Show companion**.
 Then select an emotion or a dance. The avatar uses a small transparent window;
 ordinary taps pass through until **Move avatar** enables drag mode. The status
 notification opens controls and has an immediate **Stop** action. **Hide** removes

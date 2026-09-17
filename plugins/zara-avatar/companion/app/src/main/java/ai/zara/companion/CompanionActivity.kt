@@ -20,6 +20,7 @@ class CompanionActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var status: TextView
     private lateinit var importButton: Button
+    private lateinit var sampleButton: Button
     private var importing = false
 
     override fun onCreate(state: Bundle?) {
@@ -52,6 +53,9 @@ class CompanionActivity : Activity() {
                 type = "*/*"; addCategory(Intent.CATEGORY_OPENABLE)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }, 1)
+        }
+        sampleButton = button("Use bundled test bot") {
+            importAvatar { assets.open("default-avatar.vrm") }
         }
         button("Show companion") { command("show") }
         button("Hide companion") { stopService(Intent(this, OverlayService::class.java)) }
@@ -93,7 +97,12 @@ class CompanionActivity : Activity() {
         super.onActivityResult(request, result, data)
         val uri = data?.data ?: return
         if (request != 1 || result != RESULT_OK || importing) return
-        importing = true; importButton.isEnabled = false
+        importAvatar { contentResolver.openInputStream(uri) }
+    }
+
+    private fun importAvatar(openStream: () -> java.io.InputStream?) {
+        if (importing) return
+        importing = true; importButton.isEnabled = false; sampleButton.isEnabled = false
         stopService(Intent(this, OverlayService::class.java))
         scope.launch {
             try {
@@ -101,7 +110,7 @@ class CompanionActivity : Activity() {
                     val temp = File.createTempFile("avatar-", ".pending", filesDir)
                     try {
                         val digest = MessageDigest.getInstance("SHA-256")
-                        contentResolver.openInputStream(uri).use { input ->
+                        openStream().use { input ->
                             requireNotNull(input)
                             FileOutputStream(temp).use { output ->
                                 val buffer = ByteArray(32768)
@@ -134,7 +143,7 @@ class CompanionActivity : Activity() {
                 status.text = "Imported. Tap Show companion to validate and render."
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) { status.text = "Import failed. Choose a readable VRM under 32 MiB." }
-            finally { importing = false; importButton.isEnabled = true }
+            finally { importing = false; importButton.isEnabled = true; sampleButton.isEnabled = true }
         }
     }
 

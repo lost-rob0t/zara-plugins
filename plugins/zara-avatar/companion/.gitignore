@@ -2,3 +2,6 @@
 **/build/
 local.properties
 __pycache__/
+*.pyc
+e2e-evidence/
+android-e2e-evidence/
