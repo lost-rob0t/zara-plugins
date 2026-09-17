@@ -119,11 +119,15 @@ class VoiceService:
         }
         result = backend.synthesize(request)
         artifact = self._validate_backend_result(result, selected, locality)
+        request_id = artifact.get("request_id")
+        callback = getattr(backend, "cancel", None)
+        if isinstance(request_id, str) and request_id and callable(callback):
+            if request_id in self._request_backends:
+                raise VoiceError("voice backend returned duplicate active request id")
+
         artifact_id = self._artifact_id(artifact, text)
         artifact["artifact_id"] = artifact_id
         self._artifacts[artifact_id] = dict(artifact)
-        request_id = artifact.get("request_id")
-        callback = getattr(backend, "cancel", None)
         if isinstance(request_id, str) and request_id and callable(callback):
             self._request_backends[request_id] = backend
         if cache:
