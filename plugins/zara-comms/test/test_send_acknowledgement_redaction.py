@@ -1,11 +1,51 @@
 import sys
+import types
 import unittest
 from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
+
+
+@dataclass(frozen=True)
+class PluginMetadata:
+    name: str
+    version: str = ""
+    api_version: str = "1"
+    description: str = ""
+
+
+class ServicePlugin:
+    pass
+
+
+class StructuredTool:
+    @classmethod
+    def from_function(cls, *, func, name, description, metadata=None, **_kwargs):
+        return SimpleNamespace(
+            func=func,
+            name=name,
+            description=description,
+            metadata=metadata,
+        )
+
+
+langchain_core = types.ModuleType("langchain_core")
+langchain_tools = types.ModuleType("langchain_core.tools")
+langchain_tools.StructuredTool = StructuredTool
+sys.modules.setdefault("langchain_core", langchain_core)
+sys.modules.setdefault("langchain_core.tools", langchain_tools)
+
+zara = types.ModuleType("zara")
+zara_plugins = types.ModuleType("zara.plugins")
+zara_plugins.PluginMetadata = PluginMetadata
+zara_plugins.ServicePlugin = ServicePlugin
+sys.modules.setdefault("zara", zara)
+sys.modules.setdefault("zara.plugins", zara_plugins)
 
 from zara_comms.domain import CommsDomain, CommsError
 from zara_comms.plugin import ZaraCommsPlugin
