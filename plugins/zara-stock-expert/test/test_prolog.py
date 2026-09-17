@@ -12,6 +12,12 @@ class PrologContractTest(unittest.TestCase):
             "stock_trade_decision(assessment(paper,[]),paper_candidate),"
             "stock_trade_decision(assessment(paper,[stale_quote]),blocked),"
             "stock_trade_explain(assessment(live,[]),explanation(blocked,[live_execution_unavailable])),"
+            "stock_daily_investor_authorized(research),"
+            "\\+stock_daily_investor_authorized(live),"
+            "stock_daily_investor_plan(research,plan(_,Denied)),"
+            "member(live_execution,Denied),member(broker_order,Denied),member(arbitrary_instrument,Denied),"
+            "stock_daily_investor_explain(research,explanation(authorized,_)),"
+            "stock_daily_investor_explain(live,explanation(blocked,[live_execution_unavailable])),"
             "\\+stock_trade_decision(assessment(other,[]),_),halt(0)"
         )
         result = subprocess.run(['swipl', '-q', '-s', str(kb), '-g', goal, '-t', 'halt(1)'],
