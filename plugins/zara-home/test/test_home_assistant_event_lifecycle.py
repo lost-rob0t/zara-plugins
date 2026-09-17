@@ -125,6 +125,49 @@ class HomeAssistantEventLifecycleTest(unittest.TestCase):
         self.assertEqual(waits, [1.0])
         self.assertTrue(first.closed)
 
+    def test_health_reports_reauth_required_without_exposing_token(self):
+        token = "super-secret-provider-token"
+        sock = FakeSocket(
+            [
+                json.dumps({"type": "auth_required"}),
+                json.dumps({"type": "auth_invalid", "message": token}),
+            ]
+        )
+        stream = HomeAssistantEventStream(
+            "https://ha.example",
+            token,
+            connect=lambda _: sock,
+            reconcile=lambda: [],
+            reconnect_backoff=(1.0,),
+            wait=lambda _: True,
+        )
+
+        stream.run_forever()
+
+        health = stream.status_snapshot()
+        self.assertEqual(health, {"status": "reauth-required", "fresh": False})
+        self.assertNotIn(token, json.dumps(health))
+
+    def test_health_reports_provider_unavailable_after_disconnect(self):
+        sock = FakeSocket(handshake(1))
+        stream, _ = self.make_stream([sock], wait=lambda _: True)
+
+        stream.run_forever()
+
+        self.assertEqual(
+            stream.status_snapshot(),
+            {"status": "unavailable", "fresh": False, "reason": "provider-unavailable"},
+        )
+
+    def test_health_returns_ready_after_subscription_and_reconcile(self):
+        sock = FakeSocket(handshake(1))
+        stream, _ = self.make_stream([sock])
+
+        stream.connect_once()
+        stream.poll_once()
+
+        self.assertEqual(stream.status_snapshot(), {"status": "ready", "fresh": True})
+
     def test_backoff_and_timeout_configuration_are_bounded(self):
         with self.assertRaisesRegex(RuntimeError, "invalid-io-timeout"):
             HomeAssistantEventStream(
