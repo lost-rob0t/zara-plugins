@@ -6,6 +6,7 @@ import os
 from langchain_core.tools import StructuredTool
 from zara.plugins import PluginMetadata, ServicePlugin
 
+from .caldav import CalDavCalendarBackend, CalDavCalendarError
 from .domain import CalendarDomain, CalendarError
 from .google import GoogleCalendarBackend
 
@@ -20,15 +21,17 @@ class UnavailableCalendarBackend:
         raise CalendarError(self.reason)
 
 
-def _backend_from_environment():
+def _present(names):
+    return any(os.environ.get(name) not in (None, "") for name in names)
+
+
+def _google_backend_from_environment():
     access_token = os.environ.get("ZARA_CALENDAR_GOOGLE_ACCESS_TOKEN")
     refresh_token = os.environ.get("ZARA_CALENDAR_GOOGLE_REFRESH_TOKEN")
     client_id = os.environ.get("ZARA_CALENDAR_GOOGLE_CLIENT_ID")
     client_secret = os.environ.get("ZARA_CALENDAR_GOOGLE_CLIENT_SECRET")
-    if not any((access_token, refresh_token, client_id, client_secret)):
-        return None
     if not all((access_token, refresh_token, client_id, client_secret)):
-        raise CalendarError("google calendar credentials are incomplete")
+        raise CalendarError("Google Calendar credentials are incomplete")
     return GoogleCalendarBackend(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -36,6 +39,66 @@ def _backend_from_environment():
         client_secret=client_secret,
         default_calendar_id=os.environ.get("ZARA_CALENDAR_GOOGLE_CALENDAR_ID", "primary"),
     )
+
+
+def _caldav_backend_from_environment():
+    calendar_url = os.environ.get("ZARA_CALENDAR_CALDAV_URL")
+    username = os.environ.get("ZARA_CALENDAR_CALDAV_USERNAME")
+    password = os.environ.get("ZARA_CALENDAR_CALDAV_PASSWORD")
+    bearer_token = os.environ.get("ZARA_CALENDAR_CALDAV_BEARER_TOKEN")
+    if not calendar_url:
+        raise CalendarError("CalDAV calendar URL is required")
+    basic_supplied = username is not None or password is not None
+    if basic_supplied and not all((username, password)):
+        raise CalendarError("CalDAV Basic credentials are incomplete")
+    if not basic_supplied and not bearer_token:
+        raise CalendarError("CalDAV credentials are incomplete")
+    try:
+        return CalDavCalendarBackend(
+            calendar_url=calendar_url,
+            calendar_id=os.environ.get("ZARA_CALENDAR_CALDAV_CALENDAR_ID", "default"),
+            username=username,
+            password=password,
+            bearer_token=bearer_token,
+        )
+    except CalDavCalendarError as error:
+        raise CalendarError(str(error)) from error
+
+
+def _backend_from_environment():
+    google_names = (
+        "ZARA_CALENDAR_GOOGLE_ACCESS_TOKEN",
+        "ZARA_CALENDAR_GOOGLE_REFRESH_TOKEN",
+        "ZARA_CALENDAR_GOOGLE_CLIENT_ID",
+        "ZARA_CALENDAR_GOOGLE_CLIENT_SECRET",
+        "ZARA_CALENDAR_GOOGLE_CALENDAR_ID",
+    )
+    caldav_names = (
+        "ZARA_CALENDAR_CALDAV_URL",
+        "ZARA_CALENDAR_CALDAV_CALENDAR_ID",
+        "ZARA_CALENDAR_CALDAV_USERNAME",
+        "ZARA_CALENDAR_CALDAV_PASSWORD",
+        "ZARA_CALENDAR_CALDAV_BEARER_TOKEN",
+    )
+    selected = os.environ.get("ZARA_CALENDAR_BACKEND", "").strip().lower()
+    google_present = _present(google_names)
+    caldav_present = _present(caldav_names)
+
+    if selected and selected not in {"google", "caldav"}:
+        raise CalendarError("calendar backend must be google or caldav")
+    if not selected:
+        if google_present and caldav_present:
+            raise CalendarError("multiple calendar providers are configured; set ZARA_CALENDAR_BACKEND")
+        if google_present:
+            selected = "google"
+        elif caldav_present:
+            selected = "caldav"
+        else:
+            return None
+
+    if selected == "google":
+        return _google_backend_from_environment()
+    return _caldav_backend_from_environment()
 
 
 class ZaraCalendarPlugin(ServicePlugin):
