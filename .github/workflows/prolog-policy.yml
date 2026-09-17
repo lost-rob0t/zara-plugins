@@ -16,12 +16,24 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout pinned Zara PrologEngine contract
+        uses: actions/checkout@v4
+        with:
+          repository: lost-rob0t/zara
+          ref: b1ca89d52e0ffc84f8ad6eb18987f3f77fc841e5
+          path: .ci-zara
       - name: Install native Prolog test runtime
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends swi-prolog-nox
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends swi-prolog-nox
+          python3 -m pip install --disable-pip-version-check 'pyswip==0.3.1'
+      - name: Verify pinned bridge source
+        run: test "$(git -C .ci-zara rev-parse HEAD)" = 'b1ca89d52e0ffc84f8ad6eb18987f3f77fc841e5'
       - name: Validate complete registry
         run: python3 scripts/validate-registry.py
-      - name: Require native semantics and run deterministic tests
+      - name: Require native semantics and real lifecycle evidence
         env:
+          PYTHONPATH: ${{ github.workspace }}/.ci-zara
           ZARA_REQUIRE_SWIPL: '1'
         run: |
           python3 -m unittest discover -s plugins/zara-prolog/test -t plugins/zara-prolog/test
