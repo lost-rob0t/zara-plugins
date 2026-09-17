@@ -220,7 +220,8 @@ class CommsDomain:
         verified = accepted and message is not None
         if verified:
             verified = (
-                message["provider"] == normalized["provider"]
+                message["message_id"] == message_id
+                and message["provider"] == normalized["provider"]
                 and message["account_id"] == normalized["account_id"]
                 and message["recipients"] == normalized["recipients"]
                 and message["body"] == normalized["body"]
