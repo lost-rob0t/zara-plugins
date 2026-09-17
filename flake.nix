@@ -20,6 +20,22 @@
           # runtime library exported by each plugin package.
           python = pkgs.python313;
 
+          # Registry dependency names normally resolve from the Python package
+          # set. Piper is packaged by nixpkgs as a top-level Python application,
+          # so convert the pinned inference-only build into a Python module for
+          # the same interpreter rather than pulling its training/server extras.
+          pythonDependencyFor = packages: dependency:
+            if dependency == "piper-tts" then
+              packages.toPythonModule (
+                pkgs.piper-tts.override {
+                  withTrain = false;
+                  withHTTP = false;
+                  withAlignment = false;
+                }
+              )
+            else
+              packages.${dependency};
+
           pythonFor = entry:
             let
               dependencies = entry.python_dependencies or [ ];
@@ -28,7 +44,7 @@
               python
             else
               python.withPackages (packages:
-                map (dependency: packages.${dependency}) dependencies
+                map (pythonDependencyFor packages) dependencies
               );
 
           allPluginDependencies = pkgs.lib.unique (
@@ -38,12 +54,12 @@
           );
 
           developmentPython = python.withPackages (packages:
-            map (dependency: packages.${dependency}) allPluginDependencies
+            map (pythonDependencyFor packages) allPluginDependencies
           );
 
           compatibilityPython = python.withPackages (packages:
             [ packages.langchain-core ]
-            ++ map (dependency: packages.${dependency}) allPluginDependencies
+            ++ map (pythonDependencyFor packages) allPluginDependencies
           );
 
           installedCompatibilityPython = python.withPackages (packages: [
@@ -204,6 +220,16 @@
               + ''
                 PYTHONPATH=${pluginPackages.zara-discord}/share/zara/runtime/zara-discord/lib \
                   ${python}/bin/python3 -c 'import discord, audioop, zara_discord_service'
+                PYTHONPATH=${pluginPackages.zara-voice}/share/zara/runtime/zara-voice/lib \
+                  ${python}/bin/python3 -c 'import piper, onnxruntime, pathvalidate, zara_voice'
+                PYTHONPATH=${pluginPackages.zara-voice}/share/zara/runtime/zara-voice/lib \
+                  ${python}/bin/python3 - <<'PY'
+                import importlib.util
+
+                for name in ("torch", "flask", "onnx"):
+                    if importlib.util.find_spec(name) is not None:
+                        raise SystemExit(f"unexpected Piper optional dependency in runtime: {name}")
+                PY
                 touch $out
               '');
           } // pkgs.lib.listToAttrs (
