@@ -87,6 +87,12 @@ class ZaraHomePlugin(ServicePlugin):
     def status(self) -> str:
         if isinstance(self.provider, UnavailableHomeProvider):
             return self._json({"status": "unavailable", "reason": self.provider.reason})
+        if self.event_stream is not None:
+            snapshot = getattr(self.event_stream, "status_snapshot", None)
+            if callable(snapshot):
+                value = snapshot()
+                if isinstance(value, dict):
+                    return self._json(value)
         return self._json({"status": "ready"})
 
     def inventory(self) -> str:
@@ -109,7 +115,7 @@ class ZaraHomePlugin(ServicePlugin):
 
     def tools(self):
         return (
-            StructuredTool.from_function(func=self.status, name="home.status", description="Report whether a smart-home provider is configured."),
+            StructuredTool.from_function(func=self.status, name="home.status", description="Report smart-home provider and event-stream health."),
             StructuredTool.from_function(func=self.inventory, name="home.inventory", description="List normalized rooms, devices, capabilities and observed state."),
             StructuredTool.from_function(func=self.get_device, name="home.device.get", description="Read normalized state and capabilities for one device."),
             StructuredTool.from_function(func=self.room_state, name="home.room.state", description="Read normalized device, presence, and environment state for one room."),
