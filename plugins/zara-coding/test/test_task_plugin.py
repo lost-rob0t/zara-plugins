@@ -59,7 +59,7 @@ class TaskPluginTest(unittest.TestCase):
         plugin = TaskStateCodingPlugin(); plugin.task_state = Session()
         result = json.loads(plugin.task_record_evidence("task-1", "tests", "failed", "1 failed"))
         self.assertEqual(result, {"status": "ok"})
-        self.assertEqual(calls, [("task-1", {"kind": "tests", "status": "failed", "detail": "1 failed", "provenance": "caller"})])
+        self.assertEqual(calls, [("task-1", {"kind": "tests", "status": "failed", "detail": "1 failed"})])
 
     def test_task_creation_binds_fresh_repository_identity(self) -> None:
         calls: list[Path] = []
