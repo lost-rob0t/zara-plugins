@@ -165,6 +165,10 @@ class MemoryService:
             )
         if len(projections) != len(set(projections)):
             raise MemoryError("memory backend returned duplicate projection id")
+        if result["removed"]:
+            observed = self.recall(scope=scope, owner=owner)
+            if any(item["id"] == memory_id for item in observed):
+                raise MemoryError("memory backend reported removal but target is still recallable")
         return {"removed": result["removed"], "projection_ids": list(projections)}
 
     def observe_context(self, context: dict[str, Any]) -> None:
