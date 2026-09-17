@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 public final class ActivitySessionizer {
     public static final long MAX_RANGE_MS = 31L * 24L * 60L * 60L * 1000L;
@@ -81,7 +82,7 @@ public final class ActivitySessionizer {
             .map(entry -> new AppDuration(entry.getKey(), entry.getValue()))
             .sorted(Comparator.comparingLong(AppDuration::durationMs).reversed().thenComparing(AppDuration::packageName))
             .limit(limit)
-            .toList();
+            .collect(Collectors.toList());
 
         return new ActivitySummary(startMs, endMs, interactiveMs, appMs, sessions, topApps);
     }
