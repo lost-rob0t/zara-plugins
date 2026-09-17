@@ -34,6 +34,15 @@ class CommsDomain:
             raise CommsError(f"{name} contains invalid control characters")
         return value
 
+    @classmethod
+    def _optional_identifier(cls, value, name):
+        if value is None:
+            return None
+        identifier = cls._text(value, name, 256)
+        if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in identifier):
+            raise CommsError(f"{name} contains invalid control characters")
+        return identifier
+
     @staticmethod
     def _boolean(value, name):
         if type(value) is not bool:
@@ -188,11 +197,11 @@ class CommsDomain:
         normalized = {
             "provider": provider_name,
             "account_id": self._text(draft.get("account_id"), "account id", 256),
-            "conversation_id": draft.get("conversation_id"),
+            "conversation_id": self._optional_identifier(draft.get("conversation_id"), "conversation id"),
             "recipients": [self._text(value, "recipient", 320) for value in recipients],
             "subject": self._text(draft.get("subject", ""), "subject", 1024, allow_empty=True),
             "body": self._text(draft.get("body", ""), "body", self.max_body_bytes, allow_empty=True),
-            "reply_to": draft.get("reply_to"),
+            "reply_to": self._optional_identifier(draft.get("reply_to"), "reply_to"),
         }
         provider_evidence = adapter.send(normalized)
         accepted = isinstance(provider_evidence, dict) and provider_evidence.get("accepted") is True
