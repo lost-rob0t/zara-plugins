@@ -1,6 +1,10 @@
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "lib"))
 
 from zara_pi.domain import ExecResult, PiError, PiPolicy, TmuxBridge
 
