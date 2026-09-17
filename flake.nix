@@ -20,6 +20,33 @@
           # runtime library exported by each plugin package.
           python = pkgs.python313;
 
+          # Use the same pinned bridge source as Zara. The selected nixpkgs
+          # does not expose python313Packages.pyswip. Keep SWI discovery in
+          # the runtime closure rather than relying on the user's PATH.
+          pyswip = python.pkgs.buildPythonPackage rec {
+            pname = "pyswip";
+            version = "0.3.1";
+            format = "pyproject";
+            src = pkgs.fetchFromGitHub {
+              owner = "yuce";
+              repo = "pyswip";
+              rev = "v${version}";
+              hash = "sha256-WmePtJ7MnGIyfQ6O3TaWGADkvRSyPLFbj2C8nbOLM3k=";
+            };
+            nativeBuildInputs = [ python.pkgs.setuptools python.pkgs.wheel ];
+            buildInputs = [ pkgs.swi-prolog ];
+            postPatch = ''
+              substituteInPlace src/pyswip/core.py \
+                --replace-fail 'Popen(["swipl", "--dump-runtime-variables"]' \
+                  'Popen(["${pkgs.swi-prolog}/bin/swipl", "--dump-runtime-variables"]'
+            '';
+            doCheck = false;
+            pythonImportsCheck = [ "pyswip" ];
+          };
+
+          pythonDependency = packages: dependency:
+            if dependency == "pyswip" then pyswip else packages.${dependency};
+
           pythonFor = entry:
             let
               dependencies = entry.python_dependencies or [ ];
@@ -28,7 +55,7 @@
               python
             else
               python.withPackages (packages:
-                map (dependency: packages.${dependency}) dependencies
+                map (pythonDependency packages) dependencies
               );
 
           allPluginDependencies = pkgs.lib.unique (
@@ -38,12 +65,12 @@
           );
 
           developmentPython = python.withPackages (packages:
-            map (dependency: packages.${dependency}) allPluginDependencies
+            map (pythonDependency packages) allPluginDependencies
           );
 
           compatibilityPython = python.withPackages (packages:
             [ packages.langchain-core ]
-            ++ map (dependency: packages.${dependency}) allPluginDependencies
+            ++ map (pythonDependency packages) allPluginDependencies
           );
 
           installedCompatibilityPython = python.withPackages (packages: [
@@ -212,7 +239,11 @@
                 pkgs.runCommand "zara-check-${entry.name}-tests"
                   {
                     nativeBuildInputs = [ (pythonFor entry) ]
-                      ++ pkgs.lib.optional (entry.name == "zara-coding") pkgs.swi-prolog;
+                      ++ pkgs.lib.optional
+                        (builtins.elem entry.name [ "zara-coding" "zara-prolog" "zara-policy" ])
+                        pkgs.swi-prolog;
+                    ZARA_REQUIRE_SWIPL =
+                      if builtins.elem entry.name [ "zara-prolog" "zara-policy" ] then "1" else "0";
                     src = self;
                   }
                   ''
