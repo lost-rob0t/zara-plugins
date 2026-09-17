@@ -212,7 +212,8 @@ class VoiceServiceTests(unittest.TestCase):
 
     def test_cache_eviction_is_bounded(self):
         for index in range(20):
-            self.voice.synthesize(f"hello {index}", profile="mara", cache=True)
+            artifact = self.voice.synthesize(f"hello {index}", profile="mara", cache=True)
+            self.assertTrue(self.voice.cancel(request_id=artifact["request_id"])["cancelled"])
         total = sum(path.stat().st_size for path in self.root.glob("*.audio"))
         self.assertLessEqual(total, 128)
 
