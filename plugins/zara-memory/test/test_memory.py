@@ -40,6 +40,12 @@ class FakeBackend:
             and (query is None or query in item["text"])
         ]
 
+    def get(self, *, memory_id, scope, owner):
+        item = self.items.get(memory_id)
+        if item is None or item["scope"] != scope or item["owner"] != owner:
+            return None
+        return dict(item)
+
     def forget(self, *, memory_id, scope, owner):
         item = self.items.get(memory_id)
         if item is None or item["scope"] != scope or item["owner"] != owner:
@@ -55,6 +61,16 @@ class StaleForgetBackend(FakeBackend):
         if item is None or item["scope"] != scope or item["owner"] != owner:
             return {"removed": False, "projection_ids": []}
         return {"removed": True, "projection_ids": [f"projection:{memory_id}"]}
+
+
+class BoundedRecallStaleBackend(StaleForgetBackend):
+    def recall(self, *, scope, owner, query=None, memory_type=None):
+        return super().recall(
+            scope=scope,
+            owner=owner,
+            query=query,
+            memory_type=memory_type,
+        )[: MemoryService.MAX_RECALL_RESULTS]
 
 
 class AckOnlyBackend:
@@ -283,10 +299,50 @@ class MemoryServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(MemoryError, "still recallable"):
             memory.forget("mem-1", scope="project", owner="repo-a")
 
-    def test_forget_requires_scoped_recall_to_verify_acknowledged_removal(self):
+    def test_forget_rejects_ack_when_bounded_recall_hides_surviving_target(self):
+        backend = BoundedRecallStaleBackend()
+        for index in range(MemoryService.MAX_RECALL_RESULTS):
+            memory_id = f"decoy-{index}"
+            backend.items[memory_id] = {
+                "id": memory_id,
+                "scope": "project",
+                "owner": "repo-a",
+                "text": f"decoy {index}",
+                "facts": ["workflow_state(plan)"],
+                "provenance": {"source": "operator"},
+                "type": "coding.workflow",
+                "created_at": "2026-09-05T00:00:00Z",
+            }
+        backend.items["target"] = {
+            "id": "target",
+            "scope": "project",
+            "owner": "repo-a",
+            "text": "survives outside bounded recall",
+            "facts": ["workflow_state(plan)"],
+            "provenance": {"source": "operator"},
+            "type": "coding.workflow",
+            "created_at": "2026-09-05T00:00:00Z",
+        }
+        memory = MemoryService(backend)
+        memory.register_schema(
+            MemorySchema(
+                name="coding.workflow",
+                allowed_scopes=frozenset({"project"}),
+                allowed_fact_predicates=frozenset({"workflow_state"}),
+            )
+        )
+
+        self.assertNotIn(
+            "target",
+            [item["id"] for item in memory.recall(scope="project", owner="repo-a")],
+        )
+        with self.assertRaisesRegex(MemoryError, "still recallable"):
+            memory.forget("target", scope="project", owner="repo-a")
+
+    def test_forget_requires_exact_lookup_to_verify_acknowledged_removal(self):
         memory = MemoryService(AckOnlyBackend())
 
-        with self.assertRaisesRegex(MemoryError, "does not support recall/search"):
+        with self.assertRaisesRegex(MemoryError, "exact lookup"):
             memory.forget("mem-1", scope="project", owner="repo-a")
 
     def test_transient_context_is_never_persisted_implicitly(self):
