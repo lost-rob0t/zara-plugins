@@ -86,6 +86,19 @@ class PiperBackendTests(unittest.TestCase):
             PiperBackend(model_path=self.model, config_path=missing_config, loader=lambda *a, **k: None)
         self.assertNotIn(str(missing_config), str(caught.exception))
 
+    def test_pinyin_config_fails_closed_before_piper_can_download_runtime_resources(self):
+        self.config.write_text('{"phoneme_type":"pinyin"}', encoding="utf-8")
+        loader_calls = []
+
+        def load(*args, **kwargs):
+            loader_calls.append((args, kwargs))
+            return FakeVoice(wav_bytes())
+
+        with self.assertRaisesRegex(VoiceError, "unsupported runtime resources"):
+            PiperBackend(model_path=self.model, config_path=self.config, loader=load)
+
+        self.assertEqual(loader_calls, [])
+
     def test_loader_failure_is_redacted_and_does_not_echo_text_or_paths(self):
         secret_text = "say my secret transcript"
 
