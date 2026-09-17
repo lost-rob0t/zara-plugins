@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import base64
-import os
 import shutil
 import subprocess
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
 
 MAX_CLIPBOARD_BYTES = 16 * 1024
 MAX_SCREENSHOT_BYTES = 4 * 1024 * 1024
 MAX_APPLICATIONS = 64
+MAX_HOOK_PRIORITY = 100_000
 COMMAND_TIMEOUT_SECONDS = 5.0
+_SCREENSHOT_BACKENDS = frozenset({"auto", "grim", "scrot"})
 
 
 class DesktopError(RuntimeError):
@@ -22,6 +22,9 @@ class DesktopError(RuntimeError):
 @dataclass(frozen=True)
 class DesktopConfig:
     applications: Mapping[str, tuple[str, ...]]
+    screenshot_backend: str = "auto"
+    screenshot_context_hook_enabled: bool = False
+    screenshot_context_hook_priority: int = -500
 
     @classmethod
     def load(cls, configuration: object) -> "DesktopConfig":
@@ -45,23 +48,64 @@ class DesktopConfig:
             if not command or len(command) > 16 or any(not isinstance(item, str) or not item or len(item) > 1024 for item in command):
                 raise DesktopError(f"desktop application {alias!r} has invalid argv")
             applications[alias] = command
-        return cls(applications=applications)
+
+        screenshot_backend = "auto"
+        hook_enabled = False
+        hook_priority = -500
+        if isinstance(section, Mapping):
+            screenshot_backend = section.get("screenshot_backend", "auto")
+            hook_enabled = section.get("screenshot_context_hook_enabled", False)
+            hook_priority = section.get("screenshot_context_hook_priority", -500)
+        if not isinstance(screenshot_backend, str) or screenshot_backend not in _SCREENSHOT_BACKENDS:
+            raise DesktopError("screenshot_backend must be auto, grim, or scrot")
+        if not isinstance(hook_enabled, bool):
+            raise DesktopError("screenshot_context_hook_enabled must be boolean")
+        if isinstance(hook_priority, bool) or not isinstance(hook_priority, int):
+            raise DesktopError("screenshot_context_hook_priority must be an integer")
+        if abs(hook_priority) > MAX_HOOK_PRIORITY:
+            raise DesktopError("screenshot_context_hook_priority is outside the supported range")
+        return cls(
+            applications=applications,
+            screenshot_backend=screenshot_backend,
+            screenshot_context_hook_enabled=hook_enabled,
+            screenshot_context_hook_priority=hook_priority,
+        )
 
 
 class SystemDesktopBackend:
-    def __init__(self, *, runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run) -> None:
+    def __init__(
+        self,
+        *,
+        runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+        screenshot_backend: str = "auto",
+    ) -> None:
+        if screenshot_backend not in _SCREENSHOT_BACKENDS:
+            raise DesktopError("unsupported screenshot backend")
         self._runner = runner
+        self._screenshot_backend = screenshot_backend
 
-    @staticmethod
-    def capabilities() -> dict[str, bool]:
+    def capabilities(self) -> dict[str, bool]:
         return {
             "launch": True,
             "clipboard_read": shutil.which("wl-paste") is not None,
             "clipboard_write": shutil.which("wl-copy") is not None,
-            "screenshot": shutil.which("grim") is not None,
+            "screenshot": self.selected_screenshot_backend() is not None,
+            "screenshot_grim": shutil.which("grim") is not None,
+            "screenshot_scrot": shutil.which("scrot") is not None,
             "windows": shutil.which("wmctrl") is not None,
             "workspaces": shutil.which("wmctrl") is not None,
         }
+
+    def selected_screenshot_backend(self) -> str | None:
+        if self._screenshot_backend == "grim":
+            return "grim" if shutil.which("grim") is not None else None
+        if self._screenshot_backend == "scrot":
+            return "scrot" if shutil.which("scrot") is not None else None
+        if shutil.which("grim") is not None:
+            return "grim"
+        if shutil.which("scrot") is not None:
+            return "scrot"
+        return None
 
     def launch(self, argv: Sequence[str]) -> dict[str, object]:
         try:
@@ -118,10 +162,12 @@ class SystemDesktopBackend:
         return {"status": "ok", "acknowledged": True} if result.returncode == 0 else {"status": "unavailable", "acknowledged": False, "reason": "clipboard-write-failed"}
 
     def screenshot(self) -> dict[str, object]:
-        if shutil.which("grim") is None:
+        backend = self.selected_screenshot_backend()
+        if backend is None:
             return {"status": "unavailable", "reason": "screenshot-backend-unavailable"}
+        argv = ["grim", "-"] if backend == "grim" else ["scrot", "--silent", "--file", "-"]
         result = self._runner(
-            ["grim", "-"],
+            argv,
             capture_output=True,
             timeout=COMMAND_TIMEOUT_SECONDS,
             check=False,
@@ -129,10 +175,16 @@ class SystemDesktopBackend:
         )
         data = bytes(result.stdout or b"")
         if result.returncode != 0:
-            return {"status": "unavailable", "reason": "screenshot-failed"}
+            return {"status": "unavailable", "reason": "screenshot-failed", "backend": backend}
         if len(data) > MAX_SCREENSHOT_BYTES:
             raise DesktopError("screenshot exceeds byte limit")
-        return {"status": "ok", "mime_type": "image/png", "size": len(data), "data_base64": base64.b64encode(data).decode("ascii")}
+        return {
+            "status": "ok",
+            "backend": backend,
+            "mime_type": "image/png",
+            "size": len(data),
+            "data_base64": base64.b64encode(data).decode("ascii"),
+        }
 
     def windows(self) -> dict[str, object]:
         return {"status": "unavailable", "reason": "window-backend-not-configured"}
@@ -144,10 +196,17 @@ class SystemDesktopBackend:
 class DesktopService:
     def __init__(self, config: DesktopConfig | None = None, backend: SystemDesktopBackend | None = None) -> None:
         self.config = config or DesktopConfig(applications={})
-        self.backend = backend or SystemDesktopBackend()
+        self.backend = backend or SystemDesktopBackend(screenshot_backend=self.config.screenshot_backend)
 
     def status(self) -> dict[str, object]:
-        return {"status": "ok", "backend": "linux", "capabilities": self.backend.capabilities(), "configured_applications": sorted(self.config.applications)}
+        return {
+            "status": "ok",
+            "backend": "linux",
+            "capabilities": self.backend.capabilities(),
+            "configured_applications": sorted(self.config.applications),
+            "screenshot_backend": self.config.screenshot_backend,
+            "screenshot_context_hook_enabled": self.config.screenshot_context_hook_enabled,
+        }
 
     def launch(self, application: str) -> dict[str, object]:
         if application not in self.config.applications:
