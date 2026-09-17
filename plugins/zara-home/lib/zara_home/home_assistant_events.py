@@ -81,6 +81,7 @@ class HomeAssistantEventStream:
         self._timestamps: dict[str, datetime] = {}
         self._stopped = False
         self._thread: threading.Thread | None = None
+        self._last_failure: str | None = None
         self.fresh = False
 
     @classmethod
@@ -130,8 +131,8 @@ class HomeAssistantEventStream:
                     self.poll_once()
                     if self.fresh:
                         backoff_index = 0
-            except HomeAssistantEventError:
-                self.mark_disconnected()
+            except HomeAssistantEventError as error:
+                self.mark_disconnected(reason=self._public_failure(error))
                 if self._stopped:
                     break
                 delay = self._reconnect_backoff[min(backoff_index, len(self._reconnect_backoff) - 1)]
@@ -196,6 +197,7 @@ class HomeAssistantEventStream:
                     self.fresh = False
                     raise HomeAssistantEventError("subscription-failed")
                 self._reconcile_now()
+                self._last_failure = None
                 self.fresh = True
                 return
             if frame_type != "event" or not self.fresh:
@@ -205,11 +207,13 @@ class HomeAssistantEventStream:
             self.fresh = False
             raise
         except Exception:
-            self.mark_disconnected()
+            self.mark_disconnected(reason="provider-unavailable")
             raise HomeAssistantEventError("provider-unavailable") from None
 
-    def mark_disconnected(self) -> None:
+    def mark_disconnected(self, reason: str | None = None) -> None:
         self.fresh = False
+        if reason is not None:
+            self._last_failure = reason
         self._subscription_id = None
         sock = self._socket
         self._socket = None
@@ -219,6 +223,19 @@ class HomeAssistantEventStream:
         self._stopped = True
         self._stop_event.set()
         self.mark_disconnected()
+
+    def status_snapshot(self) -> dict[str, Any]:
+        if self.fresh:
+            return {"status": "ready", "fresh": True}
+        if self._stopped:
+            return {"status": "stopped", "fresh": False}
+        if self._last_failure == "reauth-required":
+            return {"status": "reauth-required", "fresh": False}
+        if self._last_failure is not None:
+            return {"status": "unavailable", "fresh": False, "reason": "provider-unavailable"}
+        if self._thread is not None and self._thread.is_alive():
+            return {"status": "reconnecting", "fresh": False}
+        return {"status": "configured", "fresh": False}
 
     def observation(self, entity_id: str) -> dict[str, Any] | None:
         value = self._observations.get(entity_id)
@@ -313,6 +330,12 @@ class HomeAssistantEventStream:
             observation["last_changed"] = raw["last_changed"]
         self._observations[entity_id] = observation
         self._timestamps[entity_id] = updated
+
+    @staticmethod
+    def _public_failure(error: HomeAssistantEventError) -> str:
+        if str(error) == "reauth-required":
+            return "reauth-required"
+        return "provider-unavailable"
 
     @staticmethod
     def _supported_entity(entity_id: str) -> bool:
