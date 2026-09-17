@@ -480,17 +480,16 @@ class CalDavCalendarBackend:
                 raise CalDavCalendarError("provider returned incomplete CalDAV event")
             etag = self._etag(etag_node.text)
             parsed_events = self._parse_ical(data_node.text)
-            if not parsed_events:
-                continue
-            event = dict(parsed_events[0])
-            event.update(
-                {
-                    "event_id": event_id,
-                    "calendar_id": self.default_calendar_id,
-                    "version": etag,
-                }
-            )
-            results.append(event)
+            for parsed_event in parsed_events:
+                event = dict(parsed_event)
+                event.update(
+                    {
+                        "event_id": event_id,
+                        "calendar_id": self.default_calendar_id,
+                        "version": etag,
+                    }
+                )
+                results.append(event)
         return results
 
     def _report(self, start, end, text=None):
@@ -529,7 +528,9 @@ class CalDavCalendarBackend:
             text = body.decode("utf-8")
         except UnicodeDecodeError as error:
             raise CalDavCalendarError("provider returned malformed iCalendar encoding") from error
-        parsed = self._parse_ical(text)[0]
+        parsed_events = self._parse_ical(text)
+        parsed = dict(parsed_events[0])
+        parsed["_component_count"] = len(parsed_events)
         parsed.update(
             {
                 "event_id": event_id,
@@ -678,6 +679,8 @@ class CalDavCalendarBackend:
         current = self._get_raw_event(event_id)
         if current is None:
             raise CalDavCalendarError("event does not exist")
+        if current.get("_component_count") != 1:
+            raise CalDavCalendarError("multi-component recurring event update is unsupported")
         if not isinstance(patch, dict) or not patch:
             raise CalDavCalendarError("patch must be a non-empty object")
         allowed = {"title", "start", "end", "timezone", "attendees", "recurrence", "reminders"}
