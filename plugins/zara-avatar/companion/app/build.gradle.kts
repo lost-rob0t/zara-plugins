@@ -13,7 +13,8 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/rendererAssets"))
+    // AGP 9 rejects Provider values here; preBuild below owns the producer dependency.
+    sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/rendererAssets").get().asFile)
 }
 dependencies { implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2") }
 val stageRenderer by tasks.registering(Exec::class) {
