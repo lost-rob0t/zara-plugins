@@ -120,8 +120,11 @@ class RealZaraCompatibilityTest(unittest.TestCase):
         spec.loader.exec_module(module)
         plugin = module.create_plugin()
         tools = {tool.name: tool for tool in plugin.tools()}
-        self.assertEqual(len(tools), 8)
+        self.assertEqual(len(tools), 11)
         self.assertNotIn('stock.ingest_quote', tools)
+        self.assertNotIn('stock.ingest_bar', tools)
+        self.assertTrue(tools['stock.neural_train'].metadata['zara_requires_approval'])
+        self.assertTrue(tools['stock.neural_forecast'].metadata['zara_requires_approval'])
         self.assertTrue(tools['stock.fetch_quote'].metadata['zara_requires_approval'])
         self.assertTrue(tools['stock.report_quote'].metadata['zara_requires_approval'])
         self.assertTrue(tools['stock.remember_note'].metadata['zara_requires_approval'])

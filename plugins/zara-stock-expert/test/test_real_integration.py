@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from concurrent.futures import Future
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -46,7 +47,7 @@ class RealMarketExpertIntegrationTest(unittest.TestCase):
             '09. change': '1.00', '10. change percent': '1.010101%'}}
         with tempfile.TemporaryDirectory() as root:
             configuration = {'database': str(Path(root) / 'private' / 'market.db'),
-                'namespace': 'integration', 'prolog_enabled': True,
+                'namespace': 'integration', 'prolog_enabled': True, 'neural': {'enabled': True},
                 'market_data': {'instruments': {'XNAS:EXAMPLE': {'symbol': 'EXAMPLE', 'currency': 'USD'}}}}
             runtime = PluginRuntime(plugin_name='zara-stock-expert', configuration=configuration,
                 status_provider=lambda: RuntimeStatus(state='running', alive=True, thread_id=None),
@@ -71,6 +72,21 @@ class RealMarketExpertIntegrationTest(unittest.TestCase):
                     self.assertIn('not_realtime', result['prolog']['results'][0])
                     self.assertIn('explanation(blocked,', result['prolog']['results'][0].replace(' ', ''))
                     self.assertTrue(json.loads(plugin.status())['prolog_registered'])
+                    from test_neural import bars
+                    for observation in bars(now=datetime.now(timezone.utc)):
+                        plugin.ingest_bar(observation)
+                    card = json.loads(tools['stock.neural_train'].invoke({'instrument': 'XNAS:EXAMPLE',
+                        'source': 'synthetic', 'epochs': 3, 'folds': 1, 'lookback': 8}))
+                    forecast = json.loads(tools['stock.neural_forecast'].invoke({'model_id': card['model_id']}))
+                    self.assertFalse(forecast['payload']['execution_eligible'])
+                    self.assertEqual(forecast['provenance'], 'model_forecast')
+                    models = json.loads(tools['stock.neural_models'].invoke({'instrument': 'XNAS:EXAMPLE'}))
+                    self.assertEqual(len(models['models']), 1)
+                    exact = json.loads(tools['stock.money'].invoke({'operation': 'add', 'arguments_json':
+                        '{"left":{"amount":"0.1","currency":"USD"},"right":{"amount":"0.2","currency":"USD"}}'}))
+                    self.assertEqual(exact['amount'], '0.30')
+                    self.assertEqual(json.loads(tools['stock.evaluate'].invoke({'instrument': 'XNAS:EXAMPLE',
+                        'sizing_json': json.dumps(size())}))['decision'], 'blocked')
             finally:
                 plugin.stop()
                 runtime._shutdown()

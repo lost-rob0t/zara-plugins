@@ -62,6 +62,9 @@ end-to-end encryption nor a multi-tenant authorization service.
 
 | Tool | Purpose |
 | --- | --- |
+| `stock.neural_train(instrument, source, ...)` | Train a bounded CPU MLP/TCN on trusted adjusted daily history and persist its diagnostics/model. Requires approval; see NEURAL.md. |
+| `stock.neural_forecast(model_id)` | Persist research log-return quantiles, never money or an order. Requires approval. |
+| `stock.neural_models(instrument, limit)` | List immutable model cards, provenance and fold diagnostics without weights. |
 | `stock.status()` | Storage, market-adapter and Prolog-registration status; execution remains disabled. |
 | `stock.fetch_quote(instrument)` | Fetch an operator-mapped symbol through the actual Zara provider client and persist the observation. Requires host approval. |
 | `stock.report_quote(observation_json)` | Retain a model-relayed quote as **unverified**, never provider evidence. Requires approval. |
@@ -71,10 +74,10 @@ end-to-end encryption nor a multi-tenant authorization service.
 | `stock.evaluate(instrument, sizing_json, mode)` | Run Python risk preflight using KB evidence and return blockers. |
 | `stock.explain(instrument, sizing_json, mode)` | Run that assessment through the registered SWI-Prolog rules and return actual Prolog results and trace. |
 
-The three persistent-write tools declare `zara_requires_approval` metadata.
+The five persistent-write tools declare `zara_requires_approval` metadata.
 Authorization and consent enforcement belong to the host. Direct Python calls
 are trusted code, not an alternative LLM authorization mechanism. Neither
-`ingest_quote` nor unrestricted Prolog queries are exposed as stock tools.
+`ingest_quote`, `ingest_bar` nor unrestricted Prolog queries are exposed as stock tools.
 
 ## Exact provider ingestion
 
@@ -138,7 +141,8 @@ is not a cryptographic proof that provider data is correct.
 ## Actor ownership and persistent knowledge
 
 One 64-message mailbox, owned by Zara's `PluginRuntime.start_worker()`, serializes
-SQLite and Prolog operations. Messages are capped at 16 KiB. The database
+SQLite and Prolog operations. Ordinary messages are capped at 16 KiB; internal
+neural model persistence has a separate 512 KiB artifact bound. The database
 connection never crosses Python threads. Idle workers block rather than spin.
 Provider HTTP runs outside this database owner, so a provider request does not
 occupy the KB mailbox.
@@ -238,12 +242,19 @@ day precision, redaction and bounded transport. Real-runtime tests skip when
 required packages/SWI are absent from an ordinary local development environment.
 
 `.github/workflows/stock-expert-integration.yml` installs SWI-Prolog and loads
-the exact Zara source contract plus the repository's zara-expert library. It
+the exact Zara source contract plus the repository's zara-expert library, and
+installs the pinned optional CPU PyTorch dependency. It
 runs the actual market normalizer, StructuredTools, PluginRuntime, SQLite KB,
-and Prolog subprocess; **only provider HTTP is mocked**. The gate fails on any
+and Prolog subprocess, plus real neural training on explicitly synthetic history.
+Provider HTTP is mocked; the tests make no real-market data claim. The gate fails on any
 skip and records dependency versions. It does not claim a live credentialed
 provider request, Android installation, broker execution, or strategy returns.
 
 This update remains in draft PR #810 pending exact-head CI and the repository's
 independent review/voting requirements. No merge or independent reviewer vote
 is implied by local tests.
+
+
+## Optional neural research
+
+This draft also includes real CPU MLP/TCN training, chronological baseline diagnostics, immutable model storage and separately labelled forecasts. See [NEURAL.md](NEURAL.md) for configuration and tools, and [RESEARCH.md](RESEARCH.md) for the sourced design and limitations. Neural research is disabled by default, needs trusted adjusted daily history, and does not change exact-money arithmetic or Prolog risk authority. No pretrained weights, profitability claim or execution adapter is included.

@@ -16,6 +16,9 @@ def create_plugin():
 
         def tools(self):
             definitions = (
+                (self.neural_train, 'stock.neural_train', 'Train a bounded CPU MLP or causal TCN on trusted adjusted daily closes; persist a research model and chronological diagnostics, never an order.', True),
+                (self.neural_forecast, 'stock.neural_forecast', 'Persist research log-return quantiles from a registered neural model. No guaranteed coverage, money arithmetic or trade execution.', True),
+                (self.neural_models, 'stock.neural_models', 'List persisted neural model cards, provenance and baseline diagnostics without exposing weights.', False),
                 (self.status, 'stock.status', 'Report stock expert configuration and execution boundaries.', False),
                 (self.fetch_quote, 'stock.fetch_quote', 'Fetch a configured instrument through the stock API adapter and persist the exact, source-labelled historical quote. No real-time or trade-execution claim.', True),
                 (self.explain, 'stock.explain', 'Run the registered SWI-Prolog stock rules over a fresh risk assessment and return actual Prolog results. Requires prolog_enabled.', False),
