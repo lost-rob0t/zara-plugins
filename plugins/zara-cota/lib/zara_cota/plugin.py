@@ -164,7 +164,7 @@ class ZaraCotaPlugin(ServicePlugin):
             }
         )
 
-    def stop(self, stop_id: str) -> str:
+    def stop_info(self, stop_id: str) -> str:
         snapshot = self._require_snapshot()
         return self._json(
             {
@@ -274,7 +274,7 @@ class ZaraCotaPlugin(ServicePlugin):
                 description="Read one COTA route by exact GTFS route_id.",
             ),
             StructuredTool.from_function(
-                func=self.stop,
+                func=self.stop_info,
                 name="cota.stop",
                 description="Read one COTA stop by exact GTFS stop_id.",
             ),
