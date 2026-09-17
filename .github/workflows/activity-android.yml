@@ -1,0 +1,102 @@
+name: Zara Activity Android
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/zara-context/activity-android/**'
+      - 'plugins/zara-context/test/test_android_activity_contract.py'
+      - '.github/workflows/activity-android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zara-activity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.1'
+      - name: Install Android SDK
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Pure actor and sessionizer tests
+        run: plugins/zara-context/activity-android/test/run.sh
+      - name: Source/permission contract
+        run: python3 -m unittest discover -s plugins/zara-context/test -p 'test_android_activity_contract.py' -v
+      - name: Build and lint APK
+        working-directory: plugins/zara-context/activity-android
+        run: gradle --no-daemon :app:assembleDebug :app:lintDebug
+      - name: Record candidate receipts
+        run: |
+          mkdir -p activity-artifact
+          cp plugins/zara-context/activity-android/app/build/outputs/apk/debug/app-debug.apk activity-artifact/zara-activity-debug.apk
+          git rev-parse HEAD > activity-artifact/SOURCE_SHA.txt
+          sha256sum activity-artifact/zara-activity-debug.apk > activity-artifact/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zara-activity-debug-${{ github.sha }}
+          path: activity-artifact/
+          if-no-files-found: error
+
+  emulator:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [29, 35]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: zara-activity-debug-${{ github.sha }}
+          path: candidate/
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: bash plugins/zara-context/activity-android/e2e/emulator-smoke.sh candidate/zara-activity-debug.apk evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zara-activity-emulator-api${{ matrix.api-level }}-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: error
+
+  activity-gate:
+    if: always()
+    needs: [build, emulator]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every Zara Activity gate to succeed
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          EMULATOR_RESULT: ${{ needs.emulator.result }}
+        run: |
+          test "$BUILD_RESULT" = success
+          test "$EMULATOR_RESULT" = success

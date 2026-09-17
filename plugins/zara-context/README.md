@@ -22,10 +22,16 @@ Desktop/editor/browser/file plugins may publish context through the service's st
 
 The initial query tool is `context.current(categories="")`. Backend event integrations should push updates from their native event streams; polling is a fallback adapter concern rather than the context model.
 
+## Android: Zara Activity
+
+`activity-android/` is a separately permissioned Android companion APK (`ai.zara.activity`) for bounded ActivityWatch-style app-time summaries. It reads Android's existing `UsageStatsManager` history only after explicit Usage Access, has no Internet/Accessibility/screen-capture permission, and does not change the process-local persistence semantics of the core context service.
+
+Until Zara's canonical `ZARA-ANDROID-PLUGIN/1` host boundary is available, Zara Activity remains a standalone local dashboard rather than inventing a second plugin authority path. See `activity-android/README.md` and zara-plugins#826.
+
 ## Configuration
 
 `default_ttl_seconds` defaults to 30 seconds and is bounded to one hour.
 
 ## Verification
 
-Tests use a fake clock and require no GUI, network, credentials, filesystem state, or sleeps. Repository compatibility/Nix gates cover runtime loading and metadata agreement.
+Tests use a fake clock and require no GUI, network, credentials, filesystem state, or sleeps. Repository compatibility/Nix gates cover runtime loading and metadata agreement. The Android companion has an additional standalone APK/emulator gate.
