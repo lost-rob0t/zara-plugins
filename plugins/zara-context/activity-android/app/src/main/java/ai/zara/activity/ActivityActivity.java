@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.Gravity;
@@ -68,7 +69,7 @@ public final class ActivityActivity extends Activity {
         ));
 
         TextView title = text("Zara Activity", 30, FOREGROUND);
-        title.setTypeface(title.getTypeface(), 1);
+        title.setTypeface(title.getTypeface(), Typeface.BOLD);
         root.addView(title);
 
         TextView subtitle = text("Private app-time tracking from Android Usage Access", 15, MUTED);
