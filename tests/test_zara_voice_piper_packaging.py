@@ -20,9 +20,10 @@ class ZaraVoicePiperPackagingTest(unittest.TestCase):
         dependencies = self.entry.get("python_dependencies", [])
         self.assertIn("piper-tts", dependencies)
 
-    def test_piper_is_resolved_as_bounded_inference_only_python_module(self) -> None:
-        self.assertIn('dependency == "piper-tts"', self.flake)
-        self.assertIn("packages.toPythonModule", self.flake)
+    def test_piper_is_injected_into_same_python_package_set(self) -> None:
+        self.assertIn("packageOverrides = final: prev:", self.flake)
+        self.assertIn("piper-tts = final.toPythonModule", self.flake)
+        self.assertIn("python3Packages = final;", self.flake)
         self.assertIn("pkgs.piper-tts.override", self.flake)
         self.assertIn("withTrain = false;", self.flake)
         self.assertIn("withHTTP = false;", self.flake)
