@@ -209,7 +209,7 @@ class CommsDomain:
         if accepted and isinstance(provider_evidence, dict) and provider_evidence.get("message_id") is not None:
             try:
                 message_id = self._text(provider_evidence.get("message_id"), "message id", 256)
-                if any(ord(ch) < 0x20 for ch in message_id):
+                if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in message_id):
                     raise CommsError("message id contains invalid control characters")
             except CommsError:
                 message_id = None
