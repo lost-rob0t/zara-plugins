@@ -69,6 +69,10 @@ class ZaraCompatibilityModuleImportDeadlineTest(unittest.TestCase):
             "        yield from Path(root).glob('*.py')\n",
             encoding="utf-8",
         )
+        langchain = zara_source / "langchain_core"
+        langchain.mkdir()
+        (langchain / "__init__.py").write_text("", encoding="utf-8")
+        (langchain / "tools.py").write_text("class BaseTool: pass\n", encoding="utf-8")
         return zara_source
 
     @staticmethod
