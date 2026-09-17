@@ -36,7 +36,7 @@ jobs:
         with:
           gradle-version: '9.5.1'
       - name: Install build SDK
-        run: sdkmanager 'platforms;android-37' 'build-tools;36.0.0'
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
       - name: Restore existing integrity-pinned renderer packages without Electron
         working-directory: plugins/zara-avatar/renderer
         run: npm ci --omit=dev --ignore-scripts
