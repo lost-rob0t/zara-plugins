@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+"""Install the optional service or review text with native SWI-Prolog."""
+
+import argparse
+import json
+import os
+from pathlib import Path
+import shutil
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+RUNTIME_LIB = ROOT.parents[1] / 'runtime' / 'zara-policy' / 'lib'
+LIB = RUNTIME_LIB if RUNTIME_LIB.is_dir() else ROOT / 'lib'
+sys.path.insert(0, str(LIB))
+from zara_policy.client import PolicyClient, default_config_path, MAX_TEXT_CHARS
+
+
+def install() -> None:
+    config = default_config_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = None
+    try:
+        descriptor = os.open(config, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        if not config.is_file():
+            raise ValueError('existing policy config is not a regular file')
+    if descriptor is not None:
+        with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
+            stream.write((ROOT / 'lib/zara_policy/prolog/config.pl').read_text(encoding='utf-8'))
+    if RUNTIME_LIB.is_dir():
+        library = RUNTIME_LIB.resolve()
+    else:
+        library = config.parent / 'lib'
+        shutil.copytree(ROOT / 'lib', library, dirs_exist_ok=True,
+                        ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+    discovery = Path.home() / '.zarathushtra/plugins/zara_policy.py'
+    discovery.parent.mkdir(parents=True, exist_ok=True)
+    entry = ('import sys\n' + f'sys.path.insert(0, {str(library)!r})\n' +
+             "PLUGIN_VERSION = '0.1.0'\n\n" +
+             'def create_plugin():\n    from zara_policy.plugin import create_plugin as create_service\n    return create_service()\n')
+    temporary = discovery.with_suffix('.py.tmp')
+    temporary.write_text(entry, encoding='utf-8')
+    temporary.replace(discovery)
+    print(f'Installed discovery entry: {discovery}\nOperator config: {config}')
+    print('Enable [plugins.zara-policy] enabled=true in Zara config.toml.\n'
+          'Optional automatic advice also requires [hooks] enabled=true; keep allow_override=false.\n'
+          'The existing root config and its hook trust policy were not changed.')
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('command', choices=['install', 'advise', 'rules'])
+    parser.add_argument('--config', type=Path)
+    parser.add_argument('--offset', type=int, default=0)
+    parser.add_argument('--limit', type=int, default=16)
+    args = parser.parse_args()
+    try:
+        if args.command == 'install':
+            install()
+            return 0
+        client = PolicyClient(config_path=args.config)
+        report = (client.advise(sys.stdin.read(MAX_TEXT_CHARS + 1)) if args.command == 'advise'
+                  else client.rules(offset=args.offset, limit=args.limit))
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0 if report['status'] in ('ok', 'disabled') else 2
+    except (OSError, ValueError, TypeError):
+        print('Policy command failed: check input limits, file permissions and configuration.', file=sys.stderr)
+        return 2
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

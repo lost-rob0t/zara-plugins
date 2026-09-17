@@ -1,0 +1,10 @@
+# Optional Zara activation in ~/.config/zarathushtra/config.toml.
+# The installer never overwrites this root configuration.
+[plugins.zara-policy]
+enabled = true
+
+# Existing Zara hook trust gate. Draft-review tools work without enabling it.
+# Enabling hooks also enables any other user/plugin hooks you have installed.
+[hooks]
+enabled = true
+allow_override = false

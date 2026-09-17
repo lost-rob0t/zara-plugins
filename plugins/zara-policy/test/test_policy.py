@@ -165,9 +165,10 @@ zara_policy:user_rule(context_only, local, 96, flag(verified, true), "Real host 
     def test_native_api_and_every_enabled_rule_example(self):
         import subprocess
         policy = ROOT / 'lib/zara_policy/prolog/policy.pl'
-        goal = ('zara_policy:advise("all tests pass",_{},R),R.status=ok,'
+        goal = ('zara_policy:advise("all tests pass",_{},R),get_dict(status,R,ok),'
                 'forall((zara_policy:default_rule(I,C,_,any([P|_]),_,_),C\\=style),'
-                '(zara_policy:advise(P,_{},D),member(F,D.findings),F.id=I)),halt')
+                '(zara_policy:advise(P,_{},D),get_dict(findings,D,Fs),'
+                '(member(F,Fs),get_dict(id,F,I)->true;throw(error(missing_example(I),_))))),halt')
         run = subprocess.run([SWIPL, '-q', '-f', 'none', '-s', str(policy), '-g', goal],
                              capture_output=True, text=True, timeout=30)
         self.assertEqual(run.returncode, 0, run.stderr)

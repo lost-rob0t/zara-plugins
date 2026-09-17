@@ -83,6 +83,11 @@
                   cp -r ${pluginSource}/lib/. "$out/"
                 fi
 
+                ${pkgs.lib.optionalString (entry.name == "zara-policy") ''
+                  chmod u+w "$out/zara_policy/prolog"
+                  ln -s ${pkgs.swi-prolog}/bin/swipl "$out/zara_policy/prolog/swipl"
+                ''}
+
                 if [ -d ${pluginPython}/${python.sitePackages} ]; then
                   cp -rs ${pluginPython}/${python.sitePackages}/. "$out/"
                 fi
@@ -212,12 +217,13 @@
                 pkgs.runCommand "zara-check-${entry.name}-tests"
                   {
                     nativeBuildInputs = [ (pythonFor entry) ]
-                      ++ pkgs.lib.optional (entry.name == "zara-coding") pkgs.swi-prolog;
+                      ++ pkgs.lib.optional (builtins.elem entry.name [ "zara-coding" "zara-policy" ]) pkgs.swi-prolog;
                     src = self;
                   }
                   ''
                     export HOME=$(mktemp -d)
                     export PYTHONPATH=${zaraSource}
+                    export ZARA_POLICY_REQUIRE_SWIPL=${if entry.name == "zara-policy" then "1" else "0"}
                     cp -r $src ./tree
                     chmod -R u+w ./tree
                     cd ./tree/plugins/${entry.name}
@@ -269,6 +275,7 @@
               developmentPython
               developmentPython.pkgs.pytest
               pkgs.nodejs
+              pkgs.swi-prolog
             ];
 
             shellHook = ''
