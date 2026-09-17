@@ -17,6 +17,8 @@ def create_plugin():
         def tools(self):
             definitions = (
                 (self.status, 'stock.status', 'Report stock expert configuration and execution boundaries.', False),
+                (self.fetch_quote, 'stock.fetch_quote', 'Fetch a configured instrument through the stock API adapter and persist the exact, source-labelled historical quote. No real-time or trade-execution claim.', True),
+                (self.explain, 'stock.explain', 'Run the registered SWI-Prolog stock rules over a fresh risk assessment and return actual Prolog results. Requires prolog_enabled.', False),
                 (self.report_quote, 'stock.report_quote', 'Persist a source-labelled but unverified quote report; never elevates model claims to provider evidence.', True),
                 (self.remember_note, 'stock.remember_note', 'Persist a model note or hypothesis in the configured namespace, separate from market facts.', True),
                 (self.history, 'stock.history', 'Retrieve bounded point-in-time market KB evidence, including optional immutable revisions.', False),

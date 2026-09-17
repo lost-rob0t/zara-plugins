@@ -6,7 +6,7 @@ import os
 import re
 import sqlite3
 import stat
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from fractions import Fraction
 from pathlib import Path
@@ -223,16 +223,30 @@ class StockExpert:
 
     def _quote(self, observation: dict, provenance: str) -> dict:
         shape(observation, {'event_id', 'instrument', 'source', 'effective_at', 'price',
-                            'currency', 'adjustment', 'feed', 'price_kind'}, {'supersedes'})
+                            'currency', 'adjustment', 'feed', 'price_kind'},
+              {'supersedes', 'timestamp_precision', 'trading_day'})
         number(observation['price'], positive=True)
         text(observation['currency'], CURRENCY)
-        if observation['adjustment'] not in ('raw', 'split', 'total_return'):
+        if observation['adjustment'] not in ('raw', 'split', 'total_return', 'unknown'):
             raise ValueError('unknown price adjustment')
         if observation['feed'] not in ('realtime', 'delayed', 'historical'):
             raise ValueError('unknown market feed')
         if observation['price_kind'] not in ('bid', 'ask', 'last'):
             raise ValueError('unknown quote kind')
         payload = {key: observation[key] for key in ('price', 'currency', 'adjustment', 'feed', 'price_kind')}
+        precision = observation.get('timestamp_precision', 'instant')
+        if precision not in ('instant', 'day'):
+            raise ValueError('unknown quote timestamp precision')
+        if precision == 'day':
+            day = observation.get('trading_day')
+            if (not isinstance(day, str) or not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}', day)
+                    or date.fromisoformat(day).isoformat() != day
+                    or timestamp(observation['effective_at']) != timestamp(day + 'T00:00:00+00:00')
+                    or observation['feed'] != 'historical'):
+                raise ValueError('day-precision quote must use a historical UTC date index')
+            payload.update(timestamp_precision='day', trading_day=day)
+        elif 'trading_day' in observation:
+            raise ValueError('trading_day requires explicit day precision')
         return self._record(event_id=observation['event_id'], instrument=observation['instrument'],
                             source=observation['source'], effective_at=observation['effective_at'],
                             kind='quote', provenance=provenance, payload=payload,
@@ -342,7 +356,11 @@ class StockExpert:
                 blockers.append('stale_quote')
             if payload['feed'] != 'realtime':
                 blockers.append('not_realtime')
-            if payload['adjustment'] != 'raw':
+            if payload.get('timestamp_precision', 'instant') != 'instant':
+                blockers.append('imprecise_quote_time')
+            if payload['adjustment'] == 'unknown':
+                blockers.append('unknown_price_adjustment')
+            elif payload['adjustment'] != 'raw':
                 blockers.append('adjusted_price')
             if payload['currency'] != sizing['currency']:
                 blockers.append('currency_mismatch')

@@ -42,25 +42,41 @@ class StockService:
         self._accepting = False
         self._used = False
         self._max_age = 60
+        self._market = None
+        self._prolog_enabled = False
 
     def start(self, runtime) -> None:
-        plugins = runtime.configuration.get('plugins', {})
-        if not isinstance(plugins, Mapping):
-            raise ValueError('plugins must be a mapping')
-        section = plugins.get('zara-stock-expert')
-        if section is None:
+        section = runtime.configuration
+        if not isinstance(section, Mapping):
+            raise ValueError('stock expert configuration must be a mapping')
+        if 'plugins' in section:
+            if set(section) != {'plugins'} or not isinstance(section['plugins'], Mapping):
+                raise ValueError('ambiguous legacy stock expert configuration')
+            section = section['plugins'].get('zara-stock-expert', {})
+        if not isinstance(section, Mapping):
+            raise ValueError('stock expert configuration must be a mapping')
+        if not section:
             return
-        if not isinstance(section, Mapping) or set(section) - {'database', 'namespace', 'max_quote_age_seconds'}:
+        if set(section) - {'database', 'namespace', 'max_quote_age_seconds', 'market_data', 'prolog_enabled'}:
             raise ValueError('unknown stock expert configuration')
         database = section.get('database')
         if not isinstance(database, str) or not database:
             raise ValueError('explicit private database path required')
         namespace = text(section.get('namespace'))
         self._max_age = bounded_int(section.get('max_quote_age_seconds', 60), 1, 3600)
+        prolog_enabled = section.get('prolog_enabled', False)
+        if type(prolog_enabled) is not bool:
+            raise ValueError('prolog_enabled must be boolean')
+        market = None
+        if 'market_data' in section:
+            from .market import AlphaVantageSource
+            market = AlphaVantageSource(section['market_data'])
         with self._lock:
             if self._used:
                 raise RuntimeError('create a fresh plugin instance to restart the owner')
             self._used = True
+            self._market = market
+            self._prolog_enabled = prolog_enabled
         ready = Future()
         self._worker = runtime.start_worker('stock-kb', lambda stop: self._run(stop, ready, Path(database), namespace))
         try:
@@ -74,12 +90,20 @@ class StockService:
         expert = None
         try:
             expert = StockExpert(database, namespace)
+            prolog = None
+            if self._prolog_enabled:
+                from .prolog import StockProlog
+                prolog = StockProlog(database, namespace)
+            def explain(**arguments):
+                if prolog is None:
+                    raise RuntimeError('Prolog is disabled; configure prolog_enabled=true')
+                return prolog.explain(expert.evaluate(**arguments))
             with self._lock:
                 self._accepting = True
             ready.set_result(True)
             methods = {'ingest_quote': expert.ingest_quote, 'report_quote': expert.report_quote,
                        'remember_note': expert.remember_note, 'history': expert.history,
-                       'evaluate': expert.evaluate}
+                       'evaluate': expert.evaluate, 'explain': explain}
             while not stop.is_set():
                 try:
                     operation, arguments, reply = self._queue.get(timeout=0.1)
@@ -124,7 +148,7 @@ class StockService:
                 raise RuntimeError('stock expert owner has not stopped')
 
     def _ask(self, operation: str, arguments: dict) -> dict:
-        if operation not in {'ingest_quote', 'report_quote', 'remember_note', 'history', 'evaluate'}:
+        if operation not in {'ingest_quote', 'report_quote', 'remember_note', 'history', 'evaluate', 'explain'}:
             raise ValueError('unknown mailbox operation')
         arguments = decode(json.dumps(arguments, allow_nan=False))
         reply = Future()
@@ -146,6 +170,8 @@ class StockService:
         with self._lock:
             configured = self._accepting
         return json.dumps({'configured': configured, 'version': VERSION, 'live_execution': False,
+                           'market_data_configured': configured and self._market is not None,
+                           'prolog_registered': configured and self._prolog_enabled,
                            'mailbox_capacity': MAX_MAILBOX, 'max_quote_age_seconds': self._max_age})
 
     def ingest_quote(self, observation: dict) -> dict:
@@ -170,3 +196,15 @@ class StockService:
     def evaluate(self, instrument: str, sizing_json: str, mode: str = 'paper') -> str:
         return json.dumps(self._ask('evaluate', dict(instrument=instrument, sizing=decode(sizing_json),
                                                     mode=mode, max_age_seconds=self._max_age)), sort_keys=True)
+
+    def fetch_quote(self, instrument: str) -> str:
+        with self._lock:
+            if not self._accepting or self._market is None:
+                raise RuntimeError('market data is not configured or service is stopped')
+            source = self._market
+        observation = source.fetch(instrument)
+        return json.dumps(self.ingest_quote(observation), sort_keys=True)
+
+    def explain(self, instrument: str, sizing_json: str, mode: str = 'paper') -> str:
+        return json.dumps(self._ask('explain', dict(instrument=instrument, sizing=decode(sizing_json),
+                                                   mode=mode, max_age_seconds=self._max_age)), sort_keys=True)

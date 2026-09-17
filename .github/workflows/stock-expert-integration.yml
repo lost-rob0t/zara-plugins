@@ -1,0 +1,70 @@
+name: Stock expert integration
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/zara-stock-expert/**'
+      - 'plugins/zara-expert/**'
+      - '.github/workflows/stock-expert-integration.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'plugins/zara-stock-expert/**'
+      - 'plugins/zara-expert/**'
+      - '.github/workflows/stock-expert-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stock-expert-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    name: Real market client + SWI-Prolog
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out exact Zara market API contract
+        uses: actions/checkout@v4
+        with:
+          repository: lost-rob0t/zara
+          ref: fadd071682811d3597635fcc7e890a84e3165bff
+          path: zara-contract
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install test runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends swi-prolog-nox
+          python -m pip install 'langchain-core>=0.3,<2'
+      - name: Exercise provider, real runtime, persistent KB and actual Prolog
+        env:
+          PYTHONPATH: ${{ github.workspace }}/zara-contract:${{ github.workspace }}/plugins/zara-expert/lib
+          ZARA_STOCK_REQUIRE_INTEGRATION: '1'
+        shell: bash
+        run: |
+          set -o pipefail
+          python --version | tee stock-integration.log
+          swipl --version | tee -a stock-integration.log
+          python -m pip freeze | tee -a stock-integration.log
+          python - <<'PY' 2>&1 | tee -a stock-integration.log
+          import sys
+          import unittest
+          suite = unittest.defaultTestLoader.discover('plugins/zara-stock-expert/test')
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if result.skipped:
+              print('Integration gate rejects skipped tests:', result.skipped)
+          sys.exit(0 if result.wasSuccessful() and not result.skipped else 1)
+          PY
+      - name: Upload integration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stock-expert-integration
+          path: stock-integration.log
+          if-no-files-found: warn
