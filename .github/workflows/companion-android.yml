@@ -1,0 +1,54 @@
+name: Zara Companion Android
+on:
+  pull_request:
+    paths:
+      - 'plugins/zara-avatar/companion/**'
+      - 'plugins/zara-avatar/renderer/package*.json'
+      - '.github/workflows/companion-android.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: companion-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  companion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Motion, model-input and package tests
+        run: |
+          node --test plugins/zara-avatar/companion/test/*.test.mjs
+          python3 -m unittest discover -s plugins/zara-avatar/companion/test -p 'test_*.py'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.1'
+      - name: Install build SDK
+        run: sdkmanager 'platforms;android-37' 'build-tools;36.0.0'
+      - name: Restore existing integrity-pinned renderer packages without Electron
+        working-directory: plugins/zara-avatar/renderer
+        run: npm ci --omit=dev --ignore-scripts
+      - name: Build and lint the standalone APK
+        working-directory: plugins/zara-avatar/companion
+        run: gradle --no-daemon :app:assembleDebug :app:lintDebug
+      - name: Record source and artifact hashes
+        run: |
+          mkdir -p companion-artifact
+          cp plugins/zara-avatar/companion/app/build/outputs/apk/debug/app-debug.apk companion-artifact/zara-companion-debug.apk
+          git rev-parse HEAD > companion-artifact/SOURCE_SHA.txt
+          sha256sum companion-artifact/zara-companion-debug.apk > companion-artifact/SHA256SUMS
+          cp plugins/zara-avatar/companion/app/build/generated/rendererAssets/companion/dependencies.json companion-artifact/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zara-companion-debug-${{ github.sha }}
+          path: companion-artifact/
+          if-no-files-found: error
