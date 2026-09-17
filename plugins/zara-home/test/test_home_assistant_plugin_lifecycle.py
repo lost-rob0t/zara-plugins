@@ -19,10 +19,11 @@ class FakeProvider:
 
 
 class FakeEventStream:
-    def __init__(self):
+    def __init__(self, health=None):
         self.started = 0
         self.stopped = 0
         self.join_timeouts = []
+        self.health = health or {"status": "ready", "fresh": True}
 
     def start(self):
         self.started += 1
@@ -33,6 +34,9 @@ class FakeEventStream:
     def join(self, timeout):
         self.join_timeouts.append(timeout)
         return True
+
+    def status_snapshot(self):
+        return dict(self.health)
 
 
 class ZaraHomePluginLifecycleTests(unittest.TestCase):
@@ -56,6 +60,15 @@ class ZaraHomePluginLifecycleTests(unittest.TestCase):
         plugin.stop()
 
         self.assertEqual(plugin.status(), '{"status": "ready"}')
+
+    def test_plugin_status_projects_event_stream_health(self):
+        stream = FakeEventStream({"status": "reauth-required", "fresh": False})
+        plugin = ZaraHomePlugin(provider=FakeProvider(), event_stream=stream)
+
+        self.assertEqual(
+            json.loads(plugin.status()),
+            {"status": "reauth-required", "fresh": False},
+        )
 
     def test_registry_declares_production_websocket_client(self):
         registry = json.loads((REPO_ROOT / "plugins.json").read_text())
