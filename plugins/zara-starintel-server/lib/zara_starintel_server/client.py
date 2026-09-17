@@ -32,7 +32,12 @@ SAFE_RESPONSE_HEADERS = frozenset(
         "x-request-id",
     }
 )
+SAFE_FAILURE_ID_HEADERS = {
+    "x-correlation-id": "correlation_id",
+    "x-request-id": "request_id",
+}
 HEADER_NAME = re.compile(r"^[A-Za-z0-9!#$%&'*+.^_|~-]+$")
+SAFE_FAILURE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$")
 
 
 class StarIntelError(RuntimeError):
@@ -201,6 +206,33 @@ class StarIntelClient:
             result["correlation_id"] = correlation_id
         return result
 
+    def _safe_failure_id(self, value: Any) -> str | None:
+        text = str(value).strip()
+        if not SAFE_FAILURE_ID.fullmatch(text):
+            return None
+        for secret in (self.config.api_key, self.config.bootstrap_secret):
+            if secret and secret in text:
+                return None
+        return text
+
+    def _failure_result(self, response: Any, status: int) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "status": status,
+            "ok": False,
+            "error": "http_error",
+        }
+        source = getattr(response, "headers", None)
+        if source is None or not hasattr(source, "items"):
+            return result
+        for name, value in source.items():
+            output_name = SAFE_FAILURE_ID_HEADERS.get(str(name).lower())
+            if output_name is None:
+                continue
+            safe_value = self._safe_failure_id(value)
+            if safe_value is not None:
+                result[output_name] = safe_value
+        return result
+
     def request(
         self,
         method: str,
@@ -246,11 +278,11 @@ class StarIntelClient:
                 return self._decode_response(response, status)
         except urllib.error.HTTPError as error:
             try:
-                return self._decode_response(error, int(error.code))
+                return self._failure_result(error, int(error.code))
             finally:
                 error.close()
-        except (urllib.error.URLError, TimeoutError, OSError) as error:
-            raise StarIntelError(f"StarIntel request failed: {error}") from error
+        except (urllib.error.URLError, TimeoutError, OSError):
+            raise StarIntelError("StarIntel request failed") from None
 
     def capabilities(self) -> dict[str, Any]:
         result = self.request("GET", "/api/v1/capabilities")
