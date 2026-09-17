@@ -131,11 +131,11 @@ class VoiceService:
 
         artifact_id = self._artifact_id(artifact, text)
         artifact["artifact_id"] = artifact_id
+        if cache:
+            self._cache(artifact_id, artifact["audio"])
         self._retain_artifact(artifact_id, artifact)
         if isinstance(request_id, str) and request_id and callable(callback):
             self._request_backends[request_id] = backend
-        if cache:
-            self._cache(artifact_id, artifact["audio"])
         return self._public_artifact(artifact)
 
     def play(self, artifact_id: str) -> dict[str, Any]:
