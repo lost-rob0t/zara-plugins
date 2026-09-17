@@ -97,6 +97,8 @@ class CalDavCalendarBackend:
         if not basic_supplied or username is None or password is None:
             raise CalDavCalendarError("CalDAV auth requires Basic credentials or a bearer token")
         user = cls._credential(username, "username")
+        if ":" in user:
+            raise CalDavCalendarError("invalid username credential")
         secret = cls._credential(password, "password")
         encoded = base64.b64encode(f"{user}:{secret}".encode("utf-8")).decode("ascii")
         return f"Basic {encoded}"
@@ -230,16 +232,16 @@ class CalDavCalendarBackend:
             {"start": CalDavCalendarBackend._utc_stamp(start), "end": CalDavCalendarBackend._utc_stamp(end)},
         )
         filter_node = ET.SubElement(root, f"{{{CALDAV_NS}}}filter")
-        vcalendar = ET.SubElement(filter_node, f"{{{CALDAV_NS}}}comp-filter", {"name": "VCALENDAR"})
-        vevent = ET.SubElement(vcalendar, f"{{{CALDAV_NS}}}comp-filter", {"name": "VEVENT"})
+        vcalendar = ET.SubElement(filter_node, f"{{{DAV_NS}}}comp-filter", {"name": "VCALENDAR"})
+        vevent = ET.SubElement(vcalendar, f"{{{DAV_NS}}}comp-filter", {"name": "VEVENT"})
         ET.SubElement(
             vevent,
-            f"{{{CALDAV_NS}}}time-range",
+            f"{{{DAV_NS}}}time-range",
             {"start": CalDavCalendarBackend._utc_stamp(start), "end": CalDavCalendarBackend._utc_stamp(end)},
         )
         if text:
-            summary = ET.SubElement(vevent, f"{{{CALDAV_NS}}}prop-filter", {"name": "SUMMARY"})
-            match = ET.SubElement(summary, f"{{{CALDAV_NS}}}text-match", {"collation": "i;unicode-casemap"})
+            summary = ET.SubElement(vevent, f"{{{DAV_NS}}}prop-filter", {"name": "SUMMARY"})
+            match = ET.SubElement(summary, f"{{{DAV_NS}}}text-match", {"collation": "i;unicode-casemap"})
             match.text = text
         return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
