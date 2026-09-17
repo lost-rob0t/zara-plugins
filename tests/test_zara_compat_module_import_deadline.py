@@ -14,12 +14,23 @@ class ZaraCompatibilityModuleImportDeadlineTest(unittest.TestCase):
     @staticmethod
     def _write_fixture(root: Path, names: tuple[str, ...]) -> Path:
         entries = []
-        for name in names:
+        for index, name in enumerate(names):
             plugin = root / "plugins" / name
             entrypoint = plugin / "zara-plugin" / "entrypoint.py"
             entrypoint.parent.mkdir(parents=True)
-            entrypoint.write_text("pass\n", encoding="utf-8")
             (plugin / "lib").mkdir()
+            delay = "import time; time.sleep(30)\n" if index == 0 else ""
+            entrypoint.write_text(
+                delay
+                + "from zara.plugins import PluginMetadata, ServicePlugin\n"
+                + "class Plugin(ServicePlugin):\n"
+                + f"    metadata = PluginMetadata({name!r}, '1.0.0', '1', 'service', 'example')\n"
+                + "    def tools(self): return ()\n"
+                + "    def start(self, runtime): pass\n"
+                + "    def stop(self): pass\n"
+                + "def create_plugin(): return Plugin()\n",
+                encoding="utf-8",
+            )
             entries.append(
                 {
                     "name": name,
@@ -32,69 +43,76 @@ class ZaraCompatibilityModuleImportDeadlineTest(unittest.TestCase):
                 }
             )
         (root / "plugins.json").write_text(json.dumps({"plugins": entries}), encoding="utf-8")
+
         zara_source = root / "zara-source"
-        api_root = zara_source / "zara" / "plugins"
-        api_root.mkdir(parents=True)
-        for filename in ("api.py", "manager.py", "loader.py"):
-            (api_root / filename).write_text("pass\n", encoding="utf-8")
+        package = zara_source / "zara" / "plugins"
+        package.mkdir(parents=True)
+        (zara_source / "zara" / "__init__.py").write_text("", encoding="utf-8")
+        (package / "__init__.py").write_text(
+            "PLUGIN_API_VERSION = '1'\n"
+            "class PluginMetadata:\n"
+            "    def __init__(self, name, version, api_version, plugin_type, description):\n"
+            "        self.name=name; self.version=version; self.api_version=api_version\n"
+            "        self.plugin_type=plugin_type; self.description=description\n"
+            "class ServicePlugin: pass\n",
+            encoding="utf-8",
+        )
+        (package / "api.py").write_text("pass\n", encoding="utf-8")
+        (package / "manager.py").write_text("pass\n", encoding="utf-8")
+        (package / "loader.py").write_text(
+            "import importlib.util\nfrom pathlib import Path\n"
+            "def load_plugin_module(path):\n"
+            "    spec=importlib.util.spec_from_file_location('compat_fixture_plugin', path)\n"
+            "    module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); return module\n"
+            "def iter_plugin_files(paths):\n"
+            "    for root in paths:\n"
+            "        yield from Path(root).glob('*.py')\n",
+            encoding="utf-8",
+        )
+        langchain = zara_source / "langchain_core"
+        langchain.mkdir()
+        (langchain / "__init__.py").write_text("", encoding="utf-8")
+        (langchain / "tools.py").write_text("class BaseTool: pass\n", encoding="utf-8")
         return zara_source
 
     @staticmethod
-    def _contracts(loader):
-        class PluginMetadata:
-            pass
-
-        class ServicePlugin:
-            pass
-
+    def _parent_contracts():
         return (
             object,
             "1",
-            PluginMetadata,
-            ServicePlugin,
-            lambda paths: (),
-            loader,
+            object,
+            object,
+            lambda paths: tuple(path for root in paths for path in Path(root).glob("*.py")),
+            None,
         )
 
-    def test_blocking_plugin_import_is_bounded(self) -> None:
+    def test_blocking_plugin_import_is_bounded_by_child_process(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             zara_source = self._write_fixture(root, ("zara-example",))
 
-            def blocking_loader(path):
-                time.sleep(1.0)
-                return object()
-
             started = time.monotonic()
             with patch(
                 "scripts.zara_compat._load_runtime_contracts",
-                return_value=self._contracts(blocking_loader),
+                return_value=self._parent_contracts(),
             ):
                 failures = check_registry(root, zara_source, call_timeout=0.05)
 
-            self.assertLess(time.monotonic() - started, 0.5)
+            self.assertLess(time.monotonic() - started, 2.0)
             self.assertTrue(any("TimeoutError" in failure for failure in failures), failures)
 
-    def test_timeout_aborts_before_loading_later_plugins(self) -> None:
+    def test_timeout_does_not_prevent_later_plugin_validation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             zara_source = self._write_fixture(root, ("zara-first", "zara-second"))
-            calls: list[str] = []
-
-            def loader(path):
-                calls.append(Path(path).parents[1].name)
-                if calls == ["zara-first"]:
-                    time.sleep(1.0)
-                return object()
 
             with patch(
                 "scripts.zara_compat._load_runtime_contracts",
-                return_value=self._contracts(loader),
+                return_value=self._parent_contracts(),
             ):
                 failures = check_registry(root, zara_source, call_timeout=0.05)
 
-            self.assertEqual(calls, ["zara-first"])
-            self.assertEqual(len(failures), 1)
+            self.assertEqual(len(failures), 1, failures)
             self.assertIn("zara-first: TimeoutError", failures[0])
 
 
