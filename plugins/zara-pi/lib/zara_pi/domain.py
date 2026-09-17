@@ -329,7 +329,6 @@ class TmuxBridge:
             [self.policy.tmux_program, "send-keys", "-t", session, "C-c"]
         )
         self._require_success(interrupted, "tmux interrupt")
-        self._clear_invocation(session)
         return {
             "status": "interrupt_sent",
             "session_id": session_id,
