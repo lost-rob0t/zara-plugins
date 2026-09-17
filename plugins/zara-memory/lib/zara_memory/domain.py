@@ -166,8 +166,14 @@ class MemoryService:
         if len(projections) != len(set(projections)):
             raise MemoryError("memory backend returned duplicate projection id")
         if result["removed"]:
-            observed = self.recall(scope=scope, owner=owner)
-            if any(item["id"] == memory_id for item in observed):
+            exact_lookup = getattr(self.backend, "get", None)
+            if exact_lookup is None:
+                raise MemoryError("memory backend does not support exact lookup for removal verification")
+            observed = exact_lookup(memory_id=memory_id, scope=scope, owner=owner)
+            if observed is not None:
+                validated = self._validate_memory(observed, scope=scope, owner=owner)
+                if validated["id"] != memory_id:
+                    raise MemoryError("memory backend exact lookup returned mismatched memory id")
                 raise MemoryError("memory backend reported removal but target is still recallable")
         return {"removed": result["removed"], "projection_ids": list(projections)}
 
