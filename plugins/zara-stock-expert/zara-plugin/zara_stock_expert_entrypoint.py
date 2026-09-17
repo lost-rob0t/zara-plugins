@@ -92,7 +92,7 @@ def create_plugin():
                     report['errors'].append(self._daily_error('neural_models', error))
 
                 if status.get('neural_enabled'):
-                    for model in models.get('models', ()): 
+                    for model in models.get('models', ()):
                         model_id = model.get('model_id') if isinstance(model, dict) else None
                         if not isinstance(model_id, str):
                             report['errors'].append({'stage': 'neural_forecast', 'type': 'ValueError',
