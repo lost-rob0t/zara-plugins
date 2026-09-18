@@ -34,6 +34,15 @@ class CommsDomain:
             raise CommsError(f"{name} contains invalid control characters")
         return value
 
+    @classmethod
+    def _optional_identifier(cls, value, name):
+        if value is None:
+            return None
+        identifier = cls._text(value, name, 256)
+        if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in identifier):
+            raise CommsError(f"{name} contains invalid control characters")
+        return identifier
+
     @staticmethod
     def _boolean(value, name):
         if type(value) is not bool:
@@ -188,19 +197,31 @@ class CommsDomain:
         normalized = {
             "provider": provider_name,
             "account_id": self._text(draft.get("account_id"), "account id", 256),
-            "conversation_id": draft.get("conversation_id"),
+            "conversation_id": self._optional_identifier(draft.get("conversation_id"), "conversation id"),
             "recipients": [self._text(value, "recipient", 320) for value in recipients],
             "subject": self._text(draft.get("subject", ""), "subject", 1024, allow_empty=True),
             "body": self._text(draft.get("body", ""), "body", self.max_body_bytes, allow_empty=True),
-            "reply_to": draft.get("reply_to"),
+            "reply_to": self._optional_identifier(draft.get("reply_to"), "reply_to"),
         }
-        evidence = adapter.send(normalized)
-        accepted = isinstance(evidence, dict) and evidence.get("accepted") is True
-        message = self.get(provider_name, evidence.get("message_id")) if accepted and evidence.get("message_id") else None
+        provider_evidence = adapter.send(normalized)
+        accepted = isinstance(provider_evidence, dict) and provider_evidence.get("accepted") is True
+        message_id = None
+        if accepted and isinstance(provider_evidence, dict) and provider_evidence.get("message_id") is not None:
+            try:
+                message_id = self._text(provider_evidence.get("message_id"), "message id", 256)
+                if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in message_id):
+                    raise CommsError("message id contains invalid control characters")
+            except CommsError:
+                message_id = None
+        evidence = {"accepted": accepted}
+        if message_id is not None:
+            evidence["message_id"] = message_id
+        message = self.get(provider_name, message_id) if accepted and message_id is not None else None
         verified = accepted and message is not None
         if verified:
             verified = (
-                message["provider"] == normalized["provider"]
+                message["message_id"] == message_id
+                and message["provider"] == normalized["provider"]
                 and message["account_id"] == normalized["account_id"]
                 and message["recipients"] == normalized["recipients"]
                 and message["body"] == normalized["body"]

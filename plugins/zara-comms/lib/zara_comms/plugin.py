@@ -69,7 +69,12 @@ class ZaraCommsPlugin(ServicePlugin):
             StructuredTool.from_function(func=self.get, name="comms.get", description="Read one normalized provider message."),
             StructuredTool.from_function(func=self.draft, name="comms.draft", description="Create a non-sending draft after ambiguity-safe contact resolution."),
             StructuredTool.from_function(func=self.draft_reply, name="comms.draft_reply", description="Create a non-sending reply draft preserving provider thread identity."),
-            StructuredTool.from_function(func=self.send, name="comms.send", description="Explicitly send a draft and verify provider-observed message state."),
+            StructuredTool.from_function(
+                func=self.send,
+                name="comms.send",
+                description="Explicitly send a draft and verify provider-observed message state.",
+                metadata={"zara_requires_approval": True},
+            ),
         )
 
 
