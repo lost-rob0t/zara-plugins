@@ -113,6 +113,7 @@ class ZaraEmacsPlugin(ServicePlugin):
         from_location: str = "",
         to_location: str = "",
         day: str = "today",
+        adjustment: str = "",
     ) -> str:
         return self._json(
             self._client.record_inventory_event(
@@ -125,6 +126,7 @@ class ZaraEmacsPlugin(ServicePlugin):
                 from_location,
                 to_location,
                 day,
+                adjustment,
             )
         )
 
