@@ -155,6 +155,7 @@ class EmacsClientTest(unittest.TestCase):
         self.assertIn("inventory-event", expression)
         self.assertIn("daily/", expression)
         self.assertIn("save-buffer", expression)
+        self.assertIn("ADJUSTMENT", expression)
         self.assertIn(json.dumps("pantry/pasta"), expression)
         self.assertNotIn("shell-command", expression)
 
@@ -164,7 +165,43 @@ class EmacsClientTest(unittest.TestCase):
             client.record_inventory_event("teleport", "item", 1, "each", "test")
         with self.assertRaisesRegex(EmacsError, "positive finite"):
             client.record_inventory_event("buy", "item", 0, "each", "test")
+        with self.assertRaisesRegex(EmacsError, "1 to 16"):
+            client.record_inventory_event("adjust", "item", 1, "each", "test")
+        with self.assertRaisesRegex(EmacsError, "add or remove"):
+            client.record_inventory_event(
+                "adjust", "item", 1, "each", "test", adjustment="sideways"
+            )
+        with self.assertRaisesRegex(EmacsError, "only valid"):
+            client.record_inventory_event(
+                "buy", "item", 1, "each", "test", adjustment="add"
+            )
         self.assertEqual(runner.calls, [])
+
+    def test_record_inventory_adjustment_writes_explicit_direction(self):
+        response = {
+            "id": "evt-adjust",
+            "file": "/notes/daily/2026-09-19.org",
+            "day": "2026-09-19",
+            "event": "adjust",
+            "item_key": "eggs-large",
+            "qty": "2",
+            "unit": "each",
+        }
+        payload = json.dumps(response)
+        client, runner = self.client([Result(stdout=json.dumps(payload) + "\n")])
+        result = client.record_inventory_event(
+            "adjust",
+            "eggs-large",
+            2,
+            "each",
+            "manual-count",
+            day="2026-09-19",
+            adjustment="remove",
+        )
+        self.assertTrue(result["acknowledged"])
+        expression = runner.calls[0][0][-1]
+        self.assertIn(json.dumps("remove"), expression)
+        self.assertIn(":ADJUSTMENT:", expression)
 
     def test_append_shared_memory_is_fixed_template_and_syncs(self):
         response = {
