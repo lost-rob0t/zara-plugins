@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### zara-ssh 0.1.0
+- Add typed SSH/SFTP host discovery, remote stat/list, and approval-gated file fetch commands with matching portable Prolog capability facts.
+- Confine remote and local paths to configured roots, reject unknown hosts through strict host-key verification, and never expose key material through tool results.
+- Verify fetched files by observed byte count and SHA-256 before reporting success; existing local destinations are never overwritten.
+
 ### zara-emacs 0.2.0
 - Use the full configured Org notes root as a bounded knowledge surface.
 - Add Org QL queries for active shared agent memory and inventory/food state.
