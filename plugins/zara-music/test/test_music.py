@@ -201,6 +201,10 @@ class MusicDomainTest(unittest.TestCase):
             ),
             facts,
         )
+        self.assertIn(
+            "music_transport_capability(remote_ssh, 'ssh.file.fetch').",
+            source,
+        )
 
     def test_backend_boolean_evidence_cannot_be_truthy_strings(self):
         class BadBackend(FakeBackend):
