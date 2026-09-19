@@ -71,7 +71,7 @@ class EmacsClientTest(unittest.TestCase):
         self.assertEqual(result["count"], 1)
         expression = runner.calls[0][0][-1]
         self.assertIn('property "KIND" "inventory-event"', expression)
-        self.assertIn('property \\"KIND\\" \\"food-event\\"', expression)
+        self.assertIn('property "KIND" "food-event"', expression)
 
     def test_unresolved_inventory_queries_events_without_item_id(self):
         payload = json.dumps(
