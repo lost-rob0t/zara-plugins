@@ -4,6 +4,7 @@
             music_requires_current_track/1
           ]).
 
+music_tool('current', 'music:current', 'music.current', read).
 music_tool('search', 'music:search', 'music.search', read).
 music_tool('recommend', 'music:recommend', 'music.recommend', read).
 music_tool('play', 'music:play', 'music.play', write).
