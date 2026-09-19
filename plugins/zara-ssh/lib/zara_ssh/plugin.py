@@ -67,6 +67,10 @@ class ZaraSSHPlugin(ServicePlugin):
                 ),
             )
 
+        registrar = getattr(runtime, "register_symbol", None)
+        if not callable(registrar):
+            return
+
         methods = {
             "ssh.hosts": self.hosts,
             "ssh.file.stat": self.file_stat,
@@ -74,7 +78,7 @@ class ZaraSSHPlugin(ServicePlugin):
             "ssh.file.fetch": self.file_fetch,
         }
         for symbol, capability, docs in self._SYMBOLS:
-            runtime.register_symbol(
+            registrar(
                 symbol,
                 "command",
                 methods[capability],
