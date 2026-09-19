@@ -39,6 +39,7 @@ class ZaraEmacsPlugin(ServicePlugin):
             (self.open_daily, "org_roam.open_daily", "Open an Org-roam daily note and request a separate Zara dictation handoff."),
             (self.shared_memory, "org_ql.shared_memory", "Query bounded active shared agent-memory assertions from the full Org graph."),
             (self.inventory, "org_ql.inventory", "Query bounded inventory, food, and stock-event entities from the full Org graph."),
+            (self.record_inventory_event, "inventory.record_event", "Append a structured inventory event to an Org-roam daily page."),
             (self.append_shared_memory, "org_memory.append_shared", "Append a provenance-bearing shared-memory Org-roam assertion and optionally supersede a prior assertion."),
             (self.open_magit, "magit.open_project", "Open Magit for a configured project alias."),
             (self.context, "emacs.context", "Read bounded current Emacs buffer, file, and project context."),
@@ -69,6 +70,32 @@ class ZaraEmacsPlugin(ServicePlugin):
 
     def inventory(self, limit: int = 100) -> str:
         return self._json(self._client.inventory(limit))
+
+    def record_inventory_event(
+        self,
+        event: str,
+        item_key: str,
+        qty: float,
+        unit: str,
+        source: str,
+        item_id: str = "",
+        from_location: str = "",
+        to_location: str = "",
+        day: str = "today",
+    ) -> str:
+        return self._json(
+            self._client.record_inventory_event(
+                event,
+                item_key,
+                qty,
+                unit,
+                source,
+                item_id,
+                from_location,
+                to_location,
+                day,
+            )
+        )
 
     def append_shared_memory(
         self,
