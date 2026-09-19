@@ -2,11 +2,13 @@ import hashlib
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
+from zara_ssh.backend import ParamikoSFTPBackend
 from zara_ssh.domain import HostPolicy, SSHDomain, SSHError
 from zara_ssh.plugin import ZaraSSHPlugin
 
@@ -124,6 +126,54 @@ class SSHDomainTest(unittest.TestCase):
                 str(self.local_root / "large.flac"),
             )
         self.assertEqual(backend.fetch_calls, [])
+
+    def test_paramiko_backend_rejects_unknown_hosts_and_uses_key_only_auth(self):
+        policy = self.domain.policies["media"]
+        backend = ParamikoSFTPBackend({"media": policy})
+        client = mock.MagicMock()
+        sftp = mock.MagicMock()
+        channel = mock.MagicMock()
+        attrs = mock.MagicMock()
+        attrs.st_size = len(self.backend.payload)
+        attrs.st_mode = 0o100644
+        sftp.stat.return_value = attrs
+        sftp.get_channel.return_value = channel
+        client.open_sftp.return_value = sftp
+        reject_policy = object()
+
+        with mock.patch("paramiko.SSHClient", return_value=client), mock.patch(
+            "paramiko.RejectPolicy",
+            return_value=reject_policy,
+        ):
+            result = backend.stat("media", "/srv/music/song.flac")
+
+        self.assertTrue(result["is_file"])
+        client.load_system_host_keys.assert_called_once_with()
+        client.set_missing_host_key_policy.assert_called_once_with(reject_policy)
+        connect = client.connect.call_args.kwargs
+        self.assertEqual(connect["hostname"], "musicbox")
+        self.assertEqual(connect["username"], "zara")
+        self.assertTrue(connect["allow_agent"])
+        self.assertTrue(connect["look_for_keys"])
+        self.assertNotIn("password", connect)
+        channel.settimeout.assert_called_once_with(15.0)
+
+    def test_configured_missing_known_hosts_fails_before_connect(self):
+        policy = HostPolicy(
+            alias="media",
+            hostname="musicbox",
+            username="zara",
+            port=22,
+            remote_roots=("/srv/music",),
+            local_roots=(self.local_root,),
+            known_hosts=Path(self.temp.name) / "missing-known-hosts",
+        )
+        backend = ParamikoSFTPBackend({"media": policy})
+        client = mock.MagicMock()
+        with mock.patch("paramiko.SSHClient", return_value=client):
+            with self.assertRaisesRegex(SSHError, "known_hosts"):
+                backend.stat("media", "/srv/music/song.flac")
+        client.connect.assert_not_called()
 
     def test_plugin_surface_and_runtime_symbols(self):
         plugin = ZaraSSHPlugin(self.backend, policies=self.domain.policies)
