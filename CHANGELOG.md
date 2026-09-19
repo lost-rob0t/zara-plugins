@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### zara-music 0.1.0
+- Add Prolog-first runtime commands for music search, recommendations, play, pause, volume, current-track favorites, and adding the current track to a playlist.
+- Register the same command names in Zara's programmable runtime namespace and a portable Prolog tool catalog, keeping effect authority in the canonical runtime.
+- Fail closed when current-track mutations have no active track and require explicit verified mutation evidence.
+
 ### zara-emacs 0.2.0
 - Use the full configured Org notes root as a bounded knowledge surface.
 - Add Org QL queries for active shared agent memory and inventory/food state.
