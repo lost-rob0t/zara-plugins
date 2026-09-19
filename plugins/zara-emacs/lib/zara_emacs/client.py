@@ -8,7 +8,7 @@ from datetime import date
 from pathlib import Path
 from typing import Callable
 
-from .config import EmacsConfig
+from .config import EmacsConfig, EmacsWorkflowStep
 
 
 class EmacsError(RuntimeError):
@@ -111,6 +111,61 @@ class EmacsClient:
         return {
             "operation": "open_magit",
             "project_id": project_id,
+            "acknowledged": True,
+        }
+
+    def open_dashboard(self) -> dict:
+        expression = (
+            "(progn (require 'ai-dashboard nil t) "
+            "(unless (fboundp 'ai/dashboard) (error \"ai-dashboard unavailable\")) "
+            "(ai/dashboard) t)"
+        )
+        self._eval(expression)
+        return {"operation": "open_dashboard", "acknowledged": True}
+
+    def open_zara_chat(self) -> dict:
+        expression = (
+            "(progn (require 'zara nil t) "
+            "(unless (fboundp 'zara-chat) (error \"zara Emacs client unavailable\")) "
+            "(zara-chat) t)"
+        )
+        self._eval(expression)
+        return {"operation": "open_zara_chat", "acknowledged": True}
+
+    def _run_workflow_step(self, step: EmacsWorkflowStep) -> dict:
+        argument = step.argument
+        if step.operation == "open_scratch":
+            return self.open_scratch()
+        if step.operation == "open_file":
+            return self.open_file(str(argument))
+        if step.operation == "open_buffer":
+            return self.open_buffer(str(argument))
+        if step.operation == "open_daily":
+            return self.open_daily(argument or "today")
+        if step.operation == "open_magit":
+            return self.open_magit(str(argument))
+        if step.operation == "open_dashboard":
+            return self.open_dashboard()
+        if step.operation == "open_zara_chat":
+            return self.open_zara_chat()
+        raise EmacsError(f"unsupported configured workflow operation: {step.operation}")
+
+    def run_workflow(self, workflow_id: str) -> dict:
+        if workflow_id not in self.config.workflows:
+            raise EmacsError(f"unknown workflow: {workflow_id}")
+        results: list[dict] = []
+        for index, step in enumerate(self.config.workflows[workflow_id], start=1):
+            try:
+                results.append(self._run_workflow_step(step))
+            except EmacsError as error:
+                raise EmacsError(
+                    f"workflow {workflow_id!r} failed at step {index} "
+                    f"({step.operation}): {error}"
+                ) from error
+        return {
+            "operation": "run_workflow",
+            "workflow_id": workflow_id,
+            "steps": results,
             "acknowledged": True,
         }
 
