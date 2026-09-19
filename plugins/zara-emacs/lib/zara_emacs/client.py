@@ -164,6 +164,7 @@ class EmacsClient:
             "`((id . ,(or (org-entry-get nil \"ID\") \"\")) "
             "(kind . ,(or (org-entry-get nil \"KIND\") \"\")) "
             "(title . ,(org-get-heading t t t t)) "
+            "(item_key . ,(or (org-entry-get nil \"ITEM_KEY\") \"\")) "
             "(event . ,(or (org-entry-get nil \"EVENT\") \"\")) "
             "(item_id . ,(or (org-entry-get nil \"ITEM_ID\") \"\")) "
             "(qty . ,(or (org-entry-get nil \"QTY\") \"\")) "
@@ -173,6 +174,119 @@ class EmacsClient:
         )
         rows = self._eval_json(expression)
         return {"operation": "inventory", "rows": rows, "count": len(rows)}
+
+    def unresolved_inventory(self, limit: int = 100) -> dict:
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise EmacsError("limit must be an integer between 1 and 500")
+        root = json.dumps(self._notes_root())
+        expression = (
+            "(progn (require 'org) (require 'org-ql) (require 'json) (require 'seq) "
+            f"(let* ((root (file-name-as-directory (expand-file-name {root}))) "
+            "(files (directory-files-recursively root \"\\\\.org\\\\'\")) "
+            "(rows (org-ql-select files "
+            "'(and (property \"KIND\" \"inventory-event\") "
+            "(property \"ITEM_ID\" \"\")) "
+            ":action (lambda () "
+            "`((id . ,(or (org-entry-get nil \"ID\") \"\")) "
+            "(title . ,(org-get-heading t t t t)) "
+            "(event . ,(or (org-entry-get nil \"EVENT\") \"\")) "
+            "(item_key . ,(or (org-entry-get nil \"ITEM_KEY\") \"\")) "
+            "(qty . ,(or (org-entry-get nil \"QTY\") \"\")) "
+            "(unit . ,(or (org-entry-get nil \"UNIT\") \"\")) "
+            "(source . ,(or (org-entry-get nil \"SOURCE\") \"\"))))))) "
+            f"(json-serialize (seq-take rows {limit}))))"
+        )
+        rows = self._eval_json(expression)
+        return {"operation": "unresolved_inventory", "rows": rows, "count": len(rows)}
+
+    def materialize_inventory_item(
+        self,
+        item_key: str,
+        name: str,
+        unit: str,
+        source: str,
+        category: str = "",
+        barcode: str = "",
+        sku: str = "",
+        default_location: str = "",
+        reorder_at: float | None = None,
+    ) -> dict:
+        item_key = self._single_line("item_key", item_key, maximum=256)
+        name = self._single_line("name", name, maximum=256)
+        unit = self._single_line("unit", unit, maximum=64)
+        source = self._single_line("source", source, maximum=512)
+        optional = {
+            "category": category,
+            "barcode": barcode,
+            "sku": sku,
+            "default_location": default_location,
+        }
+        for field, value in optional.items():
+            if value:
+                optional[field] = self._single_line(field, value, maximum=256)
+        if reorder_at is None:
+            reorder_text = ""
+        else:
+            if (
+                isinstance(reorder_at, bool)
+                or not isinstance(reorder_at, (int, float))
+                or not math.isfinite(reorder_at)
+                or reorder_at < 0
+            ):
+                raise EmacsError("reorder_at must be a non-negative finite number")
+            reorder_text = format(float(reorder_at), ".12g")
+
+        root = json.dumps(self._notes_root())
+        encoded_item_key = json.dumps(item_key)
+        encoded_name = json.dumps(name)
+        encoded_unit = json.dumps(unit)
+        encoded_source = json.dumps(source)
+        encoded_category = json.dumps(optional["category"])
+        encoded_barcode = json.dumps(optional["barcode"])
+        encoded_sku = json.dumps(optional["sku"])
+        encoded_location = json.dumps(optional["default_location"])
+        encoded_reorder = json.dumps(reorder_text)
+        expression = (
+            "(progn (require 'org) (require 'org-id) (require 'org-ql) (require 'json) (require 'subr-x) "
+            f"(let* ((root (file-name-as-directory (expand-file-name {root}))) "
+            "(dir (expand-file-name \"inventory/items/\" root)) "
+            "(files (when (file-directory-p root) "
+            "(directory-files-recursively root \"\\\\.org\\\\'\"))) "
+            f"(item-key {encoded_item_key}) (name {encoded_name}) (unit {encoded_unit}) "
+            f"(source {encoded_source}) (category {encoded_category}) "
+            f"(barcode {encoded_barcode}) (sku {encoded_sku}) "
+            f"(default-location {encoded_location}) (reorder-at {encoded_reorder}) "
+            "(existing (org-ql-select files "
+            "`(and (property \"KIND\" \"inventory-item\") "
+            "(property \"ITEM_KEY\" ,item-key)) "
+            ":action (lambda () "
+            "`((id . ,(or (org-entry-get nil \"ID\") \"\")) "
+            "(file . ,(or (buffer-file-name) \"\")) "
+            "(name . ,(or (org-entry-get nil \"NAME\") \"\"))))))) "
+            "(if existing "
+            "(json-serialize `((status . \"existing\") "
+            "(id . ,(alist-get 'id (car existing))) "
+            "(file . ,(alist-get 'file (car existing))) "
+            "(name . ,(alist-get 'name (car existing))))) "
+            "(let* ((id (org-id-new)) (file (expand-file-name (concat id \".org\") dir))) "
+            "(make-directory dir t) "
+            "(with-temp-file file "
+            "(insert \"#+title: Inventory item: \" name "
+            "\"\\n#+filetags: :inventory:item:\\n\\n* Item\\n:PROPERTIES:\\n:ID:       \" id "
+            "\"\\n:KIND:     inventory-item\\n:ITEM_KEY: \" item-key "
+            "\"\\n:NAME:     \" name \"\\n:UNIT:     \" unit "
+            "\"\\n:CATEGORY: \" category \"\\n:BARCODE:  \" barcode "
+            "\"\\n:SKU:      \" sku \"\\n:DEFAULT_LOCATION: \" default-location "
+            "\"\\n:REORDER_AT: \" reorder-at \"\\n:SOURCE:   \" source "
+            "\"\\n:CREATED:  \" (format-time-string \"[%Y-%m-%d %a %H:%M]\") "
+            "\"\\n:END:\\n\")) "
+            "(when (fboundp 'org-roam-db-sync) (org-roam-db-sync)) "
+            "(when (fboundp 'gpt-todos-sync) (gpt-todos-sync file)) "
+            "(json-serialize `((status . \"created\") (id . ,id) "
+            "(file . ,file) (name . ,name) (item_key . ,item-key)))))))"
+        )
+        result = self._eval_json(expression)
+        return {"operation": "materialize_inventory_item", **result, "acknowledged": True}
 
     def record_inventory_event(
         self,
