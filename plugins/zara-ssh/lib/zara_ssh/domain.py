@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Mapping
@@ -19,6 +20,9 @@ class HostPolicy:
     remote_roots: tuple[str, ...]
     local_roots: tuple[Path, ...]
     max_transfer_bytes: int = 1024 * 1024 * 1024
+    known_hosts: Path | None = None
+    identity_file: Path | None = None
+    timeout_seconds: float = 15.0
 
     def __post_init__(self) -> None:
         for name, value, limit in (
@@ -34,6 +38,13 @@ class HostPolicy:
             raise SSHError("port is out of range")
         if type(self.max_transfer_bytes) is not int or self.max_transfer_bytes <= 0:
             raise SSHError("max_transfer_bytes must be a positive integer")
+        if (
+            isinstance(self.timeout_seconds, bool)
+            or not isinstance(self.timeout_seconds, (int, float))
+            or not math.isfinite(self.timeout_seconds)
+            or not 0.1 <= float(self.timeout_seconds) <= 300.0
+        ):
+            raise SSHError("timeout_seconds must be finite and between 0.1 and 300")
         if not self.remote_roots or not self.local_roots:
             raise SSHError("remote_roots and local_roots must be non-empty")
         for root in self.remote_roots:
@@ -44,6 +55,15 @@ class HostPolicy:
             path = Path(root).expanduser()
             if not path.is_absolute():
                 raise SSHError("local root must be absolute")
+        for name, configured_path in (
+            ("known_hosts", self.known_hosts),
+            ("identity_file", self.identity_file),
+        ):
+            if configured_path is None:
+                continue
+            path = Path(configured_path).expanduser()
+            if not path.is_absolute():
+                raise SSHError(f"{name} must be absolute")
 
 
 class SSHDomain:
