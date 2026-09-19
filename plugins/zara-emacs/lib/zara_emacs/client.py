@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 from datetime import date
 from pathlib import Path
@@ -172,6 +173,90 @@ class EmacsClient:
         )
         rows = self._eval_json(expression)
         return {"operation": "inventory", "rows": rows, "count": len(rows)}
+
+    def record_inventory_event(
+        self,
+        event: str,
+        item_key: str,
+        qty: float,
+        unit: str,
+        source: str,
+        item_id: str = "",
+        from_location: str = "",
+        to_location: str = "",
+        day: str = "today",
+    ) -> dict:
+        allowed = {
+            "ordered",
+            "receive",
+            "buy",
+            "putaway",
+            "move",
+            "open",
+            "consume",
+            "waste",
+            "return",
+            "adjust",
+        }
+        if event not in allowed:
+            raise EmacsError(f"unsupported inventory event: {event}")
+        if isinstance(qty, bool) or not isinstance(qty, (int, float)) or not math.isfinite(qty) or qty <= 0:
+            raise EmacsError("qty must be a positive finite number")
+        item_key = self._single_line("item_key", item_key, maximum=256)
+        unit = self._single_line("unit", unit, maximum=64)
+        source = self._single_line("source", source, maximum=512)
+        if item_id:
+            item_id = self._single_line("item_id", item_id, maximum=128)
+        if from_location:
+            from_location = self._single_line("from_location", from_location, maximum=256)
+        if to_location:
+            to_location = self._single_line("to_location", to_location, maximum=256)
+        value = date.today().isoformat() if day == "today" else str(day)
+        try:
+            date.fromisoformat(value)
+        except ValueError as error:
+            raise EmacsError("inventory day must be ISO YYYY-MM-DD or today") from error
+
+        root = json.dumps(self._notes_root())
+        encoded_day = json.dumps(value)
+        encoded_event = json.dumps(event)
+        encoded_item_key = json.dumps(item_key)
+        encoded_item_id = json.dumps(item_id)
+        encoded_qty = json.dumps(format(float(qty), ".12g"))
+        encoded_unit = json.dumps(unit)
+        encoded_source = json.dumps(source)
+        encoded_from = json.dumps(from_location)
+        encoded_to = json.dumps(to_location)
+        expression = (
+            "(progn (require 'org) (require 'org-id) (require 'json) "
+            f"(let* ((root (file-name-as-directory (expand-file-name {root}))) "
+            "(dir (expand-file-name \"daily/\" root)) "
+            f"(day {encoded_day}) (event {encoded_event}) "
+            f"(item-key {encoded_item_key}) (item-id {encoded_item_id}) "
+            f"(qty {encoded_qty}) (unit {encoded_unit}) (source {encoded_source}) "
+            f"(from-location {encoded_from}) (to-location {encoded_to}) "
+            "(file (expand-file-name (concat day \".org\") dir)) "
+            "(event-id (org-id-new))) "
+            "(make-directory dir t) "
+            "(unless (file-exists-p file) "
+            "(with-temp-file file "
+            "(insert \"#+title: \" day \"\\n#+filetags: :daily:\\n:PROPERTIES:\\n:ID:       \" "
+            "(org-id-new) \"\\n:KIND:     daily\\n:DATE:     \" day \"\\n:END:\\n\"))) "
+            "(with-current-buffer (find-file-noselect file) "
+            "(goto-char (point-max)) (unless (bolp) (insert \"\\n\")) "
+            "(insert \"\\n* INVENTORY \" event \" \" item-key \"\\n:PROPERTIES:\\n:ID:       \" "
+            "event-id \"\\n:KIND:     inventory-event\\n:EVENT:    \" event "
+            "\"\\n:ITEM_KEY: \" item-key \"\\n:ITEM_ID:  \" item-id "
+            "\"\\n:QTY:      \" qty \"\\n:UNIT:     \" unit "
+            "\"\\n:FROM_LOCATION: \" from-location \"\\n:TO_LOCATION: \" to-location "
+            "\"\\n:SOURCE:   \" source \"\\n:AT:       \" "
+            "(format-time-string \"[%Y-%m-%d %a %H:%M]\") \"\\n:END:\\n\") "
+            "(save-buffer)) "
+            "(json-serialize `((id . ,event-id) (file . ,file) (day . ,day) "
+            "(event . ,event) (item_key . ,item-key) (qty . ,qty) (unit . ,unit))))))"
+        )
+        result = self._eval_json(expression)
+        return {"operation": "record_inventory_event", **result, "acknowledged": True}
 
     def append_shared_memory(
         self,
