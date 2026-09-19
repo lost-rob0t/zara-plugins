@@ -39,6 +39,8 @@ class ZaraEmacsPlugin(ServicePlugin):
             (self.open_daily, "org_roam.open_daily", "Open an Org-roam daily note and request a separate Zara dictation handoff."),
             (self.shared_memory, "org_ql.shared_memory", "Query bounded active shared agent-memory assertions from the full Org graph."),
             (self.inventory, "org_ql.inventory", "Query bounded inventory, food, and stock-event entities from the full Org graph."),
+            (self.unresolved_inventory, "inventory.unresolved", "List inventory events that still need a stable Org-roam item ID."),
+            (self.materialize_inventory_item, "inventory.materialize_item", "Create or resolve a stable Org-roam inventory-item node from an item key."),
             (self.record_inventory_event, "inventory.record_event", "Append a structured inventory event to an Org-roam daily page."),
             (self.append_shared_memory, "org_memory.append_shared", "Append a provenance-bearing shared-memory Org-roam assertion and optionally supersede a prior assertion."),
             (self.open_magit, "magit.open_project", "Open Magit for a configured project alias."),
@@ -70,6 +72,35 @@ class ZaraEmacsPlugin(ServicePlugin):
 
     def inventory(self, limit: int = 100) -> str:
         return self._json(self._client.inventory(limit))
+
+    def unresolved_inventory(self, limit: int = 100) -> str:
+        return self._json(self._client.unresolved_inventory(limit))
+
+    def materialize_inventory_item(
+        self,
+        item_key: str,
+        name: str,
+        unit: str,
+        source: str,
+        category: str = "",
+        barcode: str = "",
+        sku: str = "",
+        default_location: str = "",
+        reorder_at: float | None = None,
+    ) -> str:
+        return self._json(
+            self._client.materialize_inventory_item(
+                item_key,
+                name,
+                unit,
+                source,
+                category,
+                barcode,
+                sku,
+                default_location,
+                reorder_at,
+            )
+        )
 
     def record_inventory_event(
         self,
