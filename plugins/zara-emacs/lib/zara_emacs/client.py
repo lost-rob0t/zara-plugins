@@ -372,7 +372,7 @@ class EmacsClient:
             "\"\\n:ITEM_KEY: \" item-key \"\\n:ITEM_ID:  \" item-id "
             "\"\\n:QTY:      \" qty \"\\n:UNIT:     \" unit "
             "\"\\n:FROM_LOCATION: \" from-location \"\\n:TO_LOCATION: \" to-location "
-            "\"\\n:SOURCE:   \" source \"\\n:AT:       \" "
+            "\"\\n:ADJUSTMENT: \" adjustment \"\\n:SOURCE:   \" source \"\\n:AT:       \" "
             "(format-time-string \"[%Y-%m-%d %a %H:%M]\") \"\\n:END:\\n\") "
             "(save-buffer)) "
             "(json-serialize `((id . ,event-id) (file . ,file) (day . ,day) "
@@ -402,7 +402,7 @@ class EmacsClient:
         encoded_source = json.dumps(source)
         encoded_supersedes = json.dumps(supersedes)
         expression = (
-            "(progn (require 'org) (require 'org-id) (require 'org-ql) (require 'json) "
+            "(progn (require 'org) (require 'org-id) (require 'org-ql) (require 'json) (require 'subr-x) "
             f"(let* ((root (file-name-as-directory (expand-file-name {root}))) "
             "(dir (expand-file-name \"memory/shared/\" root)) "
             "(files (when (file-directory-p root) "
