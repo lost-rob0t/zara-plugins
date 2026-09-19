@@ -27,6 +27,7 @@ class ZaraMusicPlugin(ServicePlugin):
     )
 
     _SYMBOLS = (
+        ("music:current", "music.current", "Read the normalized currently playing track."),
         ("music:search", "music.search", "Search the configured Zara Music catalog."),
         ("music:recommend", "music.recommend", "Produce explainable Prolog-governed music recommendations."),
         ("music:play", "music.play", "Play one exact media item."),
@@ -50,6 +51,7 @@ class ZaraMusicPlugin(ServicePlugin):
 
     def start(self, runtime) -> None:
         methods = {
+            "music.current": self.current,
             "music.search": self.search,
             "music.recommend": self.recommend,
             "music.play": self.play,
