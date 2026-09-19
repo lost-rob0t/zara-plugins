@@ -299,6 +299,7 @@ class EmacsClient:
         from_location: str = "",
         to_location: str = "",
         day: str = "today",
+        adjustment: str = "",
     ) -> dict:
         allowed = {
             "ordered",
@@ -325,6 +326,12 @@ class EmacsClient:
             from_location = self._single_line("from_location", from_location, maximum=256)
         if to_location:
             to_location = self._single_line("to_location", to_location, maximum=256)
+        if event == "adjust":
+            adjustment = self._single_line("adjustment", adjustment, maximum=16)
+            if adjustment not in {"add", "remove"}:
+                raise EmacsError("adjustment must be add or remove")
+        elif adjustment:
+            raise EmacsError("adjustment is only valid for adjust events")
         value = date.today().isoformat() if day == "today" else str(day)
         try:
             date.fromisoformat(value)
@@ -341,6 +348,7 @@ class EmacsClient:
         encoded_source = json.dumps(source)
         encoded_from = json.dumps(from_location)
         encoded_to = json.dumps(to_location)
+        encoded_adjustment = json.dumps(adjustment)
         expression = (
             "(progn (require 'org) (require 'org-id) (require 'json) "
             f"(let* ((root (file-name-as-directory (expand-file-name {root}))) "
@@ -349,6 +357,7 @@ class EmacsClient:
             f"(item-key {encoded_item_key}) (item-id {encoded_item_id}) "
             f"(qty {encoded_qty}) (unit {encoded_unit}) (source {encoded_source}) "
             f"(from-location {encoded_from}) (to-location {encoded_to}) "
+            f"(adjustment {encoded_adjustment}) "
             "(file (expand-file-name (concat day \".org\") dir)) "
             "(event-id (org-id-new))) "
             "(make-directory dir t) "
