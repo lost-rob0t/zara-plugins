@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
 from zara_emacs.client import EmacsClient, EmacsError
-from zara_emacs.config import EmacsConfig
+from zara_emacs.config import EmacsConfig, EmacsConfigError
 
 
 class Result:
@@ -66,6 +66,55 @@ class EmacsClientTest(unittest.TestCase):
         client, _ = self.client([Result(returncode=1, stderr="server unavailable")])
         with self.assertRaisesRegex(EmacsError, "server unavailable"):
             client.open_scratch()
+
+    def test_dashboard_and_zara_chat_use_fixed_elisp_templates(self):
+        client, runner = self.client([Result(), Result()])
+        self.assertTrue(client.open_dashboard()["acknowledged"])
+        self.assertTrue(client.open_zara_chat()["acknowledged"])
+        dashboard_expression = runner.calls[0][0][-1]
+        zara_expression = runner.calls[1][0][-1]
+        self.assertIn("(ai/dashboard)", dashboard_expression)
+        self.assertIn("(zara-chat)", zara_expression)
+        self.assertNotIn("shell-command", dashboard_expression + zara_expression)
+
+    def test_named_workflow_runs_only_configured_steps(self):
+        config = EmacsConfig.load(
+            {
+                "projects": {"zara": "/work/zara"},
+                "workflows": {
+                    "coding": [
+                        {"operation": "open_dashboard"},
+                        {"operation": "open_magit", "argument": "zara"},
+                        {"operation": "open_zara_chat"},
+                    ]
+                },
+            }
+        )
+        runner = Runner([Result(), Result(), Result()])
+        client = EmacsClient(config, runner=runner)
+        result = client.run_workflow("coding")
+        self.assertEqual(result["workflow_id"], "coding")
+        self.assertEqual(
+            [step["operation"] for step in result["steps"]],
+            ["open_dashboard", "open_magit", "open_zara_chat"],
+        )
+        self.assertEqual(len(runner.calls), 3)
+
+    def test_unknown_or_unsafe_workflow_fails_before_process_execution(self):
+        with self.assertRaisesRegex(EmacsConfigError, "unsupported workflow operation"):
+            EmacsConfig.load(
+                {
+                    "workflows": {
+                        "unsafe": [
+                            {"operation": "eval", "argument": "(shell-command \"id\")"}
+                        ]
+                    }
+                }
+            )
+        client, runner = self.client([])
+        with self.assertRaisesRegex(EmacsError, "unknown workflow"):
+            client.run_workflow("missing")
+        self.assertEqual(runner.calls, [])
 
 
 if __name__ == "__main__":
