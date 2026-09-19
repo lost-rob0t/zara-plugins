@@ -299,7 +299,7 @@ class EmacsClient:
             "(unless (string= subject (car parents)) (error \"superseded memory subject mismatch\")))) "
             "(make-directory dir t) "
             "(with-temp-file file "
-            "(insert \"#+title: Shared memory: \" subject \"\\n#+filetags: :memory:shared:\\n\" "
+            "(insert \"#+title: Shared memory: \" subject \"\\n#+filetags: :memory:shared:\\n\\n* Assertion\\n\" "
             "\":PROPERTIES:\\n:ID:       \" id \"\\n:KIND:     memory\\n:MEMORY_SCOPE: shared\\n:SUBJECT:  \" subject "
             "\"\\n:VALUE:    \" value \"\\n:REV:      \" (number-to-string revision) "
             "\"\\n:STATUS:   active\\n:AUTHOR:   \" author \"\\n:SOURCE:   \" source "
