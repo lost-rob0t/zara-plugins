@@ -2,7 +2,7 @@
 
 Prolog-first Zara Music commands over the canonical Zara Music service/runtime boundary.
 
-This plugin is the semantic music surface. It does not scan the music filesystem, tunnel audio through ZARA/1, import `zara-media` internals, or own SSH credentials. Playback/media transport remains behind the configured Zara Music backend. Remote file retrieval belongs to the separate `zara-ssh` capability tracked by zara-plugins #851.
+This plugin is the semantic music surface. It does not scan the music filesystem, tunnel audio through ZARA/1, import `zara-media` internals, or own SSH credentials. Playback/media transport remains behind the configured Zara Music backend. Remote file retrieval belongs to the separate `zara-ssh` capability tracked by zara-plugins #851. The portable Prolog catalog maps `remote_ssh` retrieval to `ssh.file.fetch`, so symbolic planning can select that transport without importing SSH implementation code.
 
 ## Runtime / Prolog surface
 
