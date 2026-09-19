@@ -150,6 +150,7 @@ class MusicDomainTest(unittest.TestCase):
             (symbol, kind, kwargs["capabilities"])
             for symbol, kind, _, kwargs in runtime.registrations
         }
+        self.assertIn(("music:current", "command", ("music.current",)), registered)
         self.assertIn(("music:search", "command", ("music.search",)), registered)
         self.assertIn(("music:recommend", "command", ("music.recommend",)), registered)
         self.assertIn(("music:play", "command", ("music.play",)), registered)
@@ -177,6 +178,7 @@ class MusicDomainTest(unittest.TestCase):
                 source,
             )
         }
+        self.assertIn(("music:current", "music.current", "read"), facts)
         self.assertIn(("music:search", "music.search", "read"), facts)
         self.assertIn(("music:recommend", "music.recommend", "read"), facts)
         self.assertIn(("music:play", "music.play", "write"), facts)
