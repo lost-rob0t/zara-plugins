@@ -8,12 +8,15 @@ Structured Emacs integration for Zara using `emacsclient` and fixed operation te
 - `emacs.open_file(path)` — absolute paths only, passed as an argv element.
 - `emacs.open_buffer(name)` — data is encoded as an Elisp string inside a fixed template.
 - `org_roam.open_daily(date=today)` — opens a daily note, then returns `post_open: {request: dictation, started: false}` for Zara Core to consume.
+- `org_ql.shared_memory(limit=100)` — returns bounded active shared-memory assertions from the full Org graph.
+- `org_ql.inventory(limit=100)` — returns bounded inventory/item/location/food/event rows from structured Org properties.
+- `org_memory.append_shared(subject, value, author, source, supersedes="")` — appends a fresh provenance-bearing Org-roam memory node and optionally supersedes a prior assertion.
 - `magit.open_project(project_id)` — resolves only configured aliases to absolute paths.
 - `emacs.context` — bounded server-reported buffer/file/project context.
 
 ## Configuration
 
-Configure `emacsclient`, `server_name`, `timeout_seconds`, and a `projects` alias mapping through Zara's plugin configuration. Project paths and private aliases remain user-owned configuration and are never committed as defaults or written into the Nix store.
+Configure `emacsclient`, `server_name`, `timeout_seconds`, `notes_root` (default `~/Documents/Notes/org`), and a `projects` alias mapping through Zara's plugin configuration. Project paths and private aliases remain user-owned configuration and are never committed as defaults or written into the Nix store.
 
 The plugin intentionally accepts a command *name* for `emacsclient`, not a shell command/path fragment. Every process call uses an argv vector with `shell=false`; tool parameters never become executable Elisp structure. Operations requiring Elisp use fixed templates and encode user/project data as string literals.
 
@@ -34,3 +37,12 @@ nix flake check
 ```
 
 Tests use a fake process runner and require no GUI, Emacs server, network, microphone, or private project data.
+
+
+## Org knowledge graph
+
+The Org tools deliberately use the same human-readable graph owned by the gpt-todos/full-notes workflow. They do not create a Zara-only database.
+
+Shared-memory writes are append/supersede operations. The plugin creates a fresh Org ID, records KIND=memory, MEMORY_SCOPE=shared, subject/value, revision, author, source, timestamp, and optional SUPERSEDES, then asks Org-roam to refresh and invokes the existing gpt-todos sync hook when available. A supplied superseded ID must exist and have the same subject.
+
+All user strings are bounded single-line data encoded into fixed Elisp templates. No tool accepts arbitrary Elisp or shell.
