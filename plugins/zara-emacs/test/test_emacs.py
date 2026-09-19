@@ -133,6 +133,7 @@ class EmacsClientTest(unittest.TestCase):
         expression = runner.calls[0][0][-1]
         self.assertIn("org-id-new", expression)
         self.assertIn("memory/shared/", expression)
+        self.assertIn("* Assertion", expression)
         self.assertIn("gpt-todos-sync", expression)
         self.assertIn(json.dumps('editor "choice"'), expression)
         self.assertNotIn("shell-command", expression)
