@@ -57,4 +57,6 @@ A purchase can be captured immediately with an ITEM_KEY and no ITEM_ID.
 `inventory.unresolved` finds those historical daily events.
 `inventory.materialize_item` creates the stable item node once, keyed by
 ITEM_KEY, or returns the existing node if it is already materialized. Historical
-events are not rewritten; future events can carry the returned Org ID.
+events are not rewritten; future events can carry the returned Org ID. Manual
+`adjust` events additionally require `adjustment=add|remove`; Zara never guesses
+the sign of an inventory correction.
