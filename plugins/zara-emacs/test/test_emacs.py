@@ -61,7 +61,7 @@ class EmacsClientTest(unittest.TestCase):
         self.assertEqual(result["rows"][0]["id"], "m1")
         expression = runner.calls[0][0][-1]
         self.assertIn("org-ql-select", expression)
-        self.assertIn('property \\"MEMORY_SCOPE\\" \\"shared\\"', expression)
+        self.assertIn('property "MEMORY_SCOPE" "shared"', expression)
         self.assertIn("seq-take rows 25", expression)
 
     def test_inventory_queries_structured_org_kinds(self):
@@ -70,7 +70,7 @@ class EmacsClientTest(unittest.TestCase):
         result = client.inventory(10)
         self.assertEqual(result["count"], 1)
         expression = runner.calls[0][0][-1]
-        self.assertIn('property \\"KIND\\" \\"inventory-event\\"', expression)
+        self.assertIn('property "KIND" "inventory-event"', expression)
         self.assertIn('property \\"KIND\\" \\"food-event\\"', expression)
 
     def test_record_inventory_event_appends_to_daily_with_fixed_template(self):
