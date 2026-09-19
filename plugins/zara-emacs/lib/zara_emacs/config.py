@@ -17,6 +17,7 @@ class EmacsConfig:
     emacsclient: str = "emacsclient"
     server_name: str = "server"
     timeout_seconds: float = 10.0
+    notes_root: str = "~/Documents/Notes/org"
     projects: Mapping[str, str] = field(default_factory=dict)
 
     @classmethod
@@ -25,6 +26,7 @@ class EmacsConfig:
         emacsclient = source.get("emacsclient", "emacsclient")
         server_name = source.get("server_name", "server")
         timeout_seconds = source.get("timeout_seconds", 10.0)
+        notes_root = source.get("notes_root", "~/Documents/Notes/org")
         raw_projects = source.get("projects", {})
         if not isinstance(emacsclient, str):
             raise EmacsConfigError("emacsclient must be a string")
@@ -36,6 +38,8 @@ class EmacsConfig:
             or not math.isfinite(timeout_seconds)
         ):
             raise EmacsConfigError("timeout_seconds must be a finite number")
+        if not isinstance(notes_root, str):
+            raise EmacsConfigError("notes_root must be a string")
         if not isinstance(raw_projects, Mapping):
             raise EmacsConfigError("projects must be an alias-to-path mapping")
         projects: dict[str, str] = {}
@@ -47,6 +51,7 @@ class EmacsConfig:
             emacsclient=emacsclient,
             server_name=server_name,
             timeout_seconds=float(timeout_seconds),
+            notes_root=notes_root,
             projects=projects,
         )
         config.validate()
@@ -69,6 +74,9 @@ class EmacsConfig:
             or not 0.1 <= self.timeout_seconds <= 60
         ):
             raise EmacsConfigError("timeout_seconds must be between 0.1 and 60")
+        notes_root = Path(self.notes_root).expanduser()
+        if not notes_root.is_absolute() or "\\x00" in self.notes_root:
+            raise EmacsConfigError("notes_root must be an absolute path")
         if not isinstance(self.projects, Mapping):
             raise EmacsConfigError("projects must be an alias-to-path mapping")
         for alias, path in self.projects.items():
