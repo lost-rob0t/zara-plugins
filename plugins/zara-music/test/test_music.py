@@ -142,6 +142,11 @@ class MusicDomainTest(unittest.TestCase):
         with self.assertRaisesRegex(MusicError, "current track"):
             self.music.playlist_add_current("roadtrip")
 
+    def test_legacy_runtime_without_symbol_registry_still_loads_tools(self):
+        plugin = ZaraMusicPlugin(self.backend)
+        plugin.start(object())
+        self.assertIn("music.search", {tool.name for tool in plugin.tools()})
+
     def test_plugin_registers_canonical_command_symbols_for_prolog_runtime(self):
         plugin = ZaraMusicPlugin(self.backend)
         runtime = FakeRuntime()
