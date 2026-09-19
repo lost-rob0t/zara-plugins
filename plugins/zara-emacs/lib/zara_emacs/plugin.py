@@ -7,8 +7,8 @@ import json
 from langchain_core.tools import StructuredTool
 from zara.plugins import PluginMetadata, ServicePlugin
 
-from .client import EmacsClient
 from .config import EmacsConfig
+from .workflow import WorkflowEmacsClient, load_workflows
 
 
 PLUGIN_VERSION = "0.2.0"
@@ -23,10 +23,13 @@ class ZaraEmacsPlugin(ServicePlugin):
     )
 
     def __init__(self) -> None:
-        self._client = EmacsClient(EmacsConfig())
+        config = EmacsConfig()
+        self._client = WorkflowEmacsClient(config, workflows={})
 
     def start(self, runtime) -> None:
-        self._client = EmacsClient(EmacsConfig.load(runtime.configuration))
+        config = EmacsConfig.load(runtime.configuration)
+        workflows = load_workflows(runtime.configuration, projects=config.projects)
+        self._client = WorkflowEmacsClient(config, workflows=workflows)
 
     def stop(self) -> None:
         return None
@@ -44,6 +47,9 @@ class ZaraEmacsPlugin(ServicePlugin):
             (self.record_inventory_event, "inventory.record_event", "Append a structured inventory event to an Org-roam daily page."),
             (self.append_shared_memory, "org_memory.append_shared", "Append a provenance-bearing shared-memory Org-roam assertion and optionally supersede a prior assertion."),
             (self.open_magit, "magit.open_project", "Open Magit for a configured project alias."),
+            (self.open_dashboard, "emacs.open_dashboard", "Open the typed AI dashboard using a fixed Emacs template."),
+            (self.open_zara_chat, "emacs.open_zara_chat", "Open the native Zara Emacs chat using a fixed template."),
+            (self.run_workflow, "emacs.run_workflow", "Run a named configuration-owned Emacs workflow."),
             (self.context, "emacs.context", "Read bounded current Emacs buffer, file, and project context."),
         )
         return tuple(
@@ -150,6 +156,15 @@ class ZaraEmacsPlugin(ServicePlugin):
 
     def open_magit(self, project_id: str) -> str:
         return self._json(self._client.open_magit(project_id))
+
+    def open_dashboard(self) -> str:
+        return self._json(self._client.open_dashboard())
+
+    def open_zara_chat(self) -> str:
+        return self._json(self._client.open_zara_chat())
+
+    def run_workflow(self, workflow_id: str) -> str:
+        return self._json(self._client.run_workflow(workflow_id))
 
     def context(self) -> str:
         return self._json(self._client.context())
