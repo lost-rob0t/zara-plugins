@@ -73,6 +73,44 @@ class EmacsClientTest(unittest.TestCase):
         self.assertIn('property \\"KIND\\" \\"inventory-event\\"', expression)
         self.assertIn('property \\"KIND\\" \\"food-event\\"', expression)
 
+    def test_record_inventory_event_appends_to_daily_with_fixed_template(self):
+        response = {
+            "id": "evt1",
+            "file": "/notes/daily/2026-09-19.org",
+            "day": "2026-09-19",
+            "event": "putaway",
+            "item_key": "meijer-mini-penne-16oz",
+            "qty": "3",
+            "unit": "package",
+        }
+        payload = json.dumps(response)
+        client, runner = self.client([Result(stdout=json.dumps(payload) + "\n")])
+        result = client.record_inventory_event(
+            "putaway",
+            "meijer-mini-penne-16oz",
+            3,
+            "package",
+            "manual",
+            to_location="pantry/pasta",
+            day="2026-09-19",
+        )
+        self.assertTrue(result["acknowledged"])
+        self.assertEqual(result["event"], "putaway")
+        expression = runner.calls[0][0][-1]
+        self.assertIn("inventory-event", expression)
+        self.assertIn("daily/", expression)
+        self.assertIn("save-buffer", expression)
+        self.assertIn(json.dumps("pantry/pasta"), expression)
+        self.assertNotIn("shell-command", expression)
+
+    def test_record_inventory_event_rejects_bad_event_and_qty(self):
+        client, runner = self.client([])
+        with self.assertRaisesRegex(EmacsError, "unsupported inventory event"):
+            client.record_inventory_event("teleport", "item", 1, "each", "test")
+        with self.assertRaisesRegex(EmacsError, "positive finite"):
+            client.record_inventory_event("buy", "item", 0, "each", "test")
+        self.assertEqual(runner.calls, [])
+
     def test_append_shared_memory_is_fixed_template_and_syncs(self):
         response = {
             "id": "m2",
