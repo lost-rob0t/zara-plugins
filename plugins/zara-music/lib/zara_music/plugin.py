@@ -50,6 +50,9 @@ class ZaraMusicPlugin(ServicePlugin):
         self.domain = MusicDomain(self.backend)
 
     def start(self, runtime) -> None:
+        registrar = getattr(runtime, "register_symbol", None)
+        if not callable(registrar):
+            return
         methods = {
             "music.current": self.current,
             "music.search": self.search,
@@ -61,7 +64,7 @@ class ZaraMusicPlugin(ServicePlugin):
             "music.playlist.add_current": self.playlist_add_current,
         }
         for symbol, capability, docs in self._SYMBOLS:
-            runtime.register_symbol(
+            registrar(
                 symbol,
                 "command",
                 methods[capability],
