@@ -10,6 +10,8 @@ Structured Emacs integration for Zara using `emacsclient` and fixed operation te
 - `org_roam.open_daily(date=today)` — opens a daily note, then returns `post_open: {request: dictation, started: false}` for Zara Core to consume.
 - `org_ql.shared_memory(limit=100)` — returns bounded active shared-memory assertions from the full Org graph.
 - `org_ql.inventory(limit=100)` — returns bounded inventory/item/location/food/event rows from structured Org properties.
+- `inventory.unresolved(limit=100)` — lists daily inventory events that do not yet reference a stable item Org ID.
+- `inventory.materialize_item(...)` — resolves an item key to an existing item node or creates a stable Org-roam inventory-item node.
 - `inventory.record_event(...)` — appends ordered/receive/buy/putaway/move/open/consume/waste/return/adjust events to the selected Org-roam daily page.
 - `org_memory.append_shared(subject, value, author, source, supersedes="")` — appends a fresh provenance-bearing Org-roam memory node and optionally supersedes a prior assertion.
 - `magit.open_project(project_id)` — resolves only configured aliases to absolute paths.
@@ -47,3 +49,12 @@ The Org tools deliberately use the same human-readable graph owned by the gpt-to
 Shared-memory writes are append/supersede operations. The plugin creates a fresh Org ID, records KIND=memory, MEMORY_SCOPE=shared, subject/value, revision, author, source, timestamp, and optional SUPERSEDES, then asks Org-roam to refresh and invokes the existing gpt-todos sync hook when available. A supplied superseded ID must exist and have the same subject.
 
 All user strings are bounded single-line data encoded into fixed Elisp templates. No tool accepts arbitrary Elisp or shell.
+
+
+### Daily -> inventory workflow
+
+A purchase can be captured immediately with an ITEM_KEY and no ITEM_ID.
+`inventory.unresolved` finds those historical daily events.
+`inventory.materialize_item` creates the stable item node once, keyed by
+ITEM_KEY, or returns the existing node if it is already materialized. Historical
+events are not rewritten; future events can carry the returned Org ID.
