@@ -50,7 +50,7 @@ identity_file = "/home/user/.ssh/id_ed25519"
 - transport exceptions are reduced to bounded non-secret `ssh-transport-failed` errors;
 - successful fetches are independently verified from the local file.
 
-Zara Music owns music semantics. When a selected track lives on a configured remote host, `zara-music` should resolve and invoke `ssh.file.fetch` through Core-owned capability composition rather than importing this plugin's Python modules.
+Zara Music owns music semantics. Its portable Prolog catalog maps remote retrieval to `ssh.file.fetch`; the assistant/runtime executes that approval-gated SSH effect as its own canonical tool step. Do not import this plugin's private Python modules or bypass the SSH approval policy.
 
 ## Verification
 
