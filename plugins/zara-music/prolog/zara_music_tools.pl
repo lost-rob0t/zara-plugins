@@ -1,7 +1,8 @@
 :- module(zara_music_tools,
           [ music_tool/4,
             music_strategy/1,
-            music_requires_current_track/1
+            music_requires_current_track/1,
+            music_transport_capability/2
           ]).
 
 music_tool('current', 'music:current', 'music.current', read).
@@ -25,3 +26,5 @@ music_strategy('sonic-path').
 
 music_requires_current_track('music:favorite-current').
 music_requires_current_track('music:playlist-add-current').
+
+music_transport_capability(remote_ssh, 'ssh.file.fetch').
