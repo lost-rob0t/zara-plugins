@@ -19,7 +19,7 @@ class ZaraEmacsPlugin(ServicePlugin):
         name="zara-emacs",
         version=PLUGIN_VERSION,
         api_version="1",
-        description="Structured Emacs, dashboard, named workflow, Org-roam, and Magit integration",
+        description="Structured Emacs dashboard, named workflows, Org-roam, and Magit integration",
     )
 
     def __init__(self) -> None:
