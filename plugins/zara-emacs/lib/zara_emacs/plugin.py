@@ -11,7 +11,7 @@ from .client import EmacsClient
 from .config import EmacsConfig
 
 
-PLUGIN_VERSION = "0.1.0"
+PLUGIN_VERSION = "0.1.1"
 
 
 class ZaraEmacsPlugin(ServicePlugin):
@@ -19,7 +19,7 @@ class ZaraEmacsPlugin(ServicePlugin):
         name="zara-emacs",
         version=PLUGIN_VERSION,
         api_version="1",
-        description="Structured Emacs, Org-roam daily, and Magit project integration",
+        description="Structured Emacs, dashboard, named workflow, Org-roam, and Magit integration",
     )
 
     def __init__(self) -> None:
@@ -38,6 +38,9 @@ class ZaraEmacsPlugin(ServicePlugin):
             (self.open_buffer, "emacs.open_buffer", "Switch to a named Emacs buffer without arbitrary Elisp."),
             (self.open_daily, "org_roam.open_daily", "Open an Org-roam daily note and request a separate Zara dictation handoff."),
             (self.open_magit, "magit.open_project", "Open Magit for a configured project alias."),
+            (self.open_dashboard, "emacs.open_dashboard", "Open the typed AI dashboard using a fixed Emacs template."),
+            (self.open_zara_chat, "emacs.open_zara_chat", "Open the native Zara Emacs chat using a fixed template."),
+            (self.run_workflow, "emacs.run_workflow", "Run a named configuration-owned Emacs workflow."),
             (self.context, "emacs.context", "Read bounded current Emacs buffer, file, and project context."),
         )
         return tuple(
@@ -63,6 +66,15 @@ class ZaraEmacsPlugin(ServicePlugin):
 
     def open_magit(self, project_id: str) -> str:
         return self._json(self._client.open_magit(project_id))
+
+    def open_dashboard(self) -> str:
+        return self._json(self._client.open_dashboard())
+
+    def open_zara_chat(self) -> str:
+        return self._json(self._client.open_zara_chat())
+
+    def run_workflow(self, workflow_id: str) -> str:
+        return self._json(self._client.run_workflow(workflow_id))
 
     def context(self) -> str:
         return self._json(self._client.context())
