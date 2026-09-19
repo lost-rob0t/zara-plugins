@@ -53,6 +53,69 @@ class EmacsClientTest(unittest.TestCase):
         self.assertNotIn("org-roam-dailies-goto-date", expression)
         self.assertNotIn("start-process-shell-command", expression)
 
+    def test_shared_memory_queries_org_ql_with_bounded_limit(self):
+        payload = json.dumps([{"id": "m1", "subject": "editor", "value": "emacs"}])
+        client, runner = self.client([Result(stdout=json.dumps(payload) + "\n")])
+        result = client.shared_memory(25)
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["rows"][0]["id"], "m1")
+        expression = runner.calls[0][0][-1]
+        self.assertIn("org-ql-select", expression)
+        self.assertIn('property \\"MEMORY_SCOPE\\" \\"shared\\"', expression)
+        self.assertIn("seq-take rows 25", expression)
+
+    def test_inventory_queries_structured_org_kinds(self):
+        payload = json.dumps([{"id": "i1", "kind": "inventory-item"}])
+        client, runner = self.client([Result(stdout=json.dumps(payload) + "\n")])
+        result = client.inventory(10)
+        self.assertEqual(result["count"], 1)
+        expression = runner.calls[0][0][-1]
+        self.assertIn('property \\"KIND\\" \\"inventory-event\\"', expression)
+        self.assertIn('property \\"KIND\\" \\"food-event\\"', expression)
+
+    def test_append_shared_memory_is_fixed_template_and_syncs(self):
+        response = {
+            "id": "m2",
+            "file": "/notes/memory/shared/m2.org",
+            "subject": 'editor "choice"',
+            "revision": 2,
+            "supersedes": "m1",
+        }
+        payload = json.dumps(response)
+        client, runner = self.client([Result(stdout=json.dumps(payload) + "\n")])
+        result = client.append_shared_memory(
+            'editor "choice"',
+            "emacs",
+            "zara",
+            "conversation:test",
+            "m1",
+        )
+        self.assertTrue(result["acknowledged"])
+        self.assertEqual(result["id"], "m2")
+        expression = runner.calls[0][0][-1]
+        self.assertIn("org-id-new", expression)
+        self.assertIn("memory/shared/", expression)
+        self.assertIn("gpt-todos-sync", expression)
+        self.assertIn(json.dumps('editor "choice"'), expression)
+        self.assertNotIn("shell-command", expression)
+
+    def test_append_shared_memory_rejects_multiline_properties(self):
+        client, runner = self.client([])
+        with self.assertRaisesRegex(EmacsError, "single line"):
+            client.append_shared_memory(
+                "editor\nchoice",
+                "emacs",
+                "zara",
+                "conversation:test",
+            )
+        self.assertEqual(runner.calls, [])
+
+    def test_org_query_limit_is_bounded(self):
+        client, runner = self.client([])
+        with self.assertRaisesRegex(EmacsError, "between 1 and 500"):
+            client.shared_memory(501)
+        self.assertEqual(runner.calls, [])
+
     def test_magit_resolves_only_known_project_alias(self):
         client, runner = self.client([Result(stdout='t\n')])
         result = client.open_magit("zara")
