@@ -11,7 +11,7 @@ from .client import EmacsClient
 from .config import EmacsConfig
 
 
-PLUGIN_VERSION = "0.1.0"
+PLUGIN_VERSION = "0.2.0"
 
 
 class ZaraEmacsPlugin(ServicePlugin):
@@ -37,6 +37,9 @@ class ZaraEmacsPlugin(ServicePlugin):
             (self.open_file, "emacs.open_file", "Open an absolute file path in the configured Emacs server."),
             (self.open_buffer, "emacs.open_buffer", "Switch to a named Emacs buffer without arbitrary Elisp."),
             (self.open_daily, "org_roam.open_daily", "Open an Org-roam daily note and request a separate Zara dictation handoff."),
+            (self.shared_memory, "org_ql.shared_memory", "Query bounded active shared agent-memory assertions from the full Org graph."),
+            (self.inventory, "org_ql.inventory", "Query bounded inventory, food, and stock-event entities from the full Org graph."),
+            (self.append_shared_memory, "org_memory.append_shared", "Append a provenance-bearing shared-memory Org-roam assertion and optionally supersede a prior assertion."),
             (self.open_magit, "magit.open_project", "Open Magit for a configured project alias."),
             (self.context, "emacs.context", "Read bounded current Emacs buffer, file, and project context."),
         )
@@ -60,6 +63,30 @@ class ZaraEmacsPlugin(ServicePlugin):
 
     def open_daily(self, date: str = "today") -> str:
         return self._json(self._client.open_daily(date))
+
+    def shared_memory(self, limit: int = 100) -> str:
+        return self._json(self._client.shared_memory(limit))
+
+    def inventory(self, limit: int = 100) -> str:
+        return self._json(self._client.inventory(limit))
+
+    def append_shared_memory(
+        self,
+        subject: str,
+        value: str,
+        author: str,
+        source: str,
+        supersedes: str = "",
+    ) -> str:
+        return self._json(
+            self._client.append_shared_memory(
+                subject,
+                value,
+                author,
+                source,
+                supersedes,
+            )
+        )
 
     def open_magit(self, project_id: str) -> str:
         return self._json(self._client.open_magit(project_id))
