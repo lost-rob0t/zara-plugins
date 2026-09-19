@@ -10,6 +10,7 @@ Structured Emacs integration for Zara using `emacsclient` and fixed operation te
 - `org_roam.open_daily(date=today)` — opens a daily note, then returns `post_open: {request: dictation, started: false}` for Zara Core to consume.
 - `org_ql.shared_memory(limit=100)` — returns bounded active shared-memory assertions from the full Org graph.
 - `org_ql.inventory(limit=100)` — returns bounded inventory/item/location/food/event rows from structured Org properties.
+- `inventory.record_event(...)` — appends ordered/receive/buy/putaway/move/open/consume/waste/return/adjust events to the selected Org-roam daily page.
 - `org_memory.append_shared(subject, value, author, source, supersedes="")` — appends a fresh provenance-bearing Org-roam memory node and optionally supersedes a prior assertion.
 - `magit.open_project(project_id)` — resolves only configured aliases to absolute paths.
 - `emacs.context` — bounded server-reported buffer/file/project context.
