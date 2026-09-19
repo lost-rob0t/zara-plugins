@@ -73,6 +73,61 @@ class EmacsClientTest(unittest.TestCase):
         self.assertIn('property "KIND" "inventory-event"', expression)
         self.assertIn('property \\"KIND\\" \\"food-event\\"', expression)
 
+    def test_unresolved_inventory_queries_events_without_item_id(self):
+        payload = json.dumps(
+            [{"id": "e1", "item_key": "eggs-large", "event": "buy"}]
+        )
+        client, runner = self.client([Result(stdout=json.dumps(payload) + "\n")])
+        result = client.unresolved_inventory(20)
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["rows"][0]["item_key"], "eggs-large")
+        expression = runner.calls[0][0][-1]
+        self.assertIn('property "KIND" "inventory-event"', expression)
+        self.assertIn('property "ITEM_ID" ""', expression)
+        self.assertIn("seq-take rows 20", expression)
+
+    def test_materialize_inventory_item_creates_stable_org_node(self):
+        response = {
+            "status": "created",
+            "id": "item-1",
+            "file": "/notes/inventory/items/item-1.org",
+            "name": "Large eggs",
+            "item_key": "eggs-large",
+        }
+        payload = json.dumps(response)
+        client, runner = self.client([Result(stdout=json.dumps(payload) + "\n")])
+        result = client.materialize_inventory_item(
+            "eggs-large",
+            "Large eggs",
+            "each",
+            "daily:2026-09-19",
+            category="food",
+            barcode="123456",
+            default_location="fridge",
+            reorder_at=4,
+        )
+        self.assertTrue(result["acknowledged"])
+        self.assertEqual(result["status"], "created")
+        expression = runner.calls[0][0][-1]
+        self.assertIn("inventory/items/", expression)
+        self.assertIn("inventory-item", expression)
+        self.assertIn('property "ITEM_KEY"', expression)
+        self.assertIn("* Item", expression)
+        self.assertIn("gpt-todos-sync", expression)
+        self.assertNotIn("shell-command", expression)
+
+    def test_materialize_inventory_item_rejects_bad_reorder_value(self):
+        client, runner = self.client([])
+        with self.assertRaisesRegex(EmacsError, "non-negative finite"):
+            client.materialize_inventory_item(
+                "eggs-large",
+                "Large eggs",
+                "each",
+                "test",
+                reorder_at=-1,
+            )
+        self.assertEqual(runner.calls, [])
+
     def test_record_inventory_event_appends_to_daily_with_fixed_template(self):
         response = {
             "id": "evt1",
