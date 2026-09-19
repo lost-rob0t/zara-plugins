@@ -15,7 +15,7 @@ class ParamikoSFTPBackend:
 
     def status(self) -> dict[str, object]:
         try:
-            import paramiko  # noqa: F401
+            import paramiko
         except ImportError:
             return {"status": "unavailable", "reason": "paramiko-not-installed"}
         if not self.policies:
