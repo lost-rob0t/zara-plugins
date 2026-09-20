@@ -67,7 +67,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest tests.test_nix_bash_dotfiles_brain_e2e
+          python3 -m unittest discover \
+            -s tests \
+            -t . \
+            -p 'test_nix_bash_dotfiles_brain_e2e.py'
 
       - name: Capture source compatibility diagnostics
         continue-on-error: true
