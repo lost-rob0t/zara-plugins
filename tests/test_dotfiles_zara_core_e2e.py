@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DOTFILES_ROOT = os.environ.get("ZARA_DOTFILES_ROOT")
 ZARA_CORE_ROOT = os.environ.get("ZARA_CORE_ROOT")
 EXPECTED_DOTFILES_COMMIT = "1c825e84a4ca2eaee6fa9a7db8c251b256d991c9"
-EXPECTED_ZARA_CORE_COMMIT = "fded1099e82f315b069676d1aadd66fe96aebccc"
+EXPECTED_ZARA_CORE_COMMIT = "967d12b3d7e26ee926f6b3516b47ecc13b948a38"
 ZARA_EXPERT_LIB = REPO_ROOT / "plugins" / "zara-expert" / "lib"
 
 if ZARA_CORE_ROOT:
@@ -25,6 +25,7 @@ from zara_expert.dotfiles_composition import CoreDotfilesCompositionInvoker
 from zara_expert.dotfiles_family import descriptor as dotfiles_descriptor
 from zara_expert.dotfiles_family import register_dotfiles_expert
 from zara_expert.dotfiles_handler import make_dotfiles_expert_handler
+from zara_expert.dotfiles_style import style_sources_for_language
 from zara_expert.language_composition import CoreLanguageFamilyCompositionInvoker
 from zara_expert.language_family import descriptors, register_language_family
 from zara_expert.language_handler import make_language_expert_handler
@@ -75,8 +76,16 @@ class DotfilesZaraCoreE2ETests(unittest.TestCase):
             "nix": [cls.dotfiles_root / ".zara" / "experts" / "nix" / "kb" / "expert.pl"],
             "bash": [cls.dotfiles_root / ".zara" / "experts" / "bash" / "kb" / "expert.pl"],
         }
+        cls.style_paths = {
+            "project": cls.dotfiles_root / ".zara" / "style" / "project.pl",
+            "nix": cls.dotfiles_root / ".zara" / "style" / "languages" / "nix.pl",
+            "bash": cls.dotfiles_root / ".zara" / "style" / "languages" / "bash.pl",
+        }
         if not cls.dotfiles_source.is_file():
             raise AssertionError(f"missing canonical DotfilesExpert source: {cls.dotfiles_source}")
+        for label, path in cls.style_paths.items():
+            if not path.is_file():
+                raise AssertionError(f"missing canonical {label} style source: {path}")
         validate_language_source_contracts(cls.language_sources)
 
     def setUp(self) -> None:
@@ -171,6 +180,63 @@ class DotfilesZaraCoreE2ETests(unittest.TestCase):
                 self.assertEqual(budget.invocations_used, 2)
                 self.assertEqual(budget.max_model_calls, 0)
                 self.assertEqual(budget.model_calls_used, 0)
+
+    def test_real_dotfiles_style_refs_feed_nix_and_bash_core_style_rules(self) -> None:
+        cases = (
+            (
+                "nix",
+                "zara:expert/nix",
+                "{ x = 1; }",
+                ".zara/style/languages/nix.pl",
+                "dotfiles-nix-style-v1",
+            ),
+            (
+                "bash",
+                "zara:expert/bash",
+                "printf '%s\\n' ok",
+                ".zara/style/languages/bash.pl",
+                "dotfiles-bash-style-v1",
+            ),
+        )
+        for language, expert_id, source, expected_path, expected_revision in cases:
+            with self.subTest(language=language):
+                project_style, language_style = style_sources_for_language(self.host, language)
+                self.assertEqual(project_style.source_reference, ".zara/style/project.pl")
+                self.assertEqual(project_style.revision, "dotfiles-project-style-v1")
+                self.assertEqual(language_style.source_reference, expected_path)
+                self.assertEqual(language_style.revision, expected_revision)
+
+                for style_ref in (project_style, language_style):
+                    budget = SharedSymbolicBudget(
+                        max_invocations=1,
+                        max_depth=0,
+                        max_evidence=32,
+                        max_model_calls=0,
+                    )
+                    tree = self.composer.invoke(
+                        expert_id,
+                        "style.rules",
+                        {
+                            "source": source,
+                            "project_style": style_ref.reference,
+                        },
+                        budget=budget,
+                        fence=self.fence,
+                    )
+                    self.assertEqual(tree.status, "succeeded")
+                    nested = tree.data.get("result")
+                    self.assertIsInstance(nested, dict)
+                    self.assertEqual(nested.get("model_calls"), 0)
+                    self.assertEqual(nested.get("effect_receipts"), [])
+                    evidence = nested.get("evidence")
+                    self.assertIsInstance(evidence, list)
+                    self.assertTrue(
+                        any(style_ref.reference in str(item) for item in evidence),
+                        f"style evidence must preserve canonical reference {style_ref.reference}",
+                    )
+                    self.assertEqual(budget.invocations_used, 1)
+                    self.assertEqual(budget.max_model_calls, 0)
+                    self.assertEqual(budget.model_calls_used, 0)
 
     def test_real_ownership_query_reuses_durable_dotfiles_kb(self) -> None:
         budget = SharedSymbolicBudget(max_invocations=1, max_model_calls=0)
