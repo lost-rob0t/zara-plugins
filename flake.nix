@@ -55,8 +55,8 @@
           zaraSource = pkgs.fetchFromGitHub {
             owner = "lost-rob0t";
             repo = "zara";
-            rev = "b1ca89d52e0ffc84f8ad6eb18987f3f77fc841e5";
-            hash = "sha256-mgxOcusFdBjAPHf4f8bjg2sQo8RLuGrfMOSbNmMfQ/Y=";
+            rev = "577364a69050ab3725361cad420d15c1306b7e29";
+            hash = pkgs.lib.fakeHash;
           };
 
           # Export a stable, immutable runtime layout for Home Manager and
@@ -239,8 +239,7 @@
           };
 
           apps = { } // pkgs.lib.listToAttrs (
-            map
-              (entry: pkgs.lib.nameValuePair entry.name {
+            map (entry: pkgs.lib.nameValuePair entry.name {
                 type = "app";
                 program = "${pluginPackages.${entry.name}}/bin/${entry.name}";
               })
