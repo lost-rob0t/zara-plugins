@@ -52,7 +52,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          revision=577364a69050ab3725361cad420d15c1306b7e29
+          revision=586d1bbe806d92dcb2dc3038ee84905956efe8f6
           rm -rf .ci/zara-core
           git init .ci/zara-core
           git -C .ci/zara-core remote add origin https://github.com/lost-rob0t/zara.git
@@ -81,13 +81,29 @@ jobs:
           set -euo pipefail
           python3 -m unittest discover -s tests -t . -p 'test_nix_bash_dotfiles_brain_e2e.py'
 
-      - name: Prove shared expert composition budget and cancellation fence
+      - name: Prove shared expert composition through canonical Core
         env:
           ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles-nix-bash
+          ZARA_CORE_ROOT: ${{ github.workspace }}/.ci/zara-core
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest discover -s tests -t . -p 'test_nix_bash_shared_composition_e2e.py'
+          trace="$RUNNER_TEMP/nix-bash-shared-composition-network.trace"
+          env \
+            -u OPENAI_API_KEY \
+            -u ANTHROPIC_API_KEY \
+            -u OPENROUTER_API_KEY \
+            -u GOOGLE_API_KEY \
+            -u GEMINI_API_KEY \
+            -u GROQ_API_KEY \
+            -u ZAI_API_KEY \
+            strace -f -e trace=network -o "$trace" \
+            python3 -m unittest discover -s tests -t . -p 'test_nix_bash_shared_composition_e2e.py'
+          if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
+            echo 'unexpected IPv4/IPv6 network syscall during pure-symbolic shared composition E2E' >&2
+            cat "$trace" >&2
+            exit 1
+          fi
 
       - name: Prove no adapter-local parallel expert tool surface
         shell: bash
