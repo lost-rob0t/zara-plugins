@@ -23,6 +23,30 @@ from zara_expert.language_family import (
 from zara_expert.plugin import ZaraExpertPlugin
 
 
+_CANONICAL_DESCRIPTOR_KEYS = {
+    "protocol",
+    "expert_id",
+    "expert_version",
+    "package_namespace",
+    "manifest_digest",
+    "name",
+    "description",
+    "source_reference",
+    "reasoning_kind",
+    "operations",
+    "applicability",
+    "required_capabilities",
+    "possible_effects",
+    "supported_engines",
+    "supported_platforms",
+    "fallback_policy",
+    "delegation_policy",
+    "resource_limits",
+    "registry_generation",
+    "availability",
+}
+
+
 class RecordingBackend:
     def __init__(self):
         self.calls = []
@@ -61,73 +85,89 @@ class LanguageFamilyAdapterTests(unittest.TestCase):
         path.write_text("% canonical-language-brain-fixture\n", encoding="utf-8")
         return path
 
-    def test_descriptors_are_symbolic_provider_free_zero_model_and_typed(self):
+    def test_descriptors_match_canonical_zara_expert_shape(self):
         items = descriptors()
         self.assertEqual(
             [item["expert_id"] for item in items],
-            ["prolog", "python", "nim"],
+            ["zara:expert/prolog", "zara:expert/python", "zara:expert/nim"],
         )
+        private_predicates = set(registered_predicates())
+        self.assertTrue(private_predicates)
+
         for item in items:
             with self.subTest(expert=item["expert_id"]):
                 self.assertEqual(item["protocol"], PROTOCOL)
                 self.assertEqual(item["reasoning_kind"], "symbolic")
                 self.assertEqual(item["resource_limits"]["max_model_calls"], 0)
+                self.assertEqual(item["fallback_policy"], "fail_closed")
+                self.assertNotIn("model_inference", item["possible_effects"])
+                self.assertEqual(item["availability"], "absent")
+                self.assertEqual(item["unavailable_reason"], "source-unavailable")
+                self.assertTrue(item["manifest_digest"].startswith("sha256:"))
+                self.assertEqual(len(item["manifest_digest"].split(":", 1)[1]), 64)
                 self.assertEqual(
-                    item["fallback"],
-                    {"provider": False, "model": False, "remote": False},
+                    set(item) - {"unavailable_reason"},
+                    _CANONICAL_DESCRIPTOR_KEYS,
                 )
-                self.assertEqual(item["availability"], "source-unavailable")
-                self.assertTrue(item["source_reference"].startswith("dotfiles:.zara/experts/"))
-                self.assertEqual(
-                    item["applicability_schema"],
-                    "schema:zara.language-expert.applicability.v1",
-                )
+                rendered = json.dumps(item, sort_keys=True)
+                for predicate in private_predicates:
+                    self.assertNotIn(predicate, rendered)
+                for operation in item["operations"]:
+                    self.assertEqual(
+                        set(operation),
+                        {"operation_id", "input_schema", "output_schema"},
+                    )
+                    self.assertEqual(set(operation["input_schema"]), {"fields"})
+                    self.assertEqual(set(operation["output_schema"]), {"fields"})
         self.assertEqual(MAX_MODEL_CALLS, 0)
 
-    def test_language_applicability_is_deterministic(self):
-        self.assertEqual(matching_experts("rules/foo.pl"), ("prolog",))
-        self.assertEqual(matching_experts("src/main.py"), ("python",))
-        self.assertEqual(matching_experts("src/main.nim"), ("nim",))
+    def test_language_applicability_is_deterministic_and_canonical(self):
+        self.assertEqual(
+            matching_experts("rules/foo.pl"),
+            ("zara:expert/prolog",),
+        )
+        self.assertEqual(
+            matching_experts("src/main.py"),
+            ("zara:expert/python",),
+        )
+        self.assertEqual(
+            matching_experts("src/main.nim"),
+            ("zara:expert/nim",),
+        )
         self.assertEqual(matching_experts("README.md"), ())
 
-        specs = {spec.expert_id: spec for spec in language_family_specs()}
+        specs = {spec.key: spec for spec in language_family_specs()}
         self.assertIn(".pyi", specs["python"].extensions)
         self.assertIn(".nimble", specs["nim"].extensions)
+        self.assertIn("dcg", specs["prolog"].applicability_keywords)
 
-    def test_operation_bindings_are_registered_predicates_not_raw_goals(self):
-        for item in descriptors():
-            for operation in item["operations"]:
-                if operation["name"] == "repair.apply":
-                    self.assertIsNone(operation["binding"])
-                    continue
-                binding = operation["binding"]
-                self.assertEqual(binding["authority"], "registered-predicate")
-                self.assertIn(binding["predicate"], registered_predicates())
-                self.assertNotIn("goal", binding)
-                self.assertNotIn("shell", binding)
-
-    def test_registered_language_invocation_preserves_evidence_and_explanation(self):
+    def test_registered_predicate_authority_is_private_to_host(self):
         source = self._brain("python")
         registered = register_language_family(self.host, {"python": [source]})
         self.assertEqual(registered, frozenset({"python"}))
 
         result = invoke_language_operation(
             self.host,
-            "python",
+            "zara:expert/python",
             "style.rules",
             ["src/main.py", "project-style", {"var": "Result"}],
         )
         self.assertEqual(result["protocol"], PROTOCOL)
-        self.assertEqual(result["expert_id"], "python")
+        self.assertEqual(result["expert_id"], "zara:expert/python")
         self.assertEqual(result["evidence"], ["evidence:compiler"])
-        self.assertEqual(result["explanation"], ["rule:style", "source:canonical"])
+        self.assertEqual(
+            result["explanation"],
+            ["rule:style", "source:canonical"],
+        )
         self.assertEqual(result["model_calls"], 0)
+        self.assertEqual(result["effect_receipts"], [])
+
         call = self.backend.calls[-1]
         self.assertEqual(call["capability"].predicate, "language_style_rules")
         self.assertNotIn("goal", call)
         self.assertNotIn("predicate", call)
 
-    def test_source_like_inert_argument_never_becomes_executable_goal(self):
+    def test_source_like_argument_remains_inert_data(self):
         source = self._brain("prolog")
         register_language_family(self.host, {"prolog": [source]})
         payload = "x'); shell('touch /tmp/pwned') %"
@@ -141,7 +181,7 @@ class LanguageFamilyAdapterTests(unittest.TestCase):
         self.assertEqual(call["arguments"][0], payload)
         self.assertNotIn("goal", call)
 
-    def test_apply_never_bypasses_canonical_edit_effect_boundary(self):
+    def test_apply_never_bypasses_canonical_effect_boundary(self):
         source = self._brain("nim")
         register_language_family(self.host, {"nim": [source]})
         with self.assertRaisesRegex(ExpertError, "canonical typed edit/effect path"):
@@ -155,21 +195,56 @@ class LanguageFamilyAdapterTests(unittest.TestCase):
 
     def test_unknown_sources_and_operations_fail_closed(self):
         with self.assertRaisesRegex(ExpertError, "regular file"):
-            register_language_family(self.host, {"python": [self.root / "missing.pl"]})
+            register_language_family(
+                self.host,
+                {"python": [self.root / "missing.pl"]},
+            )
         with self.assertRaisesRegex(ExpertError, "unknown language expert source keys"):
-            register_language_family(self.host, {"rust": [self._brain("rust")]})
+            register_language_family(
+                self.host,
+                {"rust": [self._brain("rust")]},
+            )
         source = self._brain("python-ok")
         register_language_family(self.host, {"python": [source]})
-        with self.assertRaisesRegex(ExpertError, "unsupported language expert operation"):
+        with self.assertRaisesRegex(
+            ExpertError,
+            "unsupported language expert operation",
+        ):
             invoke_language_operation(self.host, "python", "execute.shell", [])
 
-    def test_schema_surface_is_closed_and_zero_model(self):
+    def test_operation_schemas_expose_evidence_explanation_and_style_provenance(self):
         schemas = language_expert_schemas()
-        applicability = schemas["schema:zara.language-expert.applicability.v1"]
-        result = schemas["schema:zara.language-expert.result.v1"]
-        self.assertFalse(applicability["additionalProperties"])
-        self.assertFalse(result["additionalProperties"])
-        self.assertEqual(result["properties"]["model_calls"], {"const": 0})
+        self.assertEqual(
+            set(schemas),
+            {
+                "match",
+                "inspect",
+                "diagnose",
+                "repair.preview",
+                "repair.verify",
+                "style.rules",
+                "explain",
+                "repair.apply",
+            },
+        )
+        style_fields = {
+            field["name"]
+            for field in schemas["style.rules"]["output_schema"]["fields"]
+        }
+        self.assertEqual(
+            style_fields,
+            {
+                "style_rules",
+                "style_provenance",
+                "evidence_refs",
+                "explanation_refs",
+            },
+        )
+        verify_fields = {
+            field["name"]
+            for field in schemas["repair.verify"]["output_schema"]["fields"]
+        }
+        self.assertIn("postcondition_evidence", verify_fields)
 
     def test_descriptor_symbols_use_canonical_runtime_registry(self):
         runtime = RecordingRuntime()
@@ -177,8 +252,19 @@ class LanguageFamilyAdapterTests(unittest.TestCase):
         self.assertEqual(ids, (1, 2, 3))
         self.assertEqual(
             [item[0] for item in runtime.registrations],
-            ["zara:expert/prolog", "zara:expert/python", "zara:expert/nim"],
+            [
+                "zara:expert/prolog",
+                "zara:expert/python",
+                "zara:expert/nim",
+            ],
         )
+        availability = {
+            value["expert_id"]: value["availability"]
+            for _, _, value, _ in runtime.registrations
+        }
+        self.assertEqual(availability["zara:expert/prolog"], "available")
+        self.assertEqual(availability["zara:expert/python"], "absent")
+        self.assertEqual(availability["zara:expert/nim"], "available")
         for _, kind, value, metadata in runtime.registrations:
             self.assertEqual(kind, "expert")
             self.assertEqual(value["resource_limits"]["max_model_calls"], 0)
@@ -193,13 +279,19 @@ class LanguageFamilyAdapterTests(unittest.TestCase):
                 }
             }
         )
-        plugin = ZaraExpertPlugin(backend=self.backend, state_root=self.root / "plugin-state")
+        plugin = ZaraExpertPlugin(
+            backend=self.backend,
+            state_root=self.root / "plugin-state",
+        )
         plugin.start(runtime)
 
         rendered = json.loads(plugin.language_family_descriptors())
-        availability = {item["expert_id"]: item["availability"] for item in rendered}
-        self.assertEqual(availability["python"], "available")
-        self.assertEqual(availability["prolog"], "source-unavailable")
+        availability = {
+            item["expert_id"]: item["availability"]
+            for item in rendered
+        }
+        self.assertEqual(availability["zara:expert/python"], "available")
+        self.assertEqual(availability["zara:expert/prolog"], "absent")
         status = json.loads(plugin.status())
         self.assertEqual(status["model_calls"], 0)
         self.assertEqual(status["language_family"], ["python"])
