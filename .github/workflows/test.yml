@@ -39,11 +39,11 @@ jobs:
       - name: Run compatibility gate contract tests
         run: python3 -m unittest discover -s tests -t .
 
-      - name: Check out canonical Dotfiles language brains
+      - name: Check out canonical Dotfiles expert brains
         uses: actions/checkout@v4
         with:
           repository: lost-rob0t/dotfiles
-          ref: 5b01f03bdce98bc55f9f3cc76a1023b91ab63784
+          ref: c85c1e488a668d9ba23c21d7d48d27058e057945
           path: .ci/dotfiles
           persist-credentials: true
           sparse-checkout: |
@@ -67,6 +67,17 @@ jobs:
             -s plugins/zara-expert/test \
             -t plugins/zara-expert/test \
             -p 'test_dotfiles_language_brain_integration.py'
+
+      - name: Run canonical Dotfiles Lisp brain E2E
+        env:
+          ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover \
+            -s plugins/zara-expert/test \
+            -t plugins/zara-expert/test \
+            -p 'test_dotfiles_lisp_brain_integration.py'
 
       - name: Install Nix
         uses: cachix/install-nix-action@v31

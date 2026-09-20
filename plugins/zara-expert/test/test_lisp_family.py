@@ -15,6 +15,7 @@ from zara_expert.lisp_family import (
     RESERVED_HOST_INPUT_FIELDS,
     descriptors,
     invoke_lisp_operation,
+    lisp_family_specs,
     make_lisp_expert_handler,
     register_descriptor_symbols,
     register_lisp_family,
@@ -82,7 +83,30 @@ class LispFamilyAdapterTests(unittest.TestCase):
 
     def _brain(self, name):
         path = self.root / f"{name}.pl"
-        path.write_text("% canonical-brain-fixture\n", encoding="utf-8")
+        specs = {spec.key: spec for spec in lisp_family_specs()}
+        spec = specs.get(name)
+        if spec is None:
+            path.write_text("% canonical-brain-fixture\n", encoding="utf-8")
+            return path
+
+        exports = [
+            "expert_id/1",
+            "upstream_contract/1",
+            *(f"{predicate}/{arity}" for predicate, arity in registered_predicates().items()),
+            "provider_policy/1",
+            "max_model_calls/1",
+            "model_calls/1",
+        ]
+        module_name = f"fixture_{name.replace('-', '_')}"
+        path.write_text(
+            f":- module({module_name}, [{', '.join(exports)}]).\n"
+            f"expert_id('{spec.expert_id}').\n"
+            f"upstream_contract('{spec.upstream_issue}').\n"
+            "provider_policy(disabled).\n"
+            "max_model_calls(0).\n"
+            "model_calls(0).\n",
+            encoding="utf-8",
+        )
         return path
 
     def test_descriptors_are_canonical_symbolic_provider_free_and_zero_model(self):
