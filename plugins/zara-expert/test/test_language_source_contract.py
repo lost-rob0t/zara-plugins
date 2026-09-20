@@ -135,6 +135,38 @@ class LanguageSourceContractTests(unittest.TestCase):
         self.assertEqual(backend.calls, [])
         self.assertEqual(plugin._registered_language_experts, frozenset())
 
+    def test_invalid_language_brain_cannot_partially_activate_lisp_family(self):
+        lisp_source = self.root / "lisp.pl"
+        lisp_source.write_text("% canonical-lisp-fixture\n", encoding="utf-8")
+        invalid_language_source = self.root / "python-contract-only.pl"
+        invalid_language_source.write_text(
+            ":- module(contract_only, [provider_policy/1, max_model_calls/1, model_calls/1]).\n"
+            "provider_policy(disabled).\n"
+            "max_model_calls(0).\n"
+            "model_calls(0).\n",
+            encoding="utf-8",
+        )
+        runtime = RecordingRuntime(
+            {
+                "lisp_family_sources": {"lisp": [str(lisp_source)]},
+                "language_expert_sources": {"python": [str(invalid_language_source)]},
+            }
+        )
+        backend = RecordingBackend()
+        plugin = ZaraExpertPlugin(
+            backend=backend,
+            state_root=self.root / "state",
+        )
+
+        with self.assertRaisesRegex(ExpertError, "brain is not adapter-ready"):
+            plugin.start(runtime)
+
+        self.assertEqual(runtime.registrations, [])
+        self.assertEqual(backend.calls, [])
+        self.assertEqual(plugin._registered_lisp_experts, frozenset())
+        self.assertEqual(plugin._registered_language_experts, frozenset())
+        self.assertFalse((self.root / "state" / "lisp").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
