@@ -14,6 +14,7 @@ from .config import EmacsConfig
 
 
 BRIDGE_VERSION = "ZARA-EMACS/1"
+MAX_EMACS_OUTPUT_CHARS = 131072
 
 
 class EmacsError(RuntimeError):
@@ -41,7 +42,7 @@ class EmacsClient:
         if result.returncode != 0:
             detail = str(result.stderr or "Emacs operation failed").strip()[:512]
             raise EmacsError(detail)
-        return str(result.stdout or "").strip()[:8192]
+        return str(result.stdout or "").strip()[:MAX_EMACS_OUTPUT_CHARS]
 
     def _eval(self, expression: str) -> str:
         return self._run(
