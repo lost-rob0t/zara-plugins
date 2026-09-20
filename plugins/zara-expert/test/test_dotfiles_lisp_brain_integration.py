@@ -133,14 +133,17 @@ class DotfilesLispBrainIntegrationTests(unittest.TestCase):
         )
         for expert_id, original, candidate, postcondition in cases:
             with self.subTest(expert=expert_id):
-                verified = self._invoke(
-                    expert_id,
-                    "repair.verify",
-                    [original, candidate],
+                handler = make_lisp_expert_handler(self.host, expert_id)
+                verified = handler(
+                    expert_operation="repair.verify",
+                    arguments=[original, candidate],
                 )
+                self._assert_zero_model(verified)
+                self.assertEqual(verified["verdict"], "blocked")
                 rendered = " ".join(verified["data"]["result"]["results"])
                 self.assertIn("verified(false)", rendered)
                 self.assertIn(postcondition, rendered)
+                self.assertTrue(verified["evidence_refs"])
 
     def test_repair_apply_is_blocked_before_backend_or_filesystem_effects(self):
         handler = make_lisp_expert_handler(self.host, "zara:expert/lisp")
