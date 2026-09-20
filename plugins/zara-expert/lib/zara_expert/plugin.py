@@ -11,10 +11,17 @@ from zara.plugins import PluginMetadata, ServicePlugin
 
 from .backend import SwiplBackend
 from .domain import ExpertError, ExpertHost
+from .language_family import (
+    descriptors as language_descriptors,
+    invoke_language_operation,
+    language_expert_schemas,
+    register_descriptor_symbols as register_language_descriptor_symbols,
+    register_language_family,
+)
 from .lisp_family import (
     descriptors as lisp_descriptors,
     invoke_lisp_operation,
-    register_descriptor_symbols,
+    register_descriptor_symbols as register_lisp_descriptor_symbols,
     register_lisp_family,
 )
 
@@ -45,17 +52,22 @@ class ZaraExpertPlugin(ServicePlugin):
         self.backend = backend
         self.host = ExpertHost(self.backend, state_root=root)
         self._registered_lisp_experts: frozenset[str] = frozenset()
+        self._registered_language_experts: frozenset[str] = frozenset()
 
     @staticmethod
-    def _lisp_sources(configuration: Mapping[str, Any] | object) -> Mapping[str, Iterable[str | Path]]:
+    def _plugin_section(configuration: Mapping[str, Any] | object) -> Mapping[str, Any]:
         if not isinstance(configuration, Mapping):
             return {}
-        section: Mapping[str, Any] = configuration
         plugins = configuration.get("plugins")
         if isinstance(plugins, Mapping):
             candidate = plugins.get("zara-expert")
             if isinstance(candidate, Mapping):
-                section = candidate
+                return candidate
+        return configuration
+
+    @classmethod
+    def _lisp_sources(cls, configuration: Mapping[str, Any] | object) -> Mapping[str, Iterable[str | Path]]:
+        section = cls._plugin_section(configuration)
         sources = section.get("lisp_family_sources", {})
         if sources is None:
             return {}
@@ -63,15 +75,31 @@ class ZaraExpertPlugin(ServicePlugin):
             raise ExpertError("lisp_family_sources must be a mapping")
         return sources
 
+    @classmethod
+    def _language_sources(cls, configuration: Mapping[str, Any] | object) -> Mapping[str, Iterable[str | Path]]:
+        section = cls._plugin_section(configuration)
+        sources = section.get("language_expert_sources", {})
+        if sources is None:
+            return {}
+        if not isinstance(sources, Mapping):
+            raise ExpertError("language_expert_sources must be a mapping")
+        return sources
+
     def start(self, runtime) -> None:
         self._registered_lisp_experts = register_lisp_family(
             self.host,
             self._lisp_sources(runtime.configuration),
         )
-        register_descriptor_symbols(runtime, self._registered_lisp_experts)
+        self._registered_language_experts = register_language_family(
+            self.host,
+            self._language_sources(runtime.configuration),
+        )
+        register_lisp_descriptor_symbols(runtime, self._registered_lisp_experts)
+        register_language_descriptor_symbols(runtime, self._registered_language_experts)
 
     def stop(self) -> None:
         self._registered_lisp_experts = frozenset()
+        self._registered_language_experts = frozenset()
 
     @staticmethod
     def _json(value: object) -> str:
@@ -85,6 +113,7 @@ class ZaraExpertPlugin(ServicePlugin):
                 "status": "ready",
                 "backend": "swipl" if isinstance(self.backend, SwiplBackend) else "custom",
                 "lisp_family": sorted(self._registered_lisp_experts),
+                "language_family": sorted(self._registered_language_experts),
                 "model_calls": 0,
             }
         )
@@ -117,6 +146,22 @@ class ZaraExpertPlugin(ServicePlugin):
             invoke_lisp_operation(self.host, expert_id, operation, arguments)
         )
 
+    def language_family_descriptors(self) -> str:
+        return self._json(language_descriptors(self._registered_language_experts))
+
+    def language_family_schemas(self) -> str:
+        return self._json(language_expert_schemas())
+
+    def invoke_language_expert(
+        self,
+        expert_id: str,
+        operation: str,
+        arguments: list[Any] | None = None,
+    ) -> str:
+        return self._json(
+            invoke_language_operation(self.host, expert_id, operation, arguments)
+        )
+
     def assert_fact(self, namespace: str, fact: str, persistent: bool = False) -> str:
         changed = self.host.assert_fact(namespace, fact, persistent=persistent)
         return self._json({"ok": True, "changed": changed, "persistent": persistent})
@@ -132,6 +177,9 @@ class ZaraExpertPlugin(ServicePlugin):
             StructuredTool.from_function(func=self.explain, name="expert.explain", description="Explain one registered expert predicate using the same bounded authority path."),
             StructuredTool.from_function(func=self.lisp_family_descriptors, name="expert.lisp_descriptors", description="List deterministic ZARA-EXPERT/1 Lisp-family descriptors and availability."),
             StructuredTool.from_function(func=self.invoke_lisp_expert, name="expert.lisp_invoke", description="Invoke a fixed Lisp-family symbolic operation through registered predicate authority; never performs provider/model fallback."),
+            StructuredTool.from_function(func=self.language_family_descriptors, name="expert.language_descriptors", description="List deterministic ZARA-EXPERT/1 Prolog/Python/Nim descriptors and availability."),
+            StructuredTool.from_function(func=self.language_family_schemas, name="expert.language_schemas", description="Return closed domain schemas for Prolog/Python/Nim applicability and result envelopes."),
+            StructuredTool.from_function(func=self.invoke_language_expert, name="expert.language_invoke", description="Invoke a fixed Prolog/Python/Nim symbolic operation through registered predicate authority with zero model calls."),
             StructuredTool.from_function(func=self.assert_fact, name="expert.assert_fact", description="Assert one safe ground fact into session or persistent namespace state."),
             StructuredTool.from_function(func=self.retract_fact, name="expert.retract_fact", description="Idempotently retract one safe ground fact from session or persistent namespace state."),
         )
