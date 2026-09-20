@@ -7,6 +7,7 @@ on:
       - 'plugins/zara-bash-expert/**'
       - 'plugins/zara-expert/**'
       - 'tests/test_nix_bash_dotfiles_brain_e2e.py'
+      - 'tests/test_nix_bash_zara_core_e2e.py'
       - 'flake.nix'
       - 'plugins.json'
       - '.github/workflows/nix-bash-expert-e2e.yml'
@@ -45,6 +46,21 @@ jobs:
           git -C .ci/dotfiles-nix-bash checkout --detach FETCH_HEAD
           test "$(git -C .ci/dotfiles-nix-bash rev-parse HEAD)" = "$revision"
 
+      - name: Fetch exact canonical Zara Core
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=b6eafa866f9c24533bc1c8dec27c3c17e3acebcc
+          rm -rf .ci/zara-core
+          git init .ci/zara-core
+          git -C .ci/zara-core remote add origin https://github.com/lost-rob0t/zara.git
+          git -C .ci/zara-core config core.sparseCheckout true
+          mkdir -p .ci/zara-core/.git/info
+          printf '%s\n' '/zara/' > .ci/zara-core/.git/info/sparse-checkout
+          git -C .ci/zara-core fetch --depth=1 origin "$revision"
+          git -C .ci/zara-core checkout --detach FETCH_HEAD
+          test "$(git -C .ci/zara-core rev-parse HEAD)" = "$revision"
+
       - name: Install symbolic runtimes
         shell: bash
         run: |
@@ -62,3 +78,12 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests -t . -p 'test_nix_bash_dotfiles_brain_e2e.py'
+
+      - name: Prove Zara Core activation cancellation generation and effect fences
+        env:
+          ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles-nix-bash
+          ZARA_CORE_ROOT: ${{ github.workspace }}/.ci/zara-core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -t . -p 'test_nix_bash_zara_core_e2e.py'
