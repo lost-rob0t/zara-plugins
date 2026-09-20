@@ -11,7 +11,7 @@ from .config import EmacsConfig
 from .workflow import WorkflowEmacsClient, load_workflows
 
 
-PLUGIN_VERSION = "0.2.0"
+PLUGIN_VERSION = "0.3.0"
 
 
 class ZaraEmacsPlugin(ServicePlugin):
@@ -19,7 +19,7 @@ class ZaraEmacsPlugin(ServicePlugin):
         name="zara-emacs",
         version=PLUGIN_VERSION,
         api_version="1",
-        description="Structured Emacs, full Org-roam/Org QL knowledge graph, shared memory, inventory, and Magit integration",
+        description="Deep native Emacs bridge, Org-roam/Org QL knowledge graph, shared memory, inventory, and Magit integration",
     )
 
     def __init__(self) -> None:
@@ -39,6 +39,23 @@ class ZaraEmacsPlugin(ServicePlugin):
             (self.open_scratch, "emacs.open_scratch", "Open the Emacs scratch buffer using the configured server."),
             (self.open_file, "emacs.open_file", "Open an absolute file path in the configured Emacs server."),
             (self.open_buffer, "emacs.open_buffer", "Switch to a named Emacs buffer without arbitrary Elisp."),
+            (self.describe_session, "emacs.session_describe", "Describe the live versioned Zara/Emacs bridge and its capabilities."),
+            (self.buffers, "emacs.buffers", "List bounded live Emacs buffers with opaque IDs and revision metadata."),
+            (self.buffer_context, "emacs.buffer_context", "Read structured live context for the selected or identified Emacs buffer."),
+            (self.read_buffer, "emacs.read_buffer", "Read a bounded range from a live Emacs buffer by opaque ID."),
+            (self.preview_edit, "emacs.preview_edit", "Preview a revision-checked atomic Emacs edit without applying or saving it."),
+            (self.apply_edit, "emacs.apply_edit", "Apply a previously previewed Emacs edit if the captured revision is still current."),
+            (self.cancel_edit, "emacs.cancel_edit", "Cancel a pending Emacs edit preview."),
+            (self.edit_status, "emacs.edit_status", "Inspect the state of an Emacs edit receipt."),
+            (self.save_buffer, "emacs.save_buffer", "Explicitly save an identified Emacs buffer after separate edit application."),
+            (self.windows, "emacs.windows", "List live windows in the selected Emacs frame with opaque IDs."),
+            (self.select_window, "emacs.select_window", "Select a live Emacs window by opaque ID."),
+            (self.split_window, "emacs.split_window", "Split an identified Emacs window below or right."),
+            (self.delete_window, "emacs.delete_window", "Delete an identified Emacs window using native Emacs semantics."),
+            (self.commands, "emacs.commands", "Search bounded live interactive Emacs commands."),
+            (self.describe_command, "emacs.describe_command", "Describe a live interactive Emacs command and its effective keys."),
+            (self.where_is, "emacs.where_is", "Report live key bindings for an Emacs command."),
+            (self.key_lookup, "emacs.key_lookup", "Resolve an effective Emacs key sequence in the current buffer."),
             (self.open_daily, "org_roam.open_daily", "Open an Org-roam daily note and request a separate Zara dictation handoff."),
             (self.shared_memory, "org_ql.shared_memory", "Query bounded active shared agent-memory assertions from the full Org graph."),
             (self.inventory, "org_ql.inventory", "Query bounded inventory, food, and stock-event entities from the full Org graph."),
@@ -69,6 +86,82 @@ class ZaraEmacsPlugin(ServicePlugin):
 
     def open_buffer(self, name: str) -> str:
         return self._json(self._client.open_buffer(name))
+
+    def describe_session(self) -> str:
+        return self._json(self._client.describe_session())
+
+    def buffers(self, limit: int = 100) -> str:
+        return self._json(self._client.buffers(limit))
+
+    def buffer_context(self, buffer_id: str = "") -> str:
+        return self._json(self._client.buffer_context(buffer_id))
+
+    def read_buffer(
+        self,
+        buffer_id: str,
+        start: int | None = None,
+        end: int | None = None,
+    ) -> str:
+        return self._json(self._client.read_buffer(buffer_id, start, end))
+
+    def preview_edit(
+        self,
+        buffer_id: str,
+        start: int,
+        end: int,
+        expected_tick: int,
+        replacement: str,
+    ) -> str:
+        return self._json(
+            self._client.preview_edit(
+                buffer_id,
+                start,
+                end,
+                expected_tick,
+                replacement,
+            )
+        )
+
+    def apply_edit(self, edit_id: str) -> str:
+        return self._json(self._client.apply_edit(edit_id))
+
+    def cancel_edit(self, edit_id: str) -> str:
+        return self._json(self._client.cancel_edit(edit_id))
+
+    def edit_status(self, edit_id: str) -> str:
+        return self._json(self._client.edit_status(edit_id))
+
+    def save_buffer(self, buffer_id: str) -> str:
+        return self._json(self._client.save_buffer(buffer_id))
+
+    def windows(self) -> str:
+        return self._json(self._client.windows())
+
+    def select_window(self, window_id: str) -> str:
+        return self._json(self._client.select_window(window_id))
+
+    def split_window(
+        self,
+        window_id: str,
+        side: str = "below",
+        size: int | None = None,
+    ) -> str:
+        return self._json(self._client.split_window(window_id, side, size))
+
+    def delete_window(self, window_id: str) -> str:
+        return self._json(self._client.delete_window(window_id))
+
+    def commands(self, query: str = "", limit: int = 100) -> str:
+        return self._json(self._client.commands(query, limit))
+
+    def describe_command(self, command: str) -> str:
+        return self._json(self._client.describe_command(command))
+
+    def where_is(self, command: str) -> str:
+        return self._json(self._client.where_is(command))
+
+    def key_lookup(self, key: str) -> str:
+        return self._json(self._client.key_lookup(key))
 
     def open_daily(self, date: str = "today") -> str:
         return self._json(self._client.open_daily(date))
