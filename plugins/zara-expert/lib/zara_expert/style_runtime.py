@@ -32,6 +32,7 @@ _DECISION_KEYS = frozenset(
         "shadowed_provenance",
     }
 )
+_SHADOW_KEYS = frozenset({"id", "scope", "revision", "provenance"})
 _REQUIRED_RULE_KEYS = frozenset(
     {
         "id",
@@ -107,7 +108,12 @@ class PrologRlmStyleOverlayAdapter:
 
         fence.check()
         budget.assert_zero_model_usage()
-        return self._validated_result(raw, language=language, fence=fence)
+        return self._validated_result(
+            raw,
+            language=language,
+            fence=fence,
+            submitted_rules=normalized_rules,
+        )
 
     @staticmethod
     def _validated_rules(
@@ -157,6 +163,7 @@ class PrologRlmStyleOverlayAdapter:
         *,
         language: str,
         fence: InvocationFence,
+        submitted_rules: Sequence[Mapping[str, Any]],
     ) -> StyleOverlayResolution:
         if not isinstance(raw, Mapping):
             raise CompositionError("upstream style overlay result must be an object")
@@ -181,6 +188,13 @@ class PrologRlmStyleOverlayAdapter:
         if type(model_calls) is not int or model_calls != 0:
             raise CompositionError("upstream style overlay attempted model use")
 
+        submitted_by_id: dict[str, Mapping[str, Any]] = {}
+        for rule in submitted_rules:
+            rule_id = rule.get("id")
+            if not isinstance(rule_id, str) or not rule_id or rule_id in submitted_by_id:
+                raise CompositionError("submitted style rule identity is invalid")
+            submitted_by_id[rule_id] = rule
+
         effective = PrologRlmStyleOverlayAdapter._objects(
             inert.get("effective"),
             label="effective style rules",
@@ -196,6 +210,9 @@ class PrologRlmStyleOverlayAdapter:
             rule_id = rule.get("id")
             if not isinstance(rule_id, str) or not rule_id or rule_id in by_id:
                 raise CompositionError("effective style rule identity is invalid")
+            submitted = submitted_by_id.get(rule_id)
+            if submitted is None or rule != submitted:
+                raise CompositionError("effective style rule was not submitted")
             provenance = rule.get("provenance")
             revision = rule.get("revision")
             check = rule.get("check")
@@ -214,6 +231,7 @@ class PrologRlmStyleOverlayAdapter:
                 raise CompositionError("style decision shape drifted")
             check = decision.get("check")
             winner = decision.get("winner")
+            winner_scope = decision.get("winner_scope")
             winner_revision = decision.get("winner_revision")
             winner_provenance = decision.get("winner_provenance")
             shadowed = decision.get("shadowed")
@@ -224,6 +242,8 @@ class PrologRlmStyleOverlayAdapter:
             rule = by_id.get(winner)
             if rule is None or rule.get("check") != check:
                 raise CompositionError("style decision winner does not match effective rule")
+            if winner_scope != rule.get("scope"):
+                raise CompositionError("style decision winner scope mismatch")
             if winner_revision != rule.get("revision"):
                 raise CompositionError("style decision winner revision mismatch")
             if winner_provenance != rule.get("provenance"):
@@ -237,13 +257,32 @@ class PrologRlmStyleOverlayAdapter:
             if len(shadowed) != len(shadowed_provenance):
                 raise CompositionError("style decision shadow provenance is incomplete")
             evidence.append(f"style:{check}:winner:{winner}@{winner_revision}")
+            seen_shadow_ids: set[str] = set()
             for shadow_id, shadow in zip(shadowed, shadowed_provenance, strict=True):
                 if not isinstance(shadow_id, str) or not shadow_id:
                     raise CompositionError("style shadow identity is invalid")
+                if shadow_id == winner or shadow_id in seen_shadow_ids:
+                    raise CompositionError("style shadow identity is invalid")
+                seen_shadow_ids.add(shadow_id)
                 if not isinstance(shadow, Mapping):
                     raise CompositionError("style shadow provenance must be an object")
+                if frozenset(shadow) != _SHADOW_KEYS:
+                    raise CompositionError("style shadow provenance shape drifted")
                 if shadow.get("id") != shadow_id:
                     raise CompositionError("style shadow provenance identity mismatch")
+                submitted_shadow = submitted_by_id.get(shadow_id)
+                if submitted_shadow is None or submitted_shadow.get("check") != check:
+                    raise CompositionError("style shadow was not submitted for decision check")
+                expected_shadow = {
+                    "id": shadow_id,
+                    "scope": submitted_shadow.get("scope"),
+                    "revision": submitted_shadow.get("revision"),
+                    "provenance": submitted_shadow.get("provenance"),
+                }
+                if shadow != expected_shadow:
+                    raise CompositionError(
+                        "style shadow provenance does not match submitted rule"
+                    )
                 revision = shadow.get("revision")
                 provenance = shadow.get("provenance")
                 scope = shadow.get("scope")
