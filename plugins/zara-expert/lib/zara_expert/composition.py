@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import IntEnum
+import json
 from pathlib import PurePosixPath
 import re
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
 
 class CompositionError(RuntimeError):
-    """Fail-closed error for symbolic expert composition."""
+    """Fail-closed error for pure-symbolic expert composition."""
 
 
 _TERMINAL_STATUSES = {
@@ -20,6 +21,38 @@ _TERMINAL_STATUSES = {
     "cancelled",
     "error",
 }
+_JSON_SCALARS = (str, int, float, bool, type(None))
+_PACKAGE_NAME_RE = re.compile(r"^[a-z][a-z0-9-]{0,63}$")
+_FORBIDDEN_STYLE_KEYS = frozenset(
+    {"authority", "capabilities", "permissions", "required_capabilities"}
+)
+
+
+def _normalized_inert_value(value: Any) -> Any:
+    """Return a deterministic JSON-like value or fail before expert dispatch."""
+
+    if isinstance(value, _JSON_SCALARS):
+        return value
+    if isinstance(value, Mapping):
+        normalized: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise CompositionError("expert input mapping keys must be text")
+            normalized[key] = _normalized_inert_value(item)
+        return normalized
+    if isinstance(value, (list, tuple)):
+        return [_normalized_inert_value(item) for item in value]
+    raise CompositionError(f"expert input contains unsupported value: {type(value).__name__}")
+
+
+def _invocation_signature(
+    expert_id: str,
+    operation: str,
+    input_data: Mapping[str, Any],
+) -> tuple[str, str, str]:
+    inert = _normalized_inert_value(input_data)
+    encoded = json.dumps(inert, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return expert_id, operation, encoded
 
 
 @dataclass(frozen=True)
@@ -46,6 +79,9 @@ class InvocationResult:
             raise CompositionError("model_calls must be an integer")
         if self.model_calls != 0:
             raise CompositionError("pure symbolic expert attempted model use")
+        _normalized_inert_value(self.data)
+        for delegation in self.delegations:
+            _normalized_inert_value(delegation.input)
 
 
 @dataclass
@@ -59,7 +95,14 @@ class SharedSymbolicBudget:
     model_calls_used: int = 0
 
     def __post_init__(self) -> None:
-        for name in ("max_invocations", "max_depth", "max_evidence"):
+        for name in (
+            "max_invocations",
+            "max_depth",
+            "max_evidence",
+            "invocations_used",
+            "evidence_used",
+            "model_calls_used",
+        ):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
@@ -67,10 +110,16 @@ class SharedSymbolicBudget:
             raise ValueError("max_invocations must be positive")
         if self.max_evidence == 0:
             raise ValueError("max_evidence must be positive")
+        self.assert_zero_model_usage()
+
+    def assert_zero_model_usage(self) -> None:
         if self.max_model_calls != 0:
             raise ValueError("pure symbolic composition requires max_model_calls=0")
+        if self.model_calls_used != 0:
+            raise CompositionError("pure symbolic model-call ledger is nonzero")
 
     def admit(self, depth: int) -> None:
+        self.assert_zero_model_usage()
         if depth > self.max_depth:
             raise CompositionError("expert delegation depth budget exceeded")
         if self.invocations_used >= self.max_invocations:
@@ -78,6 +127,7 @@ class SharedSymbolicBudget:
         self.invocations_used += 1
 
     def record_evidence(self, count: int) -> None:
+        self.assert_zero_model_usage()
         if count < 0:
             raise ValueError("evidence count must be non-negative")
         if self.evidence_used + count > self.max_evidence:
@@ -105,6 +155,7 @@ class EvidenceNode:
     operation: str
     status: str
     reason: str
+    data: Mapping[str, Any]
     evidence: tuple[str, ...]
     explanation: str
     children: tuple["EvidenceNode", ...] = ()
@@ -115,6 +166,7 @@ class EvidenceNode:
             "operation": self.operation,
             "status": self.status,
             "reason": self.reason,
+            "data": dict(self.data),
             "evidence": list(self.evidence),
             "explanation": self.explanation,
             "children": [child.as_dict() for child in self.children],
@@ -155,20 +207,41 @@ class ExpertCatalogAdapter:
         return self._describe(expert_id)
 
     def match(self, request: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+        _normalized_inert_value(request)
         return tuple(self._match(request))
 
 
+@dataclass(frozen=True)
+class RegisteredPredicateBinding:
+    """Trusted private binding resolved from Zara's canonical expert registration."""
+
+    namespace: str
+    predicate: str
+    arguments: tuple[Any, ...]
+    host_operation: str = "query"
+
+    def __post_init__(self) -> None:
+        if self.host_operation not in ("query", "explain"):
+            raise CompositionError("registered predicate binding operation must be query or explain")
+        _normalized_inert_value(self.arguments)
+
+
 class HostExpertInvoker:
-    """Adapter from canonical expert identity to the existing zara-expert host."""
+    """Adapter to zara-expert's host-issued registered-predicate authority boundary.
+
+    Invocation data never selects a Prolog predicate. A trusted resolver owned by
+    canonical registration maps expert identity + operation + inert input to the
+    already-registered namespace/predicate/argument tuple.
+    """
 
     def __init__(
         self,
         host: Any,
         *,
-        namespace_for_id: Callable[[str], str],
+        binding_for: Callable[[str, str, Mapping[str, Any]], RegisteredPredicateBinding],
     ) -> None:
         self._host = host
-        self._namespace_for_id = namespace_for_id
+        self._binding_for = binding_for
 
     def __call__(
         self,
@@ -180,30 +253,34 @@ class HostExpertInvoker:
         fence: InvocationFence,
         parent_path: tuple[str, ...],
     ) -> InvocationResult:
-        del budget, parent_path
+        del parent_path
+        budget.assert_zero_model_usage()
         fence.check()
-        namespace = self._namespace_for_id(expert_id)
-        goal = input_data.get("goal")
-        if not isinstance(goal, str):
-            raise CompositionError("zara-expert host invocation requires text goal")
-        if operation == "query":
-            raw = self._host.query(namespace, goal)
-        elif operation == "explain":
-            raw = self._host.explain(namespace, goal)
+        inert_input = _normalized_inert_value(input_data)
+        binding = self._binding_for(expert_id, operation, inert_input)
+        if not isinstance(binding, RegisteredPredicateBinding):
+            raise CompositionError("trusted expert binding resolver returned invalid binding")
+        if binding.host_operation == "query":
+            raw = self._host.query(binding.namespace, binding.predicate, binding.arguments)
         else:
-            raise CompositionError(f"unsupported zara-expert host operation: {operation}")
+            raw = self._host.explain(binding.namespace, binding.predicate, binding.arguments)
         fence.check()
-        evidence = tuple(str(item) for item in raw.get("trace", ()))
+        budget.assert_zero_model_usage()
+        if not isinstance(raw, Mapping):
+            raise CompositionError("zara-expert host returned non-object result")
+        results = raw.get("results", ())
+        trace = raw.get("trace", ())
+        evidence = tuple(str(item) for item in trace)
         return InvocationResult(
             status="succeeded" if raw.get("ok", False) else "failed",
-            data={"results": raw.get("results", ())},
+            data={"results": _normalized_inert_value(results)},
             evidence=evidence,
-            explanation=f"{expert_id} handled {operation} through zara-expert",
+            explanation=(
+                f"{expert_id} handled {operation} through registered "
+                f"{binding.namespace}:{binding.predicate}"
+            ),
             model_calls=0,
         )
-
-
-_PACKAGE_NAME_RE = re.compile(r"^[a-z][a-z0-9-]{0,63}$")
 
 
 @dataclass(frozen=True)
@@ -232,10 +309,9 @@ class DotfilesExpertSourceAdapter:
 
     def list_packages(self, *, fence: InvocationFence) -> tuple[str, ...]:
         fence.check()
-        names = tuple(self._list_package_names(
-            fence.workspace_id,
-            fence.workspace_generation,
-        ))
+        names = tuple(
+            self._list_package_names(fence.workspace_id, fence.workspace_generation)
+        )
         normalized: list[str] = []
         folded: set[str] = set()
         for name in names:
@@ -306,13 +382,15 @@ class MetaExpertComposer:
         budget: SharedSymbolicBudget,
         fence: InvocationFence,
     ) -> EvidenceNode:
+        budget.assert_zero_model_usage()
         return self._invoke(
             expert_id,
             operation,
             input_data,
             budget=budget,
             fence=fence,
-            path=(),
+            signatures=(),
+            labels=(),
             reason="root selection",
         )
 
@@ -324,24 +402,30 @@ class MetaExpertComposer:
         *,
         budget: SharedSymbolicBudget,
         fence: InvocationFence,
-        path: tuple[str, ...],
+        signatures: tuple[tuple[str, str, str], ...],
+        labels: tuple[str, ...],
         reason: str,
     ) -> EvidenceNode:
         fence.check()
-        if expert_id in path:
-            chain = " -> ".join((*path, expert_id))
-            raise CompositionError(f"expert delegation cycle: {chain}")
-        next_path = (*path, expert_id)
-        budget.admit(len(path))
+        budget.assert_zero_model_usage()
+        signature = _invocation_signature(expert_id, operation, input_data)
+        label = f"{expert_id}.{operation}"
+        if signature in signatures:
+            chain = " -> ".join((*labels, label))
+            raise CompositionError(f"expert delegation made no progress: {chain}")
+        next_signatures = (*signatures, signature)
+        next_labels = (*labels, label)
+        budget.admit(len(signatures))
         result = self._invoker(
             expert_id,
             operation,
-            input_data,
+            _normalized_inert_value(input_data),
             budget=budget,
             fence=fence,
-            parent_path=path,
+            parent_path=labels,
         )
         fence.check()
+        budget.assert_zero_model_usage()
         if result.model_calls != 0:
             raise CompositionError("pure symbolic expert attempted model use")
         budget.record_evidence(len(result.evidence))
@@ -349,6 +433,7 @@ class MetaExpertComposer:
         children = []
         for child in result.delegations:
             fence.check()
+            budget.assert_zero_model_usage()
             children.append(
                 self._invoke(
                     child.expert_id,
@@ -356,16 +441,19 @@ class MetaExpertComposer:
                     child.input,
                     budget=budget,
                     fence=fence,
-                    path=next_path,
+                    signatures=next_signatures,
+                    labels=next_labels,
                     reason=child.reason,
                 )
             )
         fence.check()
+        budget.assert_zero_model_usage()
         return EvidenceNode(
             expert_id=expert_id,
             operation=operation,
             status=result.status,
             reason=reason,
+            data=result.data,
             evidence=result.evidence,
             explanation=result.explanation,
             children=tuple(children),
@@ -381,11 +469,6 @@ class StyleScope(IntEnum):
     SESSION = 5
 
 
-_FORBIDDEN_STYLE_KEYS = frozenset(
-    {"authority", "capabilities", "permissions", "required_capabilities"}
-)
-
-
 @dataclass(frozen=True)
 class StyleOverlay:
     scope: StyleScope
@@ -397,6 +480,7 @@ class StyleOverlay:
     workspace_generation: int | None = None
 
     def __post_init__(self) -> None:
+        _normalized_inert_value(self.values)
         forbidden = _FORBIDDEN_STYLE_KEYS.intersection(self.values)
         if forbidden:
             names = ", ".join(sorted(forbidden))
