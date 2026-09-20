@@ -147,6 +147,7 @@ class CompatibilityRuntime:
         self.subscriptions: list[CompatibilitySubscription] = []
         self.workers: list[str] = []
         self.advice: list[tuple[str, int]] = []
+        self.symbols: list[dict[str, object]] = []
         self._worker_handles: dict[str, CompatibilityWorker] = {}
         self._command_type = command_type
 
@@ -202,6 +203,34 @@ class CompatibilityRuntime:
         self.advice.append((kind, priority))
         return registration_id
 
+    def register_symbol(
+        self,
+        symbol,
+        kind,
+        value,
+        *,
+        priority=0,
+        docs="",
+        capabilities=(),
+        source="",
+    ):
+        if self.closed:
+            raise RuntimeError("plugin runtime is closed")
+        registration_id = len(self.symbols) + 1
+        self.symbols.append(
+            {
+                "registration_id": registration_id,
+                "symbol": symbol,
+                "kind": kind,
+                "value": value,
+                "priority": priority,
+                "docs": docs,
+                "capabilities": tuple(capabilities),
+                "source": source,
+            }
+        )
+        return registration_id
+
     def start_worker(self, name, target):
         if not name or len(name) > 64:
             raise ValueError("worker name must contain 1 to 64 characters")
@@ -233,6 +262,7 @@ class CompatibilityRuntime:
         self.closed = True
         for subscription in self.subscriptions:
             subscription.close()
+        self.symbols.clear()
         workers = tuple(self._worker_handles.values())
         for worker in workers:
             worker.request_stop()
