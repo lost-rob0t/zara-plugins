@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Move project-owned symbolic expert source to `lost-rob0t/dotfiles/.zara/experts/`; zara-plugins retains runtime and adapter ownership rather than duplicate expert KBs.
+
 ### zara-emacs 0.3.0
 - Route editor control through the versioned `ZARA-EMACS/1` native bridge instead of per-operation Elisp templates.
 - Add live session/buffer/window/command inspection using opaque IDs.
