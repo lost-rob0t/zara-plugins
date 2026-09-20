@@ -83,6 +83,28 @@ _SPECS: tuple[LanguageExpertSpec, ...] = (
         source_reference="dotfiles:.zara/experts/nim",
         upstream_issue="lost-rob0t/prolog-rlm#499",
     ),
+    LanguageExpertSpec(
+        key="nix",
+        expert_id="zara:expert/nix",
+        namespace="nix-expert",
+        name="NixExpert",
+        language="nix",
+        extensions=(".nix",),
+        applicability_keywords=("nix", "nixos", "flake", "home-manager"),
+        source_reference="dotfiles:.zara/experts/nix",
+        upstream_issue="lost-rob0t/prolog-rlm#503",
+    ),
+    LanguageExpertSpec(
+        key="bash",
+        expert_id="zara:expert/bash",
+        namespace="bash-expert",
+        name="BashExpert",
+        language="bash",
+        extensions=(".sh", ".bash"),
+        applicability_keywords=("bash", "shell", "sh"),
+        source_reference="dotfiles:.zara/experts/bash",
+        upstream_issue="lost-rob0t/prolog-rlm#502",
+    ),
 )
 
 _SPEC_BY_ID: dict[str, LanguageExpertSpec] = {}
