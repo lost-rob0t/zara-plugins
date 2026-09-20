@@ -70,7 +70,7 @@ class LispRepairVerificationFailClosedTests(unittest.TestCase):
                     arguments=["(defun demo ()", "(defun demo ())"],
                 )
 
-                self.assertEqual(outcome["verdict"], "unknown")
+                self.assertEqual(outcome["verdict"], "blocked")
                 self.assertEqual(outcome["usage"], {"model_calls": 0})
                 self.assertEqual(outcome["effect_receipts"], [])
                 self.assertTrue(outcome["evidence_refs"])
