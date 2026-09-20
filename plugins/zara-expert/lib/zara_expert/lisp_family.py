@@ -119,9 +119,9 @@ def register_lisp_family(
     source files are the canonical Dotfiles-owned expert brains; this adapter
     owns only stable Zara namespace/operation bindings.
 
-    Source validation is completed for the whole configured family before any
-    host namespace is mutated. A bad later source therefore cannot leave a
-    partially registered Lisp family behind after startup failure.
+    Source and authority validation is completed for the whole configured family
+    before any host namespace is mutated. A bad later source or conflicting later
+    namespace therefore cannot leave a partially registered Lisp family behind.
     """
 
     if not isinstance(source_files_by_expert, Mapping):
@@ -139,6 +139,11 @@ def register_lisp_family(
         if isinstance(configured, (str, bytes, Path)):
             raise ExpertError(f"source list for {spec.key!r} must be a sequence of paths")
         validated_sources[spec.key] = _source_files(configured)
+
+    for spec in _SPECS:
+        files = validated_sources.get(spec.key)
+        if files is not None:
+            host.preflight_registration(spec.namespace, files, predicates=_PREDICATES)
 
     registered: set[str] = set()
     for spec in _SPECS:
