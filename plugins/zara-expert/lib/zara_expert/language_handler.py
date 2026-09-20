@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 from .domain import ExpertError, ExpertHost
@@ -14,6 +15,7 @@ from .language_family import (
 _EXPERT_IDS = frozenset(spec.expert_id for spec in language_family_specs())
 _EXPERT_KEYS = frozenset(spec.key for spec in language_family_specs())
 _RESULT_VARIABLE = {"var": "Result"}
+_MAX_CORE_EVIDENCE_REFS = 32
 
 
 def _canonical_expert_id(expert_id: str) -> str:
@@ -53,6 +55,23 @@ def _operation_arguments(expert_operation: str, payload: dict[str, Any]) -> list
     return [payload.get(field["name"]) for field in fields] + [dict(_RESULT_VARIABLE)]
 
 
+def _evidence_refs(result: dict[str, Any]) -> list[str]:
+    raw = result.get("evidence", ())
+    if isinstance(raw, (str, bytes)) or not isinstance(raw, (list, tuple)):
+        raise ExpertError("language expert evidence must be a sequence")
+    if len(raw) > _MAX_CORE_EVIDENCE_REFS:
+        raise ExpertError(
+            f"language expert evidence exceeds {_MAX_CORE_EVIDENCE_REFS} entries"
+        )
+
+    refs: list[str] = []
+    for item in raw:
+        encoded = str(item).encode("utf-8", errors="strict")
+        digest = hashlib.sha256(encoded).hexdigest()
+        refs.append(f"evidence:language:sha256:{digest}")
+    return refs
+
+
 def make_language_expert_handler(host: ExpertHost, expert_id: str):
     """Return a Core-owned ZARA-EXPERT/1 handler for one language expert.
 
@@ -90,10 +109,11 @@ def make_language_expert_handler(host: ExpertHost, expert_id: str):
             expert_operation,
             arguments,
         )
+        evidence_refs = _evidence_refs(result)
         return {
             "verdict": result["verdict"],
             "data": {"result": result},
-            "evidence_refs": [],
+            "evidence_refs": evidence_refs,
             "usage": {"model_calls": MAX_MODEL_CALLS},
             "effect_receipts": [],
         }
