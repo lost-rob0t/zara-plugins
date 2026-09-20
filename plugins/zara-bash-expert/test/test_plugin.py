@@ -7,8 +7,9 @@ from zara_bash_expert.plugin import BashExpertAdapterError, ZaraBashExpertPlugin
 
 
 class FakeRuntime:
-    def __init__(self, *, model_calls: int = 0) -> None:
+    def __init__(self, *, model_calls: int = 0, side_effect_receipts=None) -> None:
         self.model_calls = model_calls
+        self.side_effect_receipts = [] if side_effect_receipts is None else side_effect_receipts
         self.resolved = []
         self.requests = []
 
@@ -23,7 +24,7 @@ class FakeRuntime:
             "data": {"verdict": "clean"},
             "evidence": [{"kind": "source", "ref": ".bashrc"}],
             "usage": {"model_calls": self.model_calls},
-            "side_effect_receipts": [],
+            "side_effect_receipts": self.side_effect_receipts,
         }
 
 
@@ -89,19 +90,39 @@ class BashExpertPluginTests(unittest.TestCase):
         class MissingUsageRuntime(FakeRuntime):
             def invoke_capability(self, handle, request):
                 self.requests.append(request)
-                return {"status": "succeeded", "data": {}}
+                return {
+                    "status": "succeeded",
+                    "data": {},
+                    "side_effect_receipts": [],
+                }
 
         plugin.start(MissingUsageRuntime())
         with self.assertRaisesRegex(BashExpertAdapterError, "zero-model-proof-missing"):
             plugin.invoke("activation-2", "parse", '{"source":"echo ok"}')
 
-    def test_invalid_input_never_reaches_host(self) -> None:
+    def test_read_only_result_with_effect_receipt_is_rejected(self) -> None:
+        plugin = ZaraBashExpertPlugin()
+        plugin.start(FakeRuntime(side_effect_receipts=[{"effect": "bash.execute"}]))
+
+        with self.assertRaisesRegex(BashExpertAdapterError, "read-only-effect-leak"):
+            plugin.invoke("activation-2", "parse", '{"source":"echo ok"}')
+
+    def test_invalid_or_deep_input_never_reaches_host(self) -> None:
         runtime = FakeRuntime()
         plugin = ZaraBashExpertPlugin()
         plugin.start(runtime)
 
         with self.assertRaisesRegex(BashExpertAdapterError, "input-must-be-object"):
             plugin.invoke("activation-2", "parse", "[]")
+
+        deep = {}
+        cursor = deep
+        for _ in range(20):
+            child = {}
+            cursor["child"] = child
+            cursor = child
+        with self.assertRaisesRegex(BashExpertAdapterError, "input-structure-too-complex"):
+            plugin.invoke("activation-2", "parse", json.dumps(deep))
 
         self.assertEqual(runtime.requests, [])
 
