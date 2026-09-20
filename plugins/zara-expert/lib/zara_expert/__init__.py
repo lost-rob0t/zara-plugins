@@ -1,3 +1,7 @@
+from .catalog_composition import (
+    CoreCatalogCompositionAdapter,
+    CoreCatalogCompositionResult,
+)
 from .composition import (
     CompositionError,
     DelegationRequest,
@@ -36,6 +40,8 @@ from .lisp_composition import (
 
 __all__ = [
     "CompositionError",
+    "CoreCatalogCompositionAdapter",
+    "CoreCatalogCompositionResult",
     "CoreDotfilesCompositionInvoker",
     "CoreExpertCatalogAdapter",
     "CoreExpertSelection",
