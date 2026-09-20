@@ -19,6 +19,7 @@ from .language_family import (
     register_language_family,
 )
 from .language_handler import make_language_expert_handler
+from .language_source_contract import validate_language_source_contracts
 from .lisp_family import (
     descriptors as lisp_descriptors,
     invoke_lisp_operation,
@@ -92,9 +93,11 @@ class ZaraExpertPlugin(ServicePlugin):
             self.host,
             self._lisp_sources(runtime.configuration),
         )
+        language_sources = self._language_sources(runtime.configuration)
+        validate_language_source_contracts(language_sources)
         self._registered_language_experts = register_language_family(
             self.host,
-            self._language_sources(runtime.configuration),
+            language_sources,
         )
         register_lisp_descriptor_symbols(runtime, self._registered_lisp_experts)
         register_language_descriptor_symbols(runtime, self._registered_language_experts)
