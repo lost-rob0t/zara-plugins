@@ -273,6 +273,14 @@ def _build_expert_authority():
                 raise ExpertError(f"{namespace}: backend failure: {exc}") from exc
             if not isinstance(result, dict):
                 raise ExpertError(f"{namespace}: backend returned a non-object result")
+            current_capability = registries[self].get(namespace, {}).get(predicate)
+            if (
+                current_capability is not capability
+                or not is_registered_predicate_capability(capability)
+            ):
+                raise ExpertError(
+                    f"{namespace}: registered predicate authority changed during backend execution"
+                )
             return result
 
         @staticmethod

@@ -11,8 +11,8 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DOTFILES_ROOT = os.environ.get("ZARA_DOTFILES_ROOT")
 ZARA_CORE_ROOT = os.environ.get("ZARA_CORE_ROOT")
-EXPECTED_DOTFILES_COMMIT = "1c825e84a4ca2eaee6fa9a7db8c251b256d991c9"
-EXPECTED_ZARA_CORE_COMMIT = "c99dd6c68fecfd8f346429532a750c9c2e6bf65d"
+EXPECTED_DOTFILES_COMMIT = "fe8f7fa3c42803e0e505dcb6f7e4600d27649d9e"
+EXPECTED_ZARA_CORE_COMMIT = "3c2f6ffe892fb5e39e395fa94fe5329f195d5923"
 ZARA_EXPERT_LIB = REPO_ROOT / "plugins" / "zara-expert" / "lib"
 
 if ZARA_CORE_ROOT:
