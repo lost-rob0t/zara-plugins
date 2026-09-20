@@ -13,7 +13,7 @@ from zara_nix_expert.plugin import NixExpertAdapterError, ZaraNixExpertPlugin
 
 
 EXPECTED_MANIFEST_DIGEST = (
-    "sha256:4aee09e5e49c6dff21dfed20e3cd9cbab6222c366fb4e5693e9808108f8ff42b"
+    "sha256:a5c349600eabd8add0f336c4932caf27d7cc9b222ca6c0f197f352fc56b2f0cf"
 )
 ACTIVATION_ID = "act:" + ("a" * 32)
 
