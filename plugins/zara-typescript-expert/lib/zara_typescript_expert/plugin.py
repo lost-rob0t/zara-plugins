@@ -92,7 +92,7 @@ def _manifest_digest() -> str:
     payload = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
     return "sha256:" + hashlib.sha256(payload).hexdigest()
 
-MANIFEST_DIGEST = _manifest_digest()
+MANIFEST_DIGEST = "sha256:2284d8dcf779bde01f57189ae1f7a7ec327c882262f0bb0db15883695288400e"
 
 
 def _reject_json_constant(_value: str) -> None:
