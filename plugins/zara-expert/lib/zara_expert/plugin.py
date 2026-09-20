@@ -132,6 +132,11 @@ class ZaraExpertPlugin(ServicePlugin):
         register_language_descriptor_symbols(runtime, self._registered_language_experts)
 
     def stop(self) -> None:
+        # Plugin stop is a capability-revocation boundary. Clear registered
+        # predicate authority before dropping the descriptor bookkeeping so a
+        # handler captured before stop cannot keep invoking a stale brain.
+        # Durable state files intentionally remain on disk for the next start.
+        self.host.clear_registrations()
         self._registered_lisp_experts = frozenset()
         self._registered_language_experts = frozenset()
 
