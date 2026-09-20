@@ -29,7 +29,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          revision=1c825e84a4ca2eaee6fa9a7db8c251b256d991c9
+          revision=fe8f7fa3c42803e0e505dcb6f7e4600d27649d9e
           rm -rf .ci/dotfiles-prolog-python-nim-current
           git init .ci/dotfiles-prolog-python-nim-current
           git -C .ci/dotfiles-prolog-python-nim-current remote add origin https://github.com/lost-rob0t/dotfiles.git
@@ -49,7 +49,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          revision=c99dd6c68fecfd8f346429532a750c9c2e6bf65d
+          revision=3c2f6ffe892fb5e39e395fa94fe5329f195d5923
           rm -rf .ci/zara-core-current
           git init .ci/zara-core-current
           git -C .ci/zara-core-current remote add origin https://github.com/lost-rob0t/zara.git
