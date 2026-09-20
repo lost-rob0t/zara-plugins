@@ -101,6 +101,23 @@ class SwiplBackendTests(unittest.TestCase):
             result = self._host(root, program).query("alpha", "thing", [{"var": "X"}])
             self.assertEqual(result["results"], ["thing(X)", "3"])
 
+    @unittest.skipUnless(SwiplBackend.available(), "SWI-Prolog is unavailable")
+    def test_real_swipl_driver_loads_json_writer(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            brain = root / "brain.pl"
+            brain.write_text("thing(ok).\n", encoding="utf-8")
+            host = ExpertHost(
+                SwiplBackend(),
+                state_root=root / "state",
+                query_timeout_seconds=2.0,
+                max_results=3,
+            )
+            host.register("alpha", [brain], predicates={"thing": 1})
+            result = host.query("alpha", "thing", [{"var": "X"}])
+            self.assertEqual(result["results"], ["thing(ok)"])
+            self.assertEqual(result["trace"], [])
+
     def test_argument_syntax_is_quoted_as_data(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
