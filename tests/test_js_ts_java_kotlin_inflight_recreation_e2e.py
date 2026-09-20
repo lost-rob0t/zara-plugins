@@ -146,8 +146,14 @@ class JsTsJavaKotlinInflightRecreationE2ETests(unittest.TestCase):
         )
         registered = register_language_family(host, self.sources)
         self.assertEqual(registered, frozenset(LANGUAGES))
-        published = {item["expert_id"]: item for item in descriptors(registered)}
+        catalog = {item["expert_id"]: item for item in descriptors(registered)}
+        published = {expert_id: catalog[expert_id] for expert_id in EXPERT_IDS}
         self.assertEqual(set(published), set(EXPERT_IDS))
+        for item in published.values():
+            self.assertEqual(item["availability"], "available")
+        for expert_id, item in catalog.items():
+            if expert_id not in EXPERT_IDS:
+                self.assertEqual(item["availability"], "absent")
         handlers = {
             expert_id: make_language_expert_handler(host, expert_id)
             for expert_id in EXPERT_IDS
