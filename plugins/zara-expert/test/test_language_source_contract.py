@@ -167,6 +167,42 @@ class LanguageSourceContractTests(unittest.TestCase):
         self.assertEqual(plugin._registered_language_experts, frozenset())
         self.assertFalse((self.root / "state" / "lisp").exists())
 
+    def test_language_authority_conflict_is_preflighted_before_lisp_activation(self):
+        lisp_source = self.root / "lisp-authority.pl"
+        lisp_source.write_text("% canonical-lisp-fixture\n", encoding="utf-8")
+        existing_python_source = self.root / "python-existing.pl"
+        existing_python_source.write_text("% existing-python-authority\n", encoding="utf-8")
+        configured_python_source = _adapter_ready_source(
+            self.root / "python-configured.pl"
+        )
+        runtime = RecordingRuntime(
+            {
+                "lisp_family_sources": {"lisp": [str(lisp_source)]},
+                "language_expert_sources": {"python": [str(configured_python_source)]},
+            }
+        )
+        backend = RecordingBackend()
+        plugin = ZaraExpertPlugin(
+            backend=backend,
+            state_root=self.root / "state-authority-conflict",
+        )
+        plugin.register_namespace(
+            "python-expert",
+            [existing_python_source],
+            registered_predicates(),
+        )
+
+        with self.assertRaisesRegex(ExpertError, "already registered with different authority"):
+            plugin.start(runtime)
+
+        self.assertEqual(runtime.registrations, [])
+        self.assertEqual(backend.calls, [])
+        self.assertEqual(plugin._registered_lisp_experts, frozenset())
+        self.assertEqual(plugin._registered_language_experts, frozenset())
+        self.assertFalse(
+            (self.root / "state-authority-conflict" / "lisp").exists()
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
