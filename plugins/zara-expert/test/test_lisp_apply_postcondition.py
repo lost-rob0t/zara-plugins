@@ -126,6 +126,62 @@ class LispApplyPostconditionTests(unittest.TestCase):
                 )
             )
 
+    def test_core_apply_success_rejects_explicitly_unverified_postcondition(self):
+        postcondition = dict(self.postcondition, verified=False)
+        with self.assertRaisesRegex(CompositionError, "verified"):
+            invoke_apply(
+                core_result(
+                    data={
+                        "effect_receipt": self.receipt,
+                        "postcondition_evidence": postcondition,
+                    },
+                    evidence_refs=("postcondition:sbcl:project:5",),
+                    effect_receipts=(self.receipt,),
+                )
+            )
+
+    def test_core_apply_success_rejects_truthy_non_boolean_verification(self):
+        postcondition = dict(self.postcondition, verified=1)
+        with self.assertRaisesRegex(CompositionError, "verified"):
+            invoke_apply(
+                core_result(
+                    data={
+                        "effect_receipt": self.receipt,
+                        "postcondition_evidence": postcondition,
+                    },
+                    evidence_refs=("postcondition:sbcl:project:5",),
+                    effect_receipts=(self.receipt,),
+                )
+            )
+
+    def test_core_apply_success_requires_fresh_observed_generation(self):
+        postcondition = dict(self.postcondition, observed_generation="project:4")
+        with self.assertRaisesRegex(CompositionError, "fresh"):
+            invoke_apply(
+                core_result(
+                    data={
+                        "effect_receipt": self.receipt,
+                        "postcondition_evidence": postcondition,
+                    },
+                    evidence_refs=("postcondition:sbcl:project:4",),
+                    effect_receipts=(self.receipt,),
+                )
+            )
+
+    def test_core_apply_success_requires_request_receipt_generation_match(self):
+        receipt = dict(self.receipt, source_generation="project:stale")
+        with self.assertRaisesRegex(CompositionError, "source generation"):
+            invoke_apply(
+                core_result(
+                    data={
+                        "effect_receipt": receipt,
+                        "postcondition_evidence": self.postcondition,
+                    },
+                    evidence_refs=("postcondition:sbcl:project:5",),
+                    effect_receipts=(receipt,),
+                )
+            )
+
     def test_core_apply_success_requires_effect_receipt_lineage_match(self):
         mismatched = dict(self.receipt, receipt_id="edit:other")
         with self.assertRaisesRegex(CompositionError, "effect receipt"):
