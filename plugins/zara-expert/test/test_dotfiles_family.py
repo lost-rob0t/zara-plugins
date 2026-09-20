@@ -44,6 +44,8 @@ class DotfilesFamilyTests(unittest.TestCase):
                 "nix_path": 1,
                 "bash_path": 1,
                 "home_manager_owned_path": 1,
+                "style_source": 4,
+                "style_revision": 2,
             },
         )
 
