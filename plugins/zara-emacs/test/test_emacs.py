@@ -47,6 +47,27 @@ class EmacsClientTest(unittest.TestCase):
         self.assertEqual(result["commands"][0]["action_id"], "window.other")
         self.assertEqual(runner.calls, [])
 
+    def test_voice_phrase_resolves_to_same_action_protocol_without_execution(self):
+        client, runner = self.client(
+            [],
+            commands={"window.split-right": "split-window-right"},
+            voice_commands={"Split   window RIGHT": "window.split-right"},
+        )
+        result = client.resolve_voice(" split window right ")
+        self.assertEqual(result["action_id"], "window.split-right")
+        self.assertTrue(result["matched"])
+        self.assertEqual(runner.calls, [])
+
+    def test_voice_phrase_rejects_unknown_utterance(self):
+        client, runner = self.client(
+            [],
+            commands={"window.split-right": "split-window-right"},
+            voice_commands={"split window right": "window.split-right"},
+        )
+        with self.assertRaisesRegex(EmacsError, "did not match"):
+            client.resolve_voice("delete everything")
+        self.assertEqual(runner.calls, [])
+
     def test_invoke_command_resolves_alias_before_fixed_elisp_template(self):
         client, runner = self.client(
             [Result(stdout='"split-window-right"\n')],
