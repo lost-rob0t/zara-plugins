@@ -226,7 +226,17 @@ class LispFamilyAdapterTests(unittest.TestCase):
         self.assertEqual(availability["zara:expert/emacs-lisp"], "available")
         self.assertEqual(availability["zara:expert/lisp"], "absent")
         self.assertEqual(json.loads(plugin.status())["model_calls"], 0)
-        self.assertEqual(len(runtime.registrations), 3)
+        expected_lisp_symbols = [
+            "zara:expert/lisp",
+            "zara:expert/common-lisp",
+            "zara:expert/emacs-lisp",
+        ]
+        registered_symbols = [item[0] for item in runtime.registrations]
+        self.assertEqual(
+            [symbol for symbol in registered_symbols if symbol in expected_lisp_symbols],
+            expected_lisp_symbols,
+        )
+        self.assertEqual(len(registered_symbols), len(set(registered_symbols)))
 
     def test_lisp_family_does_not_export_parallel_invocation_or_descriptor_tools(self):
         plugin = ZaraExpertPlugin(backend=self.backend, state_root=self.root / "plugin-state")
