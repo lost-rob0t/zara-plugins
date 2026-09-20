@@ -205,6 +205,11 @@ def make_lisp_expert_handler(host: ExpertHost, expert_id: str):
         source_generation: str | None = None,
     ) -> dict[str, Any]:
         if expert_operation == "repair.apply":
+            # The descriptor advertises that this expert can participate in a
+            # repair workflow, but write authority belongs to Zara Core's typed
+            # effect path. Returning BLOCKED is intentional: the caller must
+            # cross approval/capability fencing and then provide fresh
+            # postcondition evidence rather than letting this plugin write.
             return {
                 "verdict": "blocked",
                 "data": {
