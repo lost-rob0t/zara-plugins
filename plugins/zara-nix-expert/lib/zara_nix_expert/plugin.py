@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping
 from typing import Any
 
@@ -14,6 +15,9 @@ EXPERT_ID = "zara:expert/nix"
 HOST_CAPABILITY = "expert.invoke"
 MAX_INPUT_BYTES = 65536
 MAX_OUTPUT_BYTES = 65536
+MAX_INPUT_DEPTH = 16
+MAX_INPUT_NODES = 4096
+MAX_KEY_LENGTH = 256
 ALLOWED_OPERATIONS = frozenset(
     {
         "parse",
@@ -28,6 +32,31 @@ ALLOWED_OPERATIONS = frozenset(
 
 class NixExpertAdapterError(RuntimeError):
     """Fail-closed adapter error. No provider/model fallback is permitted."""
+
+
+def _reject_json_constant(_value: str) -> None:
+    raise ValueError("non-finite JSON number")
+
+
+def _validate_json_tree(value: object) -> None:
+    stack: list[tuple[object, int]] = [(value, 1)]
+    nodes = 0
+    while stack:
+        current, depth = stack.pop()
+        nodes += 1
+        if nodes > MAX_INPUT_NODES or depth > MAX_INPUT_DEPTH:
+            raise NixExpertAdapterError("input-structure-too-complex")
+        if isinstance(current, dict):
+            for key, child in current.items():
+                if not isinstance(key, str) or len(key) > MAX_KEY_LENGTH:
+                    raise NixExpertAdapterError("invalid-input-key")
+                stack.append((child, depth + 1))
+        elif isinstance(current, list):
+            stack.extend((child, depth + 1) for child in current)
+        elif isinstance(current, float) and not math.isfinite(current):
+            raise NixExpertAdapterError("invalid-input-number")
+        elif current is not None and not isinstance(current, (str, int, float, bool)):
+            raise NixExpertAdapterError("invalid-input-value")
 
 
 class ZaraNixExpertPlugin(ServicePlugin):
@@ -61,11 +90,12 @@ class ZaraNixExpertPlugin(ServicePlugin):
         if len(input_json.encode("utf-8")) > MAX_INPUT_BYTES:
             raise NixExpertAdapterError("input-too-large")
         try:
-            value = json.loads(input_json)
+            value = json.loads(input_json, parse_constant=_reject_json_constant)
         except (TypeError, ValueError) as error:
             raise NixExpertAdapterError("invalid-input-json") from error
         if not isinstance(value, dict):
             raise NixExpertAdapterError("input-must-be-object")
+        _validate_json_tree(value)
         return value
 
     def descriptor(self) -> str:
@@ -97,6 +127,8 @@ class ZaraNixExpertPlugin(ServicePlugin):
                     "max_model_calls": 0,
                     "max_input_bytes": MAX_INPUT_BYTES,
                     "max_output_bytes": MAX_OUTPUT_BYTES,
+                    "max_input_depth": MAX_INPUT_DEPTH,
+                    "max_input_nodes": MAX_INPUT_NODES,
                 },
                 "availability": "inactive",
                 "unavailable_reason": "activation-required",
@@ -143,8 +175,12 @@ class ZaraNixExpertPlugin(ServicePlugin):
         if not isinstance(result, Mapping):
             raise NixExpertAdapterError("invalid-expert-result")
         usage = result.get("usage")
-        if not isinstance(usage, Mapping) or usage.get("model_calls") != 0:
+        model_calls = usage.get("model_calls") if isinstance(usage, Mapping) else None
+        if type(model_calls) is not int or model_calls != 0:
             raise NixExpertAdapterError("zero-model-proof-missing")
+        receipts = result.get("side_effect_receipts")
+        if not isinstance(receipts, list) or receipts:
+            raise NixExpertAdapterError("read-only-effect-leak")
 
         encoded = self._json(dict(result))
         if len(encoded.encode("utf-8")) > MAX_OUTPUT_BYTES:
