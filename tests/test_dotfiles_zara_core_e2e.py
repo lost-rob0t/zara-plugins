@@ -187,7 +187,7 @@ class DotfilesZaraCoreE2ETests(unittest.TestCase):
         self.assertEqual(budget.invocations_used, 1)
         self.assertEqual(budget.model_calls_used, 0)
 
-    def test_unknown_path_stays_symbolic_unknown_without_child_fallback(self) -> None:
+    def test_unknown_path_fails_closed_with_reason_and_no_child_fallback(self) -> None:
         budget = SharedSymbolicBudget(max_invocations=2, max_model_calls=0)
         tree = self.composer.invoke(
             "zara:expert/dotfiles",
@@ -200,7 +200,7 @@ class DotfilesZaraCoreE2ETests(unittest.TestCase):
             budget=budget,
             fence=self.fence,
         )
-        self.assertEqual(tree.status, "unknown")
+        self.assertEqual(tree.status, "failed")
         self.assertEqual(tree.data["reason"], "unsupported-path")
         self.assertEqual(tree.children, ())
         self.assertEqual(budget.invocations_used, 1)
