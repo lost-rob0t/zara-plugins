@@ -120,8 +120,12 @@ class ZaraSymbolicMemoryPlugin:
         raise SymbolicMemoryError("unsupported embedding backend")
 
     def bind_principal(self, principal) -> None:
-        principal_id = getattr(principal, "principal_id", None)
-        principal_kind = getattr(principal, "kind", "local-owner")
+        if principal is None:
+            principal_id = f"uid:{os.getuid()}"
+            principal_kind = "local-owner"
+        else:
+            principal_id = getattr(principal, "principal_id", None)
+            principal_kind = getattr(principal, "kind", "local-owner")
         if not isinstance(principal_id, str) or not principal_id.strip() or principal_id != principal_id.strip():
             raise SymbolicMemoryError("memory provider requires a valid principal id")
         if not isinstance(principal_kind, str) or not principal_kind.strip():
