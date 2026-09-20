@@ -1,5 +1,11 @@
 """Zara NixExpert adapter package."""
 
-from .plugin import NixExpertAdapterError, ZaraNixExpertPlugin, create_plugin
+from .boundary import ZaraNixExpertBoundaryPlugin, create_plugin
+from .plugin import NixExpertAdapterError, ZaraNixExpertPlugin
 
-__all__ = ["NixExpertAdapterError", "ZaraNixExpertPlugin", "create_plugin"]
+__all__ = [
+    "NixExpertAdapterError",
+    "ZaraNixExpertBoundaryPlugin",
+    "ZaraNixExpertPlugin",
+    "create_plugin",
+]

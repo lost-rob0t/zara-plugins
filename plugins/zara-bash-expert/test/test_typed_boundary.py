@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
+from zara_bash_expert import create_plugin
 from zara_bash_expert.boundary import ZaraBashExpertBoundaryPlugin
 from zara_bash_expert.plugin import BashExpertAdapterError, MANIFEST_DIGEST
 
@@ -61,6 +62,9 @@ class BashExpertTypedBoundaryTests(unittest.TestCase):
             1,
             json.dumps(payload),
         )
+
+    def test_public_factory_cannot_bypass_typed_boundary(self) -> None:
+        self.assertIsInstance(create_plugin(), ZaraBashExpertBoundaryPlugin)
 
     def test_rejects_missing_extra_and_wrong_typed_fields_before_host(self) -> None:
         for payload, error in (

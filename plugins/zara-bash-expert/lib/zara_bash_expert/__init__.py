@@ -1,5 +1,11 @@
 """Zara BashExpert adapter package."""
 
-from .plugin import BashExpertAdapterError, ZaraBashExpertPlugin, create_plugin
+from .boundary import ZaraBashExpertBoundaryPlugin, create_plugin
+from .plugin import BashExpertAdapterError, ZaraBashExpertPlugin
 
-__all__ = ["BashExpertAdapterError", "ZaraBashExpertPlugin", "create_plugin"]
+__all__ = [
+    "BashExpertAdapterError",
+    "ZaraBashExpertBoundaryPlugin",
+    "ZaraBashExpertPlugin",
+    "create_plugin",
+]
