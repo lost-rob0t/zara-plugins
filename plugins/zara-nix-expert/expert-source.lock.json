@@ -6,8 +6,8 @@
     "repository": "lost-rob0t/dotfiles",
     "path": ".zara/experts/nix",
     "issue": 286,
-    "producer_pr": 294,
-    "commit": "5c8d8670a18c97cebc33af8be85549a8fcb6bf02"
+    "producer_pr": 300,
+    "commit": "1b93e01f3482e49a853f651eb28c21eb1d9cad0e"
   },
   "runtime_contract": {
     "repository": "lost-rob0t/prolog-rlm",
