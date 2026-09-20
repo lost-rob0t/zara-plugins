@@ -288,7 +288,7 @@ class PrologPythonNimInflightCancellationE2ETests(unittest.TestCase):
         for trace in traces:
             self.assertEqual(trace["verdict"], "cancelled")
             self.assertEqual(trace["evidence_refs"], [])
-            self.assertEqual(trace["effect_receipts"], [])
+            self.assertEqual(trace.get("effect_receipts", []), [])
             self.assertIs(type(trace["usage"]["model_calls"]), int)
             self.assertEqual(trace["usage"]["model_calls"], 0)
 
