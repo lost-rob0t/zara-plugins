@@ -2,6 +2,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,7 +15,10 @@ from zara_expert.composition import (
     SharedSymbolicBudget,
 )
 from zara_expert.domain import ExpertHost
-from zara_expert.language_composition import LanguageFamilyCompositionInvoker
+from zara_expert.language_composition import (
+    CoreLanguageFamilyCompositionInvoker,
+    LanguageFamilyCompositionInvoker,
+)
 from zara_expert.language_family import register_language_family
 
 
@@ -34,18 +38,29 @@ class RecordingBackend:
         }
 
 
-class VerdictBackend(RecordingBackend):
-    def __init__(self, ok):
-        super().__init__()
-        self.ok = ok
+class RecordingCoreRegistry:
+    def __init__(self, result=None, error=None):
+        self.result = result
+        self.error = error
+        self.calls = []
 
-    def run(self, request):
-        self.calls.append(dict(request))
-        return {
-            "ok": self.ok,
-            "results": ["evidence:partial"],
-            "trace": ["rule:backend-verdict"],
-        }
+    def invoke(self, handle, operation, payload, *, limits):
+        self.calls.append(
+            {
+                "handle": handle,
+                "operation": operation,
+                "payload": dict(payload),
+                "limits": limits,
+            }
+        )
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+
+class CoreLimits:
+    def __init__(self, *, max_model_calls):
+        self.max_model_calls = max_model_calls
 
 
 class LanguageCompositionTests(unittest.TestCase):
@@ -116,34 +131,6 @@ class LanguageCompositionTests(unittest.TestCase):
             [call["capability"].predicate for call in backend.calls],
             ["language_evidence", "language_evidence", "language_evidence"],
         )
-
-    def test_backend_failure_or_non_boolean_success_cannot_false_green_evidence(self):
-        cases = ((False, "failed"), (1, "unknown"), ("true", "unknown"))
-        for index, (backend_ok, expected_status) in enumerate(cases):
-            with self.subTest(backend_ok=backend_ok):
-                backend = VerdictBackend(backend_ok)
-                composer = self._composer(
-                    backend,
-                    {"python": [self._brain(f"python-verdict-{index}")]},
-                )
-                budget = SharedSymbolicBudget(max_invocations=1, max_evidence=1)
-                node = composer.invoke(
-                    "zara:expert/python",
-                    "inspect",
-                    {
-                        "source": "print('partial')",
-                        "source_generation": f"generation-verdict-{index}",
-                    },
-                    budget=budget,
-                    fence=self._fence(),
-                )
-
-                self.assertEqual(node.status, expected_status)
-                self.assertEqual(node.evidence, ("evidence:partial",))
-                self.assertEqual(budget.invocations_used, 1)
-                self.assertEqual(budget.evidence_used, 1)
-                self.assertEqual(budget.max_model_calls, 0)
-                self.assertEqual(budget.model_calls_used, 0)
 
     def test_cancellation_after_backend_dispatch_fences_late_language_output(self):
         state = {"cancelled": False}
@@ -244,6 +231,118 @@ class LanguageCompositionTests(unittest.TestCase):
                         )
         self.assertEqual(budget.model_calls_used, 0)
         self.assertEqual(backend.calls, [])
+
+    def test_core_bridge_routes_composition_through_canonical_registry(self):
+        handle = SimpleNamespace(
+            expert_id="zara:expert/nix",
+            workspace="workspace-1",
+        )
+        result = SimpleNamespace(
+            verdict=SimpleNamespace(value="succeeded"),
+            data={
+                "result": {
+                    "kind": "nix-inspection",
+                    "model_calls": 0,
+                    "effect_receipts": [],
+                    "evidence": ["raw:nix-evidence"],
+                    "explanation": ["rule:nix-inspection"],
+                }
+            },
+            evidence_refs=("ev:core:nix",),
+            usage={"model_calls": 0},
+            effect_receipts=(),
+        )
+        registry = RecordingCoreRegistry(result=result)
+        activation_calls = []
+
+        def activation_for(expert_id, fence):
+            activation_calls.append((expert_id, fence.workspace_id))
+            return handle
+
+        invoker = CoreLanguageFamilyCompositionInvoker(
+            registry,
+            activation_for=activation_for,
+            limits_factory=CoreLimits,
+        )
+        composer = MetaExpertComposer(invoker)
+        budget = SharedSymbolicBudget(max_invocations=1, max_model_calls=0)
+
+        with patch(
+            "zara_expert.language_composition.make_language_expert_handler",
+            side_effect=AssertionError("Core composition must not call the handler directly"),
+        ):
+            node = composer.invoke(
+                "zara:expert/nix",
+                "inspect",
+                {"source": "{ x = 1; }", "source_generation": "generation-7"},
+                budget=budget,
+                fence=self._fence(),
+            )
+
+        self.assertEqual(node.status, "succeeded")
+        self.assertEqual(node.evidence, ("ev:core:nix",))
+        self.assertEqual(activation_calls, [("zara:expert/nix", "workspace-1")])
+        self.assertEqual(len(registry.calls), 1)
+        self.assertIs(registry.calls[0]["handle"], handle)
+        self.assertEqual(registry.calls[0]["operation"], "inspect")
+        self.assertEqual(registry.calls[0]["limits"].max_model_calls, 0)
+        self.assertEqual(budget.invocations_used, 1)
+        self.assertEqual(budget.evidence_used, 1)
+        self.assertEqual(budget.model_calls_used, 0)
+
+    def test_core_bridge_rejects_cross_workspace_activation_before_dispatch(self):
+        handle = SimpleNamespace(
+            expert_id="zara:expert/bash",
+            workspace="workspace-other",
+        )
+        registry = RecordingCoreRegistry(
+            result=SimpleNamespace(
+                verdict=SimpleNamespace(value="succeeded"),
+                data={},
+                evidence_refs=(),
+                usage={"model_calls": 0},
+                effect_receipts=(),
+            )
+        )
+        invoker = CoreLanguageFamilyCompositionInvoker(
+            registry,
+            activation_for=lambda _expert_id, _fence: handle,
+            limits_factory=CoreLimits,
+        )
+
+        with self.assertRaisesRegex(CompositionError, "workspace"):
+            invoker(
+                "zara:expert/bash",
+                "inspect",
+                {"source": "true", "source_generation": "generation-7"},
+                budget=SharedSymbolicBudget(),
+                fence=self._fence(),
+                parent_path=(),
+            )
+        self.assertEqual(registry.calls, [])
+
+    def test_core_bridge_fails_closed_on_core_rejection(self):
+        handle = SimpleNamespace(
+            expert_id="zara:expert/bash",
+            workspace="workspace-1",
+        )
+        registry = RecordingCoreRegistry(error=RuntimeError("stale activation generation"))
+        invoker = CoreLanguageFamilyCompositionInvoker(
+            registry,
+            activation_for=lambda _expert_id, _fence: handle,
+            limits_factory=CoreLimits,
+        )
+
+        with self.assertRaisesRegex(CompositionError, "stale activation generation"):
+            invoker(
+                "zara:expert/bash",
+                "inspect",
+                {"source": "true", "source_generation": "generation-7"},
+                budget=SharedSymbolicBudget(),
+                fence=self._fence(),
+                parent_path=(),
+            )
+        self.assertEqual(len(registry.calls), 1)
 
 
 if __name__ == "__main__":

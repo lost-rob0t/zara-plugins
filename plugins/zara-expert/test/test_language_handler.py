@@ -68,6 +68,11 @@ class LanguageHandlerTests(unittest.TestCase):
         self.assertEqual(outcome["verdict"], "succeeded")
         self.assertEqual(outcome["usage"], {"model_calls": 0})
         self.assertEqual(outcome["effect_receipts"], [])
+        self.assertEqual(len(outcome["evidence_refs"]), 1)
+        self.assertTrue(
+            outcome["evidence_refs"][0].startswith("evidence:language:sha256:")
+        )
+        self.assertLessEqual(len(outcome["evidence_refs"][0]), 128)
         self.assertEqual(outcome["data"]["result"]["model_calls"], 0)
         self.assertEqual(
             outcome["data"]["result"]["evidence"],
@@ -95,6 +100,7 @@ class LanguageHandlerTests(unittest.TestCase):
         self.assertEqual(outcome["verdict"], "unknown")
         self.assertEqual(outcome["usage"], {"model_calls": 0})
         self.assertEqual(outcome["effect_receipts"], [])
+        self.assertEqual(outcome["evidence_refs"], [])
         self.assertEqual(outcome["data"]["result"]["evidence"], [])
         self.assertEqual(len(backend.calls), 1)
 
