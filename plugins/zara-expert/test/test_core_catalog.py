@@ -14,6 +14,7 @@ class FakeRegistry:
     def __init__(self, *, count=3):
         self.generation = 11
         self.runtime_generation = 5
+        self.descriptor_registry_generation = 0
         self.experts = [
             {
                 "expert_id": f"zara:expert/e{index:03d}",
@@ -60,7 +61,7 @@ class FakeRegistry:
             if expert["expert_id"] == expert_id:
                 return {
                     **expert,
-                    "registry_generation": self.generation,
+                    "registry_generation": self.descriptor_registry_generation,
                     "name": expert_id.rsplit("/", 1)[-1],
                 }
         raise AssertionError(f"unknown fake expert: {expert_id}")
@@ -100,7 +101,7 @@ class CoreExpertCatalogAdapterTests(unittest.TestCase):
             [("operator", 0, 128), ("operator", 128, 128)],
         )
 
-    def test_select_explains_canonical_match_and_generation(self):
+    def test_select_explains_canonical_match_and_live_generation(self):
         registry = FakeRegistry()
         adapter = CoreExpertCatalogAdapter(registry, principal="operator")
 
@@ -111,6 +112,7 @@ class CoreExpertCatalogAdapterTests(unittest.TestCase):
         self.assertEqual(selection.matched_keywords, ("nix", "style"))
         self.assertEqual(selection.registry_generation, 11)
         self.assertEqual(selection.runtime_generation, 5)
+        self.assertEqual(selection.descriptor["registry_generation"], 0)
         self.assertEqual(selection.descriptor["protocol"], "ZARA-EXPERT/1")
         self.assertIn("canonical Zara ExpertRegistry selected", selection.explanation)
         self.assertIn("score 2", selection.explanation)
@@ -138,7 +140,7 @@ class CoreExpertCatalogAdapterTests(unittest.TestCase):
         registry.on_describe = replace_registry
         adapter = CoreExpertCatalogAdapter(registry, principal="operator")
 
-        with self.assertRaisesRegex(CompositionError, "stale expert descriptor generation"):
+        with self.assertRaisesRegex(CompositionError, "stale expert registry generation"):
             adapter.select("check nix style")
 
     def test_runtime_generation_change_after_match_is_rejected(self):

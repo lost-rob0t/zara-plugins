@@ -224,12 +224,16 @@ class CoreExpertCatalogAdapter:
         descriptor = _inert_mapping(raw_descriptor, field_name="expert descriptor")
         if self._validate_expert_id(descriptor.get("expert_id")) != expert_id:
             raise CompositionError("expert descriptor identity does not match selection")
-        descriptor_generation = _builtin_nonnegative_int(
+        # Zara Core treats this field as producer/manifest metadata and does not
+        # rewrite it when the live registry generation changes. Liveness must be
+        # established from the canonical registry snapshot before and after the
+        # describe call; comparing this static field to the live generation makes
+        # real registered descriptors (which legitimately publish generation 0)
+        # impossible to select after registration.
+        _builtin_nonnegative_int(
             descriptor.get("registry_generation"),
-            field_name="descriptor registry generation",
+            field_name="descriptor manifest registry generation",
         )
-        if descriptor_generation != expected.registry:
-            raise CompositionError("stale expert descriptor generation")
         if descriptor.get("protocol") != "ZARA-EXPERT/1":
             raise CompositionError("expert descriptor is not ZARA-EXPERT/1 compatible")
         availability = descriptor.get("availability")
