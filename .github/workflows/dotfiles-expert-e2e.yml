@@ -59,12 +59,53 @@ jobs:
           git -C .ci/zara-core checkout --detach FETCH_HEAD
           test "$(git -C .ci/zara-core rev-parse HEAD)" = "$revision"
 
+      - name: Fetch exact generic Prolog-RLM style runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=4715b5ee53d0e7a26c55705ea85c0d16c3916504
+          rm -rf .ci/prolog-rlm
+          git init .ci/prolog-rlm
+          git -C .ci/prolog-rlm remote add origin https://github.com/lost-rob0t/prolog-rlm.git
+          git -C .ci/prolog-rlm config core.sparseCheckout true
+          mkdir -p .ci/prolog-rlm/.git/info
+          printf '%s\n' \
+            '/prolog/rlm_style_overlay.pl' \
+            '/test/run_style_overlay_contract.pl' \
+            > .ci/prolog-rlm/.git/info/sparse-checkout
+          git -C .ci/prolog-rlm fetch --depth=1 origin "$revision"
+          git -C .ci/prolog-rlm checkout --detach FETCH_HEAD
+          test "$(git -C .ci/prolog-rlm rev-parse HEAD)" = "$revision"
+
       - name: Install symbolic runtime and audit tools
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends swi-prolog-nox strace
+
+      - name: Prove upstream generic style runtime stays zero-model and offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          trace="$RUNNER_TEMP/prolog-rlm-style-network.trace"
+          env \
+            -u OPENAI_API_KEY \
+            -u ANTHROPIC_API_KEY \
+            -u OPENROUTER_API_KEY \
+            -u GOOGLE_API_KEY \
+            -u GEMINI_API_KEY \
+            -u GROQ_API_KEY \
+            -u ZAI_API_KEY \
+            -u AZURE_OPENAI_API_KEY \
+            -u HF_TOKEN \
+            strace -f -e trace=network -o "$trace" \
+            swipl -q -s .ci/prolog-rlm/test/run_style_overlay_contract.pl
+          if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
+            echo 'unexpected IPv4/IPv6 network syscall during Prolog-RLM style contract' >&2
+            cat "$trace" >&2
+            exit 1
+          fi
 
       - name: Prove Dotfiles adapter unit contracts
         shell: bash
@@ -73,6 +114,7 @@ jobs:
           python3 plugins/zara-expert/test/test_catalog_composition.py
           python3 plugins/zara-expert/test/test_dotfiles_family.py
           python3 plugins/zara-expert/test/test_dotfiles_style.py
+          python3 plugins/zara-expert/test/test_style_runtime.py
 
       - name: Prove real Dotfiles root and child delegation through canonical Core
         env:
