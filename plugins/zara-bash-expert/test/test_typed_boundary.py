@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
+import zara_bash_expert
 from zara_bash_expert import create_plugin
 from zara_bash_expert.boundary import ZaraBashExpertBoundaryPlugin
 from zara_bash_expert.plugin import BashExpertAdapterError, MANIFEST_DIGEST
@@ -69,6 +70,10 @@ class BashExpertTypedBoundaryTests(unittest.TestCase):
     def test_public_factory_exposes_no_parallel_expert_tools(self) -> None:
         plugin = create_plugin()
         self.assertEqual(plugin.tools(), ())
+
+    def test_package_root_does_not_export_untyped_adapter(self) -> None:
+        self.assertFalse(hasattr(zara_bash_expert, "ZaraBashExpertPlugin"))
+        self.assertNotIn("ZaraBashExpertPlugin", zara_bash_expert.__all__)
 
     def test_rejects_missing_extra_and_wrong_typed_fields_before_host(self) -> None:
         for payload, error in (
