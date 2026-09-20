@@ -10,6 +10,7 @@
 - Expose closed applicability/result schemas and canonical runtime symbols; `repair.apply` remains behind Zara's typed edit/effect authority with fresh postcondition verification.
 - Preflight every configured language expert source before namespace registration so an invalid later source cannot leave a partially activated Prolog/Python/Nim family.
 - Validate the Prolog/Python/Nim brain ABI before activating any expert family, so a bad language brain cannot leave Lisp authority or state partially active after plugin startup fails.
+- Preserve ZARA-EXPERT/1 verdict semantics for empty symbolic result sets: missing evidence reports `unknown` instead of false `succeeded`, with the exact zero-model ledger retained.
 
 ### zara-emacs 0.3.0
 - Route editor control through the versioned `ZARA-EMACS/1` native bridge instead of per-operation Elisp templates.
