@@ -11,6 +11,7 @@ on:
       - 'tests/test_nix_bash_shared_composition_e2e.py'
       - 'tests/test_nix_bash_zara_core_e2e.py'
       - 'tests/test_nix_bash_core_explain_e2e.py'
+      - 'tests/test_nix_bash_current_core_delegation_e2e.py'
       - 'flake.nix'
       - 'plugins.json'
       - '.github/workflows/nix-bash-expert-e2e.yml'
@@ -64,6 +65,21 @@ jobs:
           git -C .ci/zara-core checkout --detach FETCH_HEAD
           test "$(git -C .ci/zara-core rev-parse HEAD)" = "$revision"
 
+      - name: Fetch exact current Zara Core delegation authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=c99dd6c68fecfd8f346429532a750c9c2e6bf65d
+          rm -rf .ci/zara-core-current
+          git init .ci/zara-core-current
+          git -C .ci/zara-core-current remote add origin https://github.com/lost-rob0t/zara.git
+          git -C .ci/zara-core-current config core.sparseCheckout true
+          mkdir -p .ci/zara-core-current/.git/info
+          printf '%s\n' '/zara/' > .ci/zara-core-current/.git/info/sparse-checkout
+          git -C .ci/zara-core-current fetch --depth=1 origin "$revision"
+          git -C .ci/zara-core-current checkout --detach FETCH_HEAD
+          test "$(git -C .ci/zara-core-current rev-parse HEAD)" = "$revision"
+
       - name: Install symbolic runtimes and audit tools
         shell: bash
         run: |
@@ -102,6 +118,30 @@ jobs:
             python3 -m unittest discover -s tests -t . -p 'test_nix_bash_shared_composition_e2e.py'
           if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
             echo 'unexpected IPv4/IPv6 network syscall during pure-symbolic shared composition E2E' >&2
+            cat "$trace" >&2
+            exit 1
+          fi
+
+      - name: Prove real Nix/Bash nested delegation against current Core
+        env:
+          ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles-nix-bash
+          ZARA_CURRENT_CORE_ROOT: ${{ github.workspace }}/.ci/zara-core-current
+        shell: bash
+        run: |
+          set -euo pipefail
+          trace="$RUNNER_TEMP/nix-bash-current-core-delegation-network.trace"
+          env \
+            -u OPENAI_API_KEY \
+            -u ANTHROPIC_API_KEY \
+            -u OPENROUTER_API_KEY \
+            -u GOOGLE_API_KEY \
+            -u GEMINI_API_KEY \
+            -u GROQ_API_KEY \
+            -u ZAI_API_KEY \
+            strace -f -e trace=network -o "$trace" \
+            python3 -m unittest discover -s tests -t . -p 'test_nix_bash_current_core_delegation_e2e.py'
+          if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
+            echo 'unexpected IPv4/IPv6 network syscall during current-Core Nix/Bash delegation E2E' >&2
             cat "$trace" >&2
             exit 1
           fi
