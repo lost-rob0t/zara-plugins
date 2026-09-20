@@ -28,12 +28,16 @@ from .language_composition import (
     CoreLanguageFamilyCompositionInvoker,
     LanguageFamilyCompositionInvoker,
 )
-from .lisp_composition import LispFamilyCompositionInvoker
+from .lisp_composition import (
+    CoreLispFamilyCompositionInvoker,
+    LispFamilyCompositionInvoker,
+)
 
 __all__ = [
     "CompositionError",
     "CoreDotfilesCompositionInvoker",
     "CoreLanguageFamilyCompositionInvoker",
+    "CoreLispFamilyCompositionInvoker",
     "DelegationRequest",
     "DotfilesExpertSourceAdapter",
     "DotfilesStyleSource",
