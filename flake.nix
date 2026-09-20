@@ -152,7 +152,10 @@
             EOF
           '';
 
+          emacsKnowledge = pkgs.callPackage ./plugins/zara-emacs/kb { };
+
           checks = {
+            zara-emacs-kb = emacsKnowledge;
             registry = pkgs.runCommand "zara-check-registry"
               {
                 nativeBuildInputs = [ python ];
@@ -234,6 +237,7 @@
         in
         {
           packages = pluginPackages // {
+            zara-emacs-kb = emacsKnowledge;
             zara-plugins = pluginEnv;
             default = pluginEnv;
           };

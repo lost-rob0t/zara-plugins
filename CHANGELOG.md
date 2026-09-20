@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### zara-emacs knowledge tooling (experimental)
+- Add an opt-in `zara-emacs-kb` Nix package and check for boot-loaded Emacs documentation, deterministic Prolog facts, provenance and explicit coverage gaps.
+- Add bounded read-only Prolog query helpers plus Python, Emacs ERT and SWI-Prolog fixtures. Full corpus coverage, live expert activation and voice control remain follow-up work.
+
 ### zara-emacs 0.2.0
 - Use the full configured Org notes root as a bounded knowledge surface.
 - Add Org QL queries for active shared agent memory and inventory/food state.
