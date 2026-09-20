@@ -50,12 +50,24 @@ class SymbolicMemoryStoreTest(unittest.TestCase):
         self.assertEqual(first["memory_id"], second["memory_id"])
         self.assertEqual(second["version"], 2)
         self.assertEqual([record.object_json for record in self.store.records()], ['"red"', '"blue"'])
+        active = self.store.active_records()
+        self.assertEqual(len(active), 1)
+        self.assertEqual(active[0].version, 2)
 
-    def test_forget_appends_tombstone(self):
+    def test_forget_appends_tombstone_and_removes_active_record(self):
         result = self.store.remember(subject="user", predicate="likes", object_json='"red"')
         forgotten = self.store.forget(result["memory_id"], reason="requested")
         self.assertEqual(forgotten["version"], 2)
         self.assertIn("memory_tombstone(", self.store.memory_path.read_text(encoding="utf-8"))
+        self.assertEqual(self.store.active_records(), [])
+
+    def test_structured_text_payload_keeps_human_text_as_retrieval_text(self):
+        self.store.remember(
+            subject="fact:abc",
+            predicate="fact",
+            object_json=json.dumps({"text": "My Favorite Color Is Red", "kind": "fact"}),
+        )
+        self.assertEqual(self.store.active_records()[0].text, "My Favorite Color Is Red")
 
     def test_rebuild_indexes_prolog_kb_into_prolog_embedding_facts(self):
         kb = Path(self.temp.name) / "kb"
