@@ -139,7 +139,7 @@ class DotfilesLispBrainIntegrationTests(unittest.TestCase):
                     arguments=[original, candidate],
                 )
                 self._assert_zero_model(verified)
-                self.assertEqual(verified["verdict"], "unknown")
+                self.assertEqual(verified["verdict"], "blocked")
                 rendered = " ".join(verified["data"]["result"]["results"])
                 self.assertIn("verified(false)", rendered)
                 self.assertIn(postcondition, rendered)
