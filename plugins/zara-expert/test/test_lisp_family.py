@@ -188,7 +188,7 @@ class LispFamilyAdapterTests(unittest.TestCase):
 
         outcome = handler(
             expert_operation="structural.check",
-            arguments=["(list)", {"var": "Evidence"}],
+            arguments=["(list)"],
         )
 
         self.assertEqual(outcome["verdict"], "succeeded")
@@ -196,6 +196,10 @@ class LispFamilyAdapterTests(unittest.TestCase):
         self.assertEqual(outcome["effect_receipts"], [])
         self.assertEqual(outcome["data"]["result"]["results"], ["symbolic-result"])
         self.assertEqual(self.backend.calls[-1]["capability"].predicate, "structural_check")
+        self.assertEqual(
+            self.backend.calls[-1]["arguments"],
+            ["(list)", {"var": "Result"}],
+        )
 
     def test_core_handler_blocks_repair_apply_before_backend_effects(self):
         handler = make_lisp_expert_handler(self.host, "zara:expert/lisp")
