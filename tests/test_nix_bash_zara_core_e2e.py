@@ -21,7 +21,15 @@ if ZARA_CORE_ROOT:
 sys.path.insert(0, str(ZARA_EXPERT_LIB))
 
 from zara_expert.backend import SwiplBackend
+from zara_expert.composition import (
+    DelegationRequest,
+    InvocationFence,
+    InvocationResult,
+    MetaExpertComposer,
+    SharedSymbolicBudget,
+)
 from zara_expert.domain import ExpertHost
+from zara_expert.language_composition import CoreLanguageFamilyCompositionInvoker
 from zara_expert.language_family import descriptors, register_language_family
 from zara_expert.language_handler import make_language_expert_handler
 from zara_expert.language_source_contract import validate_language_source_contracts
@@ -125,6 +133,31 @@ class NixBashZaraCoreE2ETests(unittest.TestCase):
         self.assertEqual(receipt["state"], "active")
         return registry, descriptor, handle, core_handler
 
+    def _core_registry_for_all(self, host, published):
+        registry = ExpertRegistry(engines=("swipl",))
+        descriptors_by_id = {}
+        for expert_id in ("zara:expert/nix", "zara:expert/bash"):
+            descriptor = ExpertDescriptor.from_wire(published[expert_id])
+            descriptors_by_id[expert_id] = descriptor
+            registration = registry.register(
+                descriptor,
+                make_language_expert_handler(host, expert_id),
+            )
+            self.assertEqual(registration["expert_id"], expert_id)
+
+        handles = {}
+        for expert_id in descriptors_by_id:
+            handle, receipt = registry.activate(
+                f"nix-bash-meta:{expert_id.rsplit('/', 1)[-1]}",
+                "workspace:nix-bash-e2e",
+                expert_id,
+                expected_registry_generation=registry.generation,
+                expected_runtime_generation=registry.runtime_generation,
+            )
+            self.assertEqual(receipt["state"], "active")
+            handles[expert_id] = handle
+        return registry, handles
+
     def test_uninstalled_optional_brains_are_not_discoverable(self) -> None:
         published = {item["expert_id"] for item in descriptors()}
         self.assertNotIn("zara:expert/nix", published)
@@ -205,6 +238,123 @@ class NixBashZaraCoreE2ETests(unittest.TestCase):
                         {},
                         limits=ExpertLimits(max_model_calls=0),
                     )
+
+    def test_dotfiles_meta_delegation_crosses_core_with_one_shared_budget(self) -> None:
+        host, published = self._host_and_descriptors()
+        registry, handles = self._core_registry_for_all(host, published)
+        core_invoker = CoreLanguageFamilyCompositionInvoker(
+            registry,
+            activation_for=lambda expert_id, _fence: handles[expert_id],
+            limits_factory=ExpertLimits,
+        )
+        routes = {
+            "flake.nix": (
+                "nix",
+                "zara:expert/nix",
+                "{ x = 1; }",
+            ),
+            "bin/deploy": (
+                "bash",
+                "zara:expert/bash",
+                "printf '%s\\n' ok",
+            ),
+        }
+
+        for path, (language, child_expert_id, source) in routes.items():
+            with self.subTest(path=path):
+                fence = InvocationFence(
+                    workspace_id="workspace:nix-bash-e2e",
+                    workspace_generation=17,
+                    is_cancelled=lambda: False,
+                    is_current_generation=lambda workspace_id, generation: (
+                        workspace_id == "workspace:nix-bash-e2e" and generation == 17
+                    ),
+                )
+                budget = SharedSymbolicBudget(
+                    max_invocations=2,
+                    max_depth=1,
+                    max_evidence=64,
+                    max_model_calls=0,
+                )
+                calls = []
+
+                def invoke(
+                    expert_id,
+                    operation,
+                    input_data,
+                    *,
+                    budget,
+                    fence,
+                    parent_path,
+                ):
+                    calls.append((expert_id, operation, parent_path))
+                    if expert_id == "zara:expert/dotfiles":
+                        route = routes[input_data["path"]]
+                        routed_language, routed_expert_id, routed_source = route
+                        return InvocationResult(
+                            status="succeeded",
+                            data={
+                                "path": input_data["path"],
+                                "language": routed_language,
+                            },
+                            evidence=(
+                                f"dotfiles:workspace-generation:{fence.workspace_generation}",
+                                f"dotfiles:classified:{routed_language}",
+                            ),
+                            delegations=(
+                                DelegationRequest(
+                                    routed_expert_id,
+                                    "inspect",
+                                    {
+                                        "source": routed_source,
+                                        "source_generation": (
+                                            f"generation-{fence.workspace_generation}"
+                                        ),
+                                    },
+                                    (
+                                        "DotfilesExpert delegated the classified "
+                                        f"{routed_language} source to its registered specialist"
+                                    ),
+                                ),
+                            ),
+                            explanation=(
+                                "DotfilesExpert classified the project source without "
+                                "provider/model fallback"
+                            ),
+                            model_calls=0,
+                        )
+                    return core_invoker(
+                        expert_id,
+                        operation,
+                        input_data,
+                        budget=budget,
+                        fence=fence,
+                        parent_path=parent_path,
+                    )
+
+                tree = MetaExpertComposer(invoke).invoke(
+                    "zara:expert/dotfiles",
+                    "inspect",
+                    {"path": path},
+                    budget=budget,
+                    fence=fence,
+                )
+
+                self.assertEqual(tree.status, "succeeded")
+                self.assertEqual(tree.data["language"], language)
+                self.assertEqual(len(tree.children), 1)
+                child = tree.children[0]
+                self.assertEqual(child.expert_id, child_expert_id)
+                self.assertEqual(child.status, "succeeded")
+                self.assertIn("ZARA-EXPERT/1", child.explanation)
+                self.assertIn("registered specialist", child.reason)
+                self.assertEqual(
+                    [call[0] for call in calls],
+                    ["zara:expert/dotfiles", child_expert_id],
+                )
+                self.assertEqual(budget.invocations_used, 2)
+                self.assertEqual(budget.max_model_calls, 0)
+                self.assertEqual(budget.model_calls_used, 0)
 
     def test_caller_budget_cannot_widen_descriptor_zero(self) -> None:
         host, published = self._host_and_descriptors()
