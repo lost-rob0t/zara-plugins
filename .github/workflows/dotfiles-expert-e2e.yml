@@ -26,7 +26,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          revision=1c825e84a4ca2eaee6fa9a7db8c251b256d991c9
+          revision=fe8f7fa3c42803e0e505dcb6f7e4600d27649d9e
           rm -rf .ci/dotfiles-expert
           git init .ci/dotfiles-expert
           git -C .ci/dotfiles-expert remote add origin https://github.com/lost-rob0t/dotfiles.git
@@ -48,7 +48,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          revision=967d12b3d7e26ee926f6b3516b47ecc13b948a38
+          revision=3c2f6ffe892fb5e39e395fa94fe5329f195d5923
           rm -rf .ci/zara-core
           git init .ci/zara-core
           git -C .ci/zara-core remote add origin https://github.com/lost-rob0t/zara.git

@@ -146,9 +146,17 @@ def _validated_core_result(
     if type(model_calls) is not int or model_calls != 0:
         raise CompositionError("Core Lisp expert attempted model use")
 
-    effect_receipts = getattr(outcome, "effect_receipts", None)
-    if not isinstance(effect_receipts, (list, tuple)) or effect_receipts:
-        raise CompositionError("Core Lisp expert returned unexpected effect receipts")
+    raw_effect_receipts = getattr(outcome, "effect_receipts", None)
+    if not isinstance(raw_effect_receipts, (list, tuple)):
+        raise CompositionError("Core Lisp expert effect_receipts must be a sequence")
+    effect_receipts: tuple[dict[str, Any], ...] = ()
+    if raw_effect_receipts:
+        normalized_receipts: list[dict[str, Any]] = []
+        for receipt in raw_effect_receipts:
+            if not isinstance(receipt, Mapping):
+                raise CompositionError("Core Lisp expert effect receipt must be an object")
+            normalized_receipts.append(dict(receipt))
+        effect_receipts = tuple(normalized_receipts)
 
     data = getattr(outcome, "data", None)
     if not isinstance(data, Mapping):
@@ -185,6 +193,37 @@ def _validated_core_result(
     status = getattr(verdict, "value", verdict)
     if not isinstance(status, str):
         raise CompositionError("Core Lisp expert result is missing verdict")
+
+    if operation == "repair.apply":
+        if status == "succeeded":
+            if len(effect_receipts) != 1:
+                raise CompositionError(
+                    "Core Lisp repair.apply success requires exactly one effect receipt"
+                )
+            projected_receipt = data.get("effect_receipt")
+            if not isinstance(projected_receipt, Mapping):
+                raise CompositionError(
+                    "Core Lisp repair.apply success is missing effect receipt data"
+                )
+            if dict(projected_receipt) != effect_receipts[0]:
+                raise CompositionError(
+                    "Core Lisp repair.apply effect receipt does not match canonical receipt"
+                )
+            postcondition = data.get("postcondition_evidence")
+            if not isinstance(postcondition, Mapping) or not postcondition:
+                raise CompositionError(
+                    "Core Lisp repair.apply success requires fresh postcondition evidence"
+                )
+            if not evidence:
+                raise CompositionError(
+                    "Core Lisp repair.apply success requires a postcondition evidence reference"
+                )
+        elif effect_receipts:
+            raise CompositionError(
+                "Core Lisp non-success repair.apply returned an effect receipt that cannot be safely projected"
+            )
+    elif effect_receipts:
+        raise CompositionError("Core Lisp expert returned unexpected effect receipts")
 
     return InvocationResult(
         status=status,

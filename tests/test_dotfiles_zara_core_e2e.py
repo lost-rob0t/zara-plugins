@@ -10,8 +10,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DOTFILES_ROOT = os.environ.get("ZARA_DOTFILES_ROOT")
 ZARA_CORE_ROOT = os.environ.get("ZARA_CORE_ROOT")
-EXPECTED_DOTFILES_COMMIT = "1c825e84a4ca2eaee6fa9a7db8c251b256d991c9"
-EXPECTED_ZARA_CORE_COMMIT = "967d12b3d7e26ee926f6b3516b47ecc13b948a38"
+EXPECTED_DOTFILES_COMMIT = "fe8f7fa3c42803e0e505dcb6f7e4600d27649d9e"
+EXPECTED_ZARA_CORE_COMMIT = "3c2f6ffe892fb5e39e395fa94fe5329f195d5923"
 ZARA_EXPERT_LIB = REPO_ROOT / "plugins" / "zara-expert" / "lib"
 
 if ZARA_CORE_ROOT:
@@ -200,13 +200,23 @@ class DotfilesZaraCoreE2ETests(unittest.TestCase):
         )
         for language, expert_id, source, expected_path, expected_revision in cases:
             with self.subTest(language=language):
-                project_style, language_style = style_sources_for_language(self.host, language)
+                project_style, language_style = style_sources_for_language(
+                    self.host,
+                    language,
+                    fence=self.fence,
+                )
                 self.assertEqual(project_style.source_reference, ".zara/style/project.pl")
                 self.assertEqual(project_style.revision, "dotfiles-project-style-v1")
+                self.assertEqual(project_style.workspace_id, self.fence.workspace_id)
+                self.assertEqual(
+                    project_style.workspace_generation,
+                    self.fence.workspace_generation,
+                )
                 self.assertEqual(language_style.source_reference, expected_path)
                 self.assertEqual(language_style.revision, expected_revision)
 
                 for style_ref in (project_style, language_style):
+                    reference = style_ref.reference_for(self.fence)
                     budget = SharedSymbolicBudget(
                         max_invocations=1,
                         max_depth=0,
@@ -218,7 +228,7 @@ class DotfilesZaraCoreE2ETests(unittest.TestCase):
                         "style.rules",
                         {
                             "source": source,
-                            "project_style": style_ref.reference,
+                            "project_style": reference,
                         },
                         budget=budget,
                         fence=self.fence,
@@ -231,8 +241,8 @@ class DotfilesZaraCoreE2ETests(unittest.TestCase):
                     evidence = nested.get("evidence")
                     self.assertIsInstance(evidence, list)
                     self.assertTrue(
-                        any(style_ref.reference in str(item) for item in evidence),
-                        f"style evidence must preserve canonical reference {style_ref.reference}",
+                        any(reference in str(item) for item in evidence),
+                        f"style evidence must preserve canonical reference {reference}",
                     )
                     self.assertEqual(budget.invocations_used, 1)
                     self.assertEqual(budget.max_model_calls, 0)
