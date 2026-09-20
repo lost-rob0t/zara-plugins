@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import re
@@ -89,18 +88,7 @@ class KotlinExpertAdapterError(RuntimeError):
     """Fail closed: this adapter never falls back to a provider or model."""
 
 
-def _manifest_digest() -> str:
-    manifest = {
-        "expert_id": EXPERT_ID,
-        "package_namespace": PACKAGE_NAMESPACE,
-        "source_reference": SOURCE_REFERENCE,
-        "upstream_contract": UPSTREAM_CONTRACT,
-        "operations": {key: list(value) for key, value in sorted(OPERATION_FIELDS.items())},
-    }
-    payload = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
-    return "sha256:" + hashlib.sha256(payload).hexdigest()
-
-MANIFEST_DIGEST = "sha256:477d9db1e588b24465cc75e669ea9eed2411f144263d8e9370c2babee4d8c220"
+MANIFEST_DIGEST = "sha256:70c322dceadaeedb22c2601fa68852bd831079391a705575e3e8b3df6c0a3cfc"
 
 
 def _reject_json_constant(_value: str) -> None:
