@@ -69,7 +69,17 @@ class LispFamilyCompositionInvoker:
             fence.check()
             budget.assert_zero_model_usage()
             return InvocationResult(
-                status="succeeded",
+                # The dialect adapter only proved that delegation is required.
+                # It must not claim an overall successful repair before the
+                # canonical Lisp child has produced successful evidence. The
+                # generic composer currently preserves parent/child statuses
+                # independently, so fail closed here instead of false-greening
+                # a failed/unknown child as a successful dialect repair.
+                status="unknown",
+                data={
+                    "delegated_to": "zara:expert/lisp",
+                    "delegation_required": True,
+                },
                 delegations=(
                     DelegationRequest(
                         expert_id="zara:expert/lisp",
@@ -79,8 +89,8 @@ class LispFamilyCompositionInvoker:
                     ),
                 ),
                 explanation=(
-                    f"{expert_id} delegated repair.preview to zara:expert/lisp "
-                    "under the caller's shared symbolic budget"
+                    f"{expert_id} requires zara:expert/lisp repair.preview evidence; "
+                    "the dialect adapter does not claim success before the child result"
                 ),
                 model_calls=0,
             )
