@@ -66,6 +66,10 @@ class BashExpertTypedBoundaryTests(unittest.TestCase):
     def test_public_factory_cannot_bypass_typed_boundary(self) -> None:
         self.assertIsInstance(create_plugin(), ZaraBashExpertBoundaryPlugin)
 
+    def test_public_factory_exposes_no_parallel_expert_tools(self) -> None:
+        plugin = create_plugin()
+        self.assertEqual(plugin.tools(), ())
+
     def test_rejects_missing_extra_and_wrong_typed_fields_before_host(self) -> None:
         for payload, error in (
             ({}, "missing-required-input-field"),
