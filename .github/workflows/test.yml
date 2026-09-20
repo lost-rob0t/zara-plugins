@@ -45,7 +45,7 @@ jobs:
           repository: lost-rob0t/dotfiles
           ref: 5b01f03bdce98bc55f9f3cc76a1023b91ab63784
           path: .ci/dotfiles
-          persist-credentials: false
+          persist-credentials: true
           sparse-checkout: |
             .zara/experts
           sparse-checkout-cone-mode: false
