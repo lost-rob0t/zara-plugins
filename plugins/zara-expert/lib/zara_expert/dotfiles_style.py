@@ -34,7 +34,7 @@ class DotfilesStyleSource:
             fence.workspace_id != self.workspace_id
             or fence.workspace_generation != self.workspace_generation
         ):
-            raise ExpertError("DotfilesExpert style source is stale for workspace generation")
+            raise ExpertError("DotfilesExpert stale workspace generation for style source")
         return f"style:{self.revision}:{self.source_reference}"
 
 
