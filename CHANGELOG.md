@@ -4,6 +4,14 @@
 
 - Move project-owned symbolic expert source to `lost-rob0t/dotfiles/.zara/experts/`; zara-plugins retains runtime and adapter ownership rather than duplicate expert KBs.
 
+### zara-expert
+- Add provider-free PrologExpert, PythonExpert, and NimExpert adapters over canonical Dotfiles-owned expert sources.
+- Route applicability, evidence, diagnostics, style rules, repair preview/verification, and explanation through host-issued registered-predicate authority with `max_model_calls=0`.
+- Expose closed applicability/result schemas and canonical runtime symbols; `repair.apply` remains behind Zara's typed edit/effect authority with fresh postcondition verification.
+- Preflight every configured language expert source before namespace registration so an invalid later source cannot leave a partially activated Prolog/Python/Nim family.
+- Preflight both the Prolog/Python/Nim brain ABI and existing registered-predicate namespace authority before activating any Lisp or language family, preventing cross-family partial startup on source or authority conflicts.
+- Preserve ZARA-EXPERT/1 verdict semantics for empty symbolic result sets: missing evidence reports `unknown` instead of false `succeeded`, with the exact zero-model ledger retained.
+
 ### zara-emacs 0.3.0
 - Route editor control through the versioned `ZARA-EMACS/1` native bridge instead of per-operation Elisp templates.
 - Add live session/buffer/window/command inspection using opaque IDs.
