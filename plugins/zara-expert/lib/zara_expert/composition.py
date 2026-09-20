@@ -99,6 +99,7 @@ class SharedSymbolicBudget:
             "max_invocations",
             "max_depth",
             "max_evidence",
+            "max_model_calls",
             "invocations_used",
             "evidence_used",
             "model_calls_used",
