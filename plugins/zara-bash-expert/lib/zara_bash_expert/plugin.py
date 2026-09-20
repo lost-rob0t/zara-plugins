@@ -13,6 +13,7 @@ PLUGIN_VERSION = "0.1.0"
 PROTOCOL = "ZARA-EXPERT/1"
 EXPERT_ID = "zara:expert/bash"
 HOST_CAPABILITY = "expert.invoke"
+MANIFEST_DIGEST = "sha256:a09f376755aa3c83c1fc30133d08d3ac4cad7638e26fb5e7f95713beca597f3e"
 MAX_INPUT_BYTES = 65536
 MAX_OUTPUT_BYTES = 65536
 MAX_INPUT_DEPTH = 16
@@ -28,6 +29,29 @@ ALLOWED_OPERATIONS = frozenset(
         "check_plan",
     }
 )
+OPERATION_SCHEMAS = {
+    "parse": ("schema:bash-expert-parse-input-v1", "schema:bash-expert-result-v1"),
+    "inspect_startup": (
+        "schema:bash-expert-inspect-startup-input-v1",
+        "schema:bash-expert-result-v1",
+    ),
+    "inspect_source_graph": (
+        "schema:bash-expert-inspect-source-graph-input-v1",
+        "schema:bash-expert-result-v1",
+    ),
+    "diagnose_quoting": (
+        "schema:bash-expert-diagnose-quoting-input-v1",
+        "schema:bash-expert-result-v1",
+    ),
+    "style_check": (
+        "schema:bash-expert-style-check-input-v1",
+        "schema:bash-expert-result-v1",
+    ),
+    "check_plan": (
+        "schema:bash-expert-check-plan-input-v1",
+        "schema:bash-expert-result-v1",
+    ),
+}
 
 
 class BashExpertAdapterError(RuntimeError):
@@ -57,6 +81,17 @@ def _validate_json_tree(value: object) -> None:
             raise BashExpertAdapterError("invalid-input-number")
         elif current is not None and not isinstance(current, (str, int, float, bool)):
             raise BashExpertAdapterError("invalid-input-value")
+
+
+def _operation_descriptor(operation: str) -> dict[str, object]:
+    input_schema, output_schema = OPERATION_SCHEMAS[operation]
+    return {
+        "id": operation,
+        "input_schema": input_schema,
+        "output_schema": output_schema,
+        "effects": [],
+        "required_capabilities": [HOST_CAPABILITY],
+    }
 
 
 class ZaraBashExpertPlugin(ServicePlugin):
@@ -105,31 +140,39 @@ class ZaraBashExpertPlugin(ServicePlugin):
                 "expert_id": EXPERT_ID,
                 "expert_version": PLUGIN_VERSION,
                 "package_namespace": "zara-bash-expert",
+                "manifest_digest": MANIFEST_DIGEST,
                 "name": "BashExpert",
                 "description": "Deterministic Bash parse, startup, source-graph, quoting, and style inspection.",
-                "source_reference": {
-                    "repository": "lost-rob0t/dotfiles",
-                    "path": ".zara/experts/bash",
-                    "issue": 287,
-                    "runtime_contract": "lost-rob0t/prolog-rlm#502",
-                },
+                "source_reference": "source:dotfiles-bash-expert-v1",
                 "reasoning_kind": "symbolic",
-                "operations": sorted(ALLOWED_OPERATIONS),
+                "operations": [
+                    _operation_descriptor(operation)
+                    for operation in sorted(ALLOWED_OPERATIONS)
+                ],
+                "applicability_schema": "schema:bash-expert-applicability-v1",
+                "required_observations": [],
                 "required_capabilities": [HOST_CAPABILITY],
                 "possible_effects": [
                     "bash.execute",
                     "filesystem.write",
                 ],
-                "fallback_policy": "fail-closed-no-model",
-                "resource_limits": {
-                    "max_model_calls": 0,
-                    "max_input_bytes": MAX_INPUT_BYTES,
-                    "max_output_bytes": MAX_OUTPUT_BYTES,
-                    "max_input_depth": MAX_INPUT_DEPTH,
-                    "max_input_nodes": MAX_INPUT_NODES,
+                "supported_engines": ["swi-prolog"],
+                "supported_platforms": ["desktop", "server"],
+                "placement": {
+                    "node_id": "local",
+                    "runtime_id": "zara-python",
                 },
-                "availability": "inactive",
-                "unavailable_reason": "activation-required",
+                "fallback_policy": "none",
+                "delegation_policy": "none",
+                "resource_limits": {
+                    "timeout_ms": 3000,
+                    "max_results": 32,
+                    "max_output_bytes": MAX_OUTPUT_BYTES,
+                    "max_model_calls": 0,
+                },
+                "registry_generation": 1,
+                "availability": "unavailable",
+                "unavailable_reason": "canonical-source-or-host-not-activated",
             }
         )
 
