@@ -142,13 +142,17 @@ class LispFamilyAdapterTests(unittest.TestCase):
             )
         self.assertEqual(self.backend.calls, [])
 
-    def test_preview_and_verify_route_through_host_owned_predicate_capabilities(self):
-        source = self._brain("common-lisp")
-        register_lisp_family(self.host, {"common-lisp": [source]})
+    def test_base_preview_and_dialect_verify_use_registered_predicate_capabilities(self):
+        lisp_source = self._brain("lisp")
+        common_source = self._brain("common-lisp")
+        register_lisp_family(
+            self.host,
+            {"lisp": [lisp_source], "common-lisp": [common_source]},
+        )
 
         preview = invoke_lisp_operation(
             self.host,
-            "common-lisp",
+            "lisp",
             "repair.preview",
             ["(defun x ()", "missing-close", {"var": "Repair"}],
         )
@@ -167,6 +171,22 @@ class LispFamilyAdapterTests(unittest.TestCase):
         )
         self.assertNotIn("goal", self.backend.calls[0])
         self.assertNotIn("predicate", self.backend.calls[0])
+
+    def test_dialect_preview_fails_closed_until_canonical_shared_budget_delegation(self):
+        common_source = self._brain("common-lisp")
+        register_lisp_family(self.host, {"common-lisp": [common_source]})
+
+        with self.assertRaisesRegex(
+            ExpertError,
+            "canonical ZARA-EXPERT/1 delegation to zara:expert/lisp",
+        ):
+            invoke_lisp_operation(
+                self.host,
+                "common-lisp",
+                "repair.preview",
+                ["(defun x ()", "missing-close", {"var": "Repair"}],
+            )
+        self.assertEqual(self.backend.calls, [])
 
     def test_configured_sources_are_files_and_unknown_adapters_fail_closed(self):
         with self.assertRaisesRegex(ExpertError, "regular file"):
