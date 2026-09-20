@@ -153,11 +153,24 @@ class ExpertFactory4PackageContractTests(unittest.TestCase):
             plugin.start(FakeRuntime(model_calls=1))
             with self.assertRaisesRegex(error, "zero-model-proof-missing", msg=language):
                 plugin.invoke("request-1", "activation-1", operation, 7, 11, "{}")
+            plugin.start(FakeRuntime(model_calls=False))
+            with self.assertRaisesRegex(error, "zero-model-proof-missing", msg=f"{language}: bool must not equal numeric zero"):
+                plugin.invoke("request-1", "activation-1", operation, 7, 11, "{}")
             plugin.start(FakeRuntime(stale=True))
             with self.assertRaisesRegex(error, "stale-or-unbound-expert-result", msg=language):
                 plugin.invoke("request-1", "activation-1", operation, 7, 11, "{}")
             plugin.start(FakeRuntime(receipts=[{"effect": "filesystem.write"}]))
             with self.assertRaisesRegex(error, "unexpected-side-effect-receipt", msg=language):
+                plugin.invoke("request-1", "activation-1", operation, 7, 11, "{}")
+
+            class MissingReceiptRuntime(FakeRuntime):
+                def invoke_capability(self, handle, request):
+                    result = super().invoke_capability(handle, request)
+                    result.pop("side_effect_receipts")
+                    return result
+
+            plugin.start(MissingReceiptRuntime())
+            with self.assertRaisesRegex(error, "unexpected-side-effect-receipt", msg=f"{language}: missing effect proof"):
                 plugin.invoke("request-1", "activation-1", operation, 7, 11, "{}")
 
     def test_language_and_project_boundaries_are_explicit(self) -> None:
