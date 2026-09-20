@@ -12,6 +12,7 @@ PROTOCOL = "ZARA-EXPERT/1"
 SYMBOL_KIND = "expert"
 SOURCE_OWNER = "lost-rob0t/dotfiles#292"
 MAX_MODEL_CALLS = 0
+RESERVED_HOST_INPUT_FIELDS = frozenset({"expert_operation"})
 
 
 @dataclass(frozen=True)
@@ -104,19 +105,26 @@ def matching_experts(path: str | Path) -> tuple[str, ...]:
 
 
 def _fields(*items: tuple[str, str, bool]) -> dict[str, list[dict[str, Any]]]:
-    return {
-        "fields": [
-            {"name": name, "type": field_type, "required": required}
-            for name, field_type, required in items
-        ]
-    }
+    seen: set[str] = set()
+    fields: list[dict[str, Any]] = []
+    for name, field_type, required in items:
+        if name in RESERVED_HOST_INPUT_FIELDS:
+            raise ExpertError(f"operation input field {name!r} is reserved host metadata")
+        if name in seen:
+            raise ExpertError(f"duplicate operation input field: {name!r}")
+        seen.add(name)
+        fields.append({"name": name, "type": field_type, "required": required})
+    return {"fields": fields}
 
 
 def _operation_schema(operation: str) -> dict[str, Any]:
-    common_input = (
+    # Every registered language predicate reserves its final Prolog argument for
+    # a host-created result variable. Public ZARA-EXPERT/1 input fields therefore
+    # describe exactly arity-1 caller values; callers can never inject a Prolog
+    # variable descriptor or the Core-owned expert_operation selector.
+    source_input = (
         ("source", "string", True),
         ("source_generation", "reference", True),
-        ("project_style", "reference", False),
     )
     common_output = (
         ("evidence_refs", "list", False),
@@ -128,7 +136,6 @@ def _operation_schema(operation: str) -> dict[str, Any]:
             "input_schema": _fields(
                 ("path", "string", True),
                 ("source_generation", "reference", True),
-                ("project_style", "reference", False),
             ),
             "output_schema": _fields(
                 ("applicable", "boolean", True),
@@ -138,7 +145,7 @@ def _operation_schema(operation: str) -> dict[str, Any]:
     if operation == "diagnose":
         return {
             "operation_id": operation,
-            "input_schema": _fields(*common_input),
+            "input_schema": _fields(*source_input),
             "output_schema": _fields(
                 ("diagnostics", "list", True),
                 *common_output,
@@ -148,7 +155,7 @@ def _operation_schema(operation: str) -> dict[str, Any]:
         return {
             "operation_id": operation,
             "input_schema": _fields(
-                *common_input,
+                *source_input,
                 ("diagnostic_ref", "reference", True),
             ),
             "output_schema": _fields(
@@ -163,7 +170,6 @@ def _operation_schema(operation: str) -> dict[str, Any]:
                 ("original_source", "string", True),
                 ("candidate_source", "string", True),
                 ("source_generation", "reference", True),
-                ("project_style", "reference", False),
             ),
             "output_schema": _fields(
                 ("verified", "boolean", True),
@@ -174,7 +180,10 @@ def _operation_schema(operation: str) -> dict[str, Any]:
     if operation == "style.rules":
         return {
             "operation_id": operation,
-            "input_schema": _fields(*common_input),
+            "input_schema": _fields(
+                ("source", "string", True),
+                ("project_style", "reference", True),
+            ),
             "output_schema": _fields(
                 ("style_rules", "list", True),
                 ("style_provenance", "list", True),
@@ -208,7 +217,7 @@ def _operation_schema(operation: str) -> dict[str, Any]:
         }
     return {
         "operation_id": operation,
-        "input_schema": _fields(*common_input),
+        "input_schema": _fields(*source_input),
         "output_schema": _fields(
             ("result", "object", True),
             *common_output,
@@ -401,6 +410,7 @@ def register_descriptor_symbols(
 __all__ = [
     "MAX_MODEL_CALLS",
     "PROTOCOL",
+    "RESERVED_HOST_INPUT_FIELDS",
     "LanguageExpertSpec",
     "descriptor",
     "descriptors",
