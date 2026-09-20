@@ -14,6 +14,7 @@ class SourcedResult:
     excerpt: str
     timestamp: str
     local: bool
+    gate: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
