@@ -113,7 +113,7 @@ def _validate_json_tree(value: object, *, depth: int = 0) -> None:
         raise KotlinExpertAdapterError("input-structure-too-complex")
     if isinstance(value, dict):
         if len(value) > MAX_INPUT_KEYS:
-            raise KotlinExpertAdapterError("input-object-too-lare")
+            raise KotlinExpertAdapterError("input-object-too-large")
         for key, child in value.items():
             if not isinstance(key, str) or not key or len(key) > 64:
                 raise KotlinExpertAdapterError("invalid-input-key")
@@ -127,7 +127,7 @@ def _validate_json_tree(value: object, *, depth: int = 0) -> None:
         return
     if isinstance(value, str):
         if len(value) > MAX_STRING_LENGTH:
-            raise KotlinExpertAdapterError("input-string-too-lare")
+            raise KotlinExpertAdapterError("input-string-too-large")
         return
     if isinstance(value, float) and not math.isfinite(value):
         raise KotlinExpertAdapterError("invalid-input-number")
@@ -211,7 +211,7 @@ def _validate_result(result: Mapping[str, object], *, request_id: str, activatio
 
 
 class ZaraKotlinExpertPlugin(ServicePlugin):
-    metadata = PluginMetadata(name=PACKAGE_NAMESPACE, version=PLUGIN_VERSION, api_version="1", description='Deterministic Kotlin/JVM syntax, coroutine, compiler, diagnostic, style, and repair-verification adapter; Gradle/Android metadata is observation-only.'$)
+    metadata = PluginMetadata(name=PACKAGE_NAMESPACE, version=PLUGIN_VERSION, api_version="1", description='Deterministic Kotlin/JVM syntax, coroutine, compiler, diagnostic, style, and repair-verification adapter; Gradle/Android metadata is observation-only.')
 
     def __init__(self) -> None:
         self._runtime: Any | None = None
@@ -232,7 +232,7 @@ class ZaraKotlinExpertPlugin(ServicePlugin):
         if not isinstance(input_json, str):
             raise KotlinExpertAdapterError("input-must-be-json-text")
         if len(input_json.encode()) > MAX_INPUT_BYTES:
-            raise KotlinExpertAdapterError("input-too-lare")
+            raise KotlinExpertAdapterError("input-too-large")
         try:
             value = json.loads(input_json, parse_constant=_reject_json_constant)
         except (TypeError, ValueError) as error:
