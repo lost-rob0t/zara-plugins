@@ -38,6 +38,7 @@ from .lisp_composition import (
     CoreLispFamilyCompositionInvoker,
     LispFamilyCompositionInvoker,
 )
+from .style_runtime import PrologRlmStyleOverlayAdapter, StyleOverlayResolution
 
 __all__ = [
     "CompositionError",
@@ -63,10 +64,12 @@ __all__ = [
     "LanguageFamilyCompositionInvoker",
     "LispFamilyCompositionInvoker",
     "MetaExpertComposer",
+    "PrologRlmStyleOverlayAdapter",
     "ProjectExpertResource",
     "RegisteredPredicateBinding",
     "SharedSymbolicBudget",
     "StyleOverlay",
+    "StyleOverlayResolution",
     "StyleScope",
     "dotfiles_descriptor",
     "make_dotfiles_expert_handler",
