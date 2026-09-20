@@ -78,6 +78,14 @@ class NixExpertTypedBoundaryTests(unittest.TestCase):
         self.assertEqual(self.runtime.resolved, [])
         self.assertEqual(self.runtime.requests, [])
 
+    def test_rejects_empty_or_nul_paths_before_host(self) -> None:
+        for path in ("", "flake.nix\x00ignored"):
+            with self.subTest(path=path):
+                with self.assertRaisesRegex(NixExpertAdapterError, "invalid-input-path"):
+                    self.invoke("inspect_flake", {"path": path})
+        self.assertEqual(self.runtime.resolved, [])
+        self.assertEqual(self.runtime.requests, [])
+
     def test_valid_typed_input_reaches_canonical_host_with_zero_model_limit(self) -> None:
         result = json.loads(self.invoke("inspect_flake", {"path": "flake.nix"}))
         self.assertEqual(self.runtime.resolved, ["expert.invoke"])
