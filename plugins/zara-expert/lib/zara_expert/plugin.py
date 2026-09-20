@@ -89,12 +89,18 @@ class ZaraExpertPlugin(ServicePlugin):
         return sources
 
     def start(self, runtime) -> None:
+        lisp_sources = self._lisp_sources(runtime.configuration)
+        language_sources = self._language_sources(runtime.configuration)
+
+        # Validate the strict pure-symbolic language ABI before mutating any
+        # expert namespace. A bad Prolog/Python/Nim brain must not leave an
+        # unrelated Lisp family partially active after startup fails.
+        validate_language_source_contracts(language_sources)
+
         self._registered_lisp_experts = register_lisp_family(
             self.host,
-            self._lisp_sources(runtime.configuration),
+            lisp_sources,
         )
-        language_sources = self._language_sources(runtime.configuration)
-        validate_language_source_contracts(language_sources)
         self._registered_language_experts = register_language_family(
             self.host,
             language_sources,
