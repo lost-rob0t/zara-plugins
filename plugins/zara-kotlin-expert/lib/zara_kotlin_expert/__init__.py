@@ -1,3 +1,3 @@
-from .plugin import KotlinExpertAdapterError, ZaraKotlinExpertPlugin, create_plugin
+from .plugin import KotlinExpertAdapterError, create_plugin
 
-__all__ = ["KotlinExpertAdapterError", "ZaraKotlinExpertPlugin", "create_plugin"]
+__all__ = ["KotlinExpertAdapterError", "create_plugin"]
