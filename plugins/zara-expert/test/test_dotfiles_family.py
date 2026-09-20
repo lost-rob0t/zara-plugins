@@ -64,7 +64,7 @@ class DotfilesFamilyTests(unittest.TestCase):
         self.assertEqual(result["model_calls"], 0)
         self.assertEqual(result["effect_receipts"], [])
 
-    def test_ambiguous_or_unknown_path_fails_closed(self):
+    def test_ambiguous_or_unknown_path_is_known_fail_closed(self):
         ambiguous = FakeHost(
             {
                 ("nix_path", "ambiguous"): ("nix_path(ambiguous)",),
@@ -80,7 +80,7 @@ class DotfilesFamilyTests(unittest.TestCase):
                 "source_generation": "generation-1",
             },
         )
-        self.assertEqual(result["verdict"], "unknown")
+        self.assertEqual(result["verdict"], "failed")
         self.assertEqual(result["data"]["reason"], "ambiguous-specialist")
         self.assertEqual(result["model_calls"], 0)
 
@@ -93,7 +93,7 @@ class DotfilesFamilyTests(unittest.TestCase):
                 "source_generation": "generation-1",
             },
         )
-        self.assertEqual(unknown["verdict"], "unknown")
+        self.assertEqual(unknown["verdict"], "failed")
         self.assertEqual(unknown["data"]["reason"], "unsupported-path")
         self.assertEqual(unknown["model_calls"], 0)
 
