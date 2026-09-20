@@ -26,7 +26,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          revision=76d98e226922db4d4817e998c1c4e52573e2e980
+          revision=1c825e84a4ca2eaee6fa9a7db8c251b256d991c9
           rm -rf .ci/dotfiles-expert
           git init .ci/dotfiles-expert
           git -C .ci/dotfiles-expert remote add origin https://github.com/lost-rob0t/dotfiles.git
