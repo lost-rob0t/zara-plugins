@@ -14,9 +14,16 @@ class FakeStyleHost:
         self.overrides = overrides or {}
         self.calls = []
 
+    @staticmethod
+    def _key(predicate, arguments):
+        second = arguments[1]
+        if isinstance(second, dict) and second == {"var": "Revision"}:
+            second = "<Revision>"
+        return predicate, arguments[0], second
+
     def query(self, namespace, predicate, arguments):
         self.calls.append((namespace, predicate, arguments))
-        key = (predicate, arguments[0], arguments[1])
+        key = self._key(predicate, arguments)
         if key in self.overrides:
             return self.overrides[key]
         if key == ("style_source", "project", "any"):
@@ -31,11 +38,11 @@ class FakeStyleHost:
             results = [
                 "style_source(project_language,bash,'.zara/style/languages/bash.pl','dotfiles-bash-style-v1')"
             ]
-        elif key == ("style_revision", "project", {"var": "Revision"}):
+        elif key == ("style_revision", "project", "<Revision>"):
             results = ["style_revision(project,'dotfiles-project-style-v1')"]
-        elif key == ("style_revision", "nix", {"var": "Revision"}):
+        elif key == ("style_revision", "nix", "<Revision>"):
             results = ["style_revision(nix,'dotfiles-nix-style-v1')"]
-        elif key == ("style_revision", "bash", {"var": "Revision"}):
+        elif key == ("style_revision", "bash", "<Revision>"):
             results = ["style_revision(bash,'dotfiles-bash-style-v1')"]
         else:
             results = []
@@ -108,7 +115,7 @@ class DotfilesStyleTests(unittest.TestCase):
     def test_revision_mismatch_fails_closed(self):
         host = FakeStyleHost(
             overrides={
-                ("style_revision", "nix", {"var": "Revision"}): {
+                ("style_revision", "nix", "<Revision>"): {
                     "ok": True,
                     "results": ["style_revision(nix,'dotfiles-nix-style-v0')"],
                     "trace": [],
