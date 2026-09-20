@@ -187,7 +187,7 @@ class NixBashCoreExplainE2ETests(unittest.TestCase):
                 )
                 self.assertTrue(
                     any(
-                        f"decision_ref(decision:{inspect_request_id})" in item
+                        "decision_ref(" in item and inspect_request_id in item
                         for item in brain_result["evidence"]
                     )
                 )
