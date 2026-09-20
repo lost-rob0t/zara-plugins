@@ -53,6 +53,19 @@ class StyleSessionWorkspaceFenceTests(unittest.TestCase):
         ):
             resolve_style([overlay], language="nix", fence=self._fence())
 
+    def test_session_overlay_from_other_workspace_is_not_applicable(self) -> None:
+        overlay = StyleOverlay(
+            StyleScope.SESSION,
+            {"indent": 8},
+            "session:other",
+            "s2",
+            workspace_id="other-project",
+            workspace_generation=7,
+        )
+        effective = resolve_style([overlay], language="nix", fence=self._fence())
+        self.assertEqual(effective.values, {})
+        self.assertEqual(effective.provenance, {})
+
 
 if __name__ == "__main__":
     unittest.main()
