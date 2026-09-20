@@ -18,6 +18,8 @@
 - Add bounded buffer reads plus revision-safe edit preview/apply/cancel/status and explicit save.
 - Keep named workflows and compatibility open/daily/Magit/dashboard/chat operations on the same bridge.
 - Fail closed on bridge version/operation/result mismatches.
+- Add a pure-symbolic EmacsExpert consumer over Zara Core's canonical `ZARA-EXPERT/1` registry and the Dotfiles-owned `.zara/experts/emacs` source; no second registry or activation store is introduced.
+- Fence EmacsExpert invocations to exact activation generations, `max_model_calls=0`, read-only effects, and the closed `describe`/`commands`/`search` operation set.
 
 ### zara-emacs 0.2.0
 - Use the full configured Org notes root as a bounded knowledge surface.
