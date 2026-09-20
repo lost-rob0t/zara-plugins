@@ -1,0 +1,92 @@
+name: Prolog Python Nim Inflight Cancellation E2E
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/zara-prolog-expert/**'
+      - 'plugins/zara-python-expert/**'
+      - 'plugins/zara-nim-expert/**'
+      - 'plugins/zara-expert/**'
+      - 'tests/test_prolog_python_nim_inflight_cancellation_e2e.py'
+      - '.github/workflows/prolog-python-nim-inflight-cancellation-e2e.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prolog-python-nim-inflight-cancellation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  canonical-inflight-cancellation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Fetch exact current Dotfiles brains
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=fe8f7fa3c42803e0e505dcb6f7e4600d27649d9e
+          rm -rf .ci/dotfiles-prolog-python-nim-cancel
+          git init .ci/dotfiles-prolog-python-nim-cancel
+          git -C .ci/dotfiles-prolog-python-nim-cancel remote add origin https://github.com/lost-rob0t/dotfiles.git
+          git -C .ci/dotfiles-prolog-python-nim-cancel config core.sparseCheckout true
+          mkdir -p .ci/dotfiles-prolog-python-nim-cancel/.git/info
+          printf '%s\n' \
+            '/.zara/experts/prolog/' \
+            '/.zara/experts/python/' \
+            '/.zara/experts/nim/' \
+            '/.zara/experts/language/' \
+            > .ci/dotfiles-prolog-python-nim-cancel/.git/info/sparse-checkout
+          git -C .ci/dotfiles-prolog-python-nim-cancel fetch --depth=1 origin "$revision"
+          git -C .ci/dotfiles-prolog-python-nim-cancel checkout --detach FETCH_HEAD
+          test "$(git -C .ci/dotfiles-prolog-python-nim-cancel rev-parse HEAD)" = "$revision"
+
+      - name: Fetch exact current Zara Core
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=f7810b0cba602b1e00597d04dd419d30ac0ef949
+          rm -rf .ci/zara-core-inflight-cancel
+          git init .ci/zara-core-inflight-cancel
+          git -C .ci/zara-core-inflight-cancel remote add origin https://github.com/lost-rob0t/zara.git
+          git -C .ci/zara-core-inflight-cancel config core.sparseCheckout true
+          mkdir -p .ci/zara-core-inflight-cancel/.git/info
+          printf '%s\n' '/zara/' > .ci/zara-core-inflight-cancel/.git/info/sparse-checkout
+          git -C .ci/zara-core-inflight-cancel fetch --depth=1 origin "$revision"
+          git -C .ci/zara-core-inflight-cancel checkout --detach FETCH_HEAD
+          test "$(git -C .ci/zara-core-inflight-cancel rev-parse HEAD)" = "$revision"
+
+      - name: Install symbolic runtime and network audit tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends swi-prolog-nox strace
+
+      - name: Prove required nested child cancellation fences late evidence and effects
+        env:
+          ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles-prolog-python-nim-cancel
+          ZARA_CORE_ROOT: ${{ github.workspace }}/.ci/zara-core-inflight-cancel
+        shell: bash
+        run: |
+          set -euo pipefail
+          trace="$RUNNER_TEMP/prolog-python-nim-inflight-cancellation-network.trace"
+          env \
+            -u OPENAI_API_KEY \
+            -u ANTHROPIC_API_KEY \
+            -u OPENROUTER_API_KEY \
+            -u GOOGLE_API_KEY \
+            -u GEMINI_API_KEY \
+            -u GROQ_API_KEY \
+            -u ZAI_API_KEY \
+            strace -f -e trace=network -o "$trace" \
+            python3 -m unittest discover -s tests -t . -p 'test_prolog_python_nim_inflight_cancellation_e2e.py'
+          if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
+            echo 'unexpected IPv4/IPv6 network syscall during in-flight Prolog/Python/Nim cancellation E2E' >&2
+            cat "$trace" >&2
+            exit 1
+          fi
