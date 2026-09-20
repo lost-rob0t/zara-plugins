@@ -25,7 +25,9 @@ The backend receives an opaque host-issued predicate capability rather than a ca
 
 The package also contains the Zara-owned adapters for `LispExpert`, `CommonLispExpert`, and `EmacsLispExpert` tracked by #860. The reusable parser/reader/style brains are **not** copied here: canonical expert source is owned by `lost-rob0t/dotfiles#292` under `.zara/experts/`, with generic expert semantics tracked by Prolog-RLM #494/#496/#497.
 
-Each adapter publishes a `ZARA-EXPERT/1` descriptor into Zara's canonical programmable symbol registry as `zara:expert/lisp`, `zara:expert/common-lisp`, or `zara:expert/emacs-lisp`. Descriptors declare symbolic-only operation bindings and `max_model_calls=0`; provider/model/remote fallback is disabled. The adapter maps structural check, diagnosis, missing-parenthesis repair preview, repair verification, style lookup, and explanation to fixed registered predicates. It contains no Lisp parser implementation.
+Each adapter publishes a canonical `ZARA-EXPERT/1` descriptor into Zara's programmable symbol registry as `zara:expert/lisp`, `zara:expert/common-lisp`, or `zara:expert/emacs-lisp`. The public descriptor contains only the portable expert identity, schemas, lifecycle metadata, effect classes, fail-closed fallback policy, delegation policy, and finite resource limits. **Private Prolog predicate names and arities are not serialized into the public descriptor.** They stay bound inside trusted adapter construction through the registered-predicate capability boundary.
+
+All three descriptors are pure symbolic and pin `max_model_calls=0`; `model_inference` is not an admitted effect. Missing canonical source is represented as `availability=absent` with `unavailable_reason=source-unavailable`, never as a provider/model fallback. Common Lisp and Emacs Lisp declare child delegation so composition can flow through Zara's canonical expert contract/shared-budget owner rather than a plugin-local scheduler.
 
 Canonical source files are opt-in through trusted plugin configuration:
 
@@ -39,11 +41,13 @@ lisp_family_sources:
     - /path/to/.zara/experts/emacs-lisp/expert.pl
 ```
 
-Absent source stays explicitly `source-unavailable`; there is no provider fallback. `repair.apply` is intentionally **not** a Prolog predicate. The expert may produce/verify a deterministic repair proposal, but applying it must cross Zara's canonical typed edit/effect boundary with expected-preimage authority and fresh postcondition verification. Until that capability is composed, `repair.apply` fails closed rather than writing files itself.
+The adapter maps structural check, diagnosis, missing-parenthesis repair preview, repair verification, style lookup, and explanation to fixed registered predicates. It contains no Lisp parser implementation.
+
+`repair.apply` is intentionally **not** a Prolog predicate. Its public ZARA-EXPERT/1 operation schema declares a filesystem-write effect and requires a repair proposal, expected preimage, and source generation. The expert host itself still refuses to apply the edit. Application must cross Zara's canonical typed edit/effect boundary and only succeeds after fresh postcondition evidence verifies the repaired structure. Until that capability is composed, `repair.apply` fails closed rather than writing files itself.
 
 ## Verification predicates
 
-Domain packages may expose only predicates registered by trusted construction-time code. Lisp-family adapters currently bind `can_handle/2`, `structural_check/2`, `structural_diagnose/2`, `preview_repair/3`, `verify_repair/3`, `style_rules/2`, and `explain_decision/2`. Backend evidence is returned as structured data; a model claim is never treated as proof.
+Domain packages may expose only predicates registered by trusted construction-time code. Lisp-family adapters privately bind `can_handle/2`, `structural_check/2`, `structural_diagnose/2`, `preview_repair/3`, `verify_repair/3`, `style_rules/2`, and `explain_decision/2`. Backend evidence is returned as structured data; a model claim is never treated as proof.
 
 ## Tests
 
