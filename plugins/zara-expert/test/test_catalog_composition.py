@@ -6,7 +6,10 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
-from zara_expert.catalog_composition import CoreCatalogCompositionAdapter
+from zara_expert.catalog_composition import (
+    CoreCatalogCompositionAdapter,
+    CoreCatalogSelectedChildInvoker,
+)
 from zara_expert.composition import (
     CompositionError,
     InvocationFence,
@@ -110,6 +113,75 @@ class CoreCatalogCompositionAdapterTests(unittest.TestCase):
         self.assertEqual(budget.invocations_used, 1)
         self.assertEqual(budget.max_model_calls, 0)
         self.assertEqual(budget.model_calls_used, 0)
+
+    def test_delegated_child_is_revalidated_by_catalog_and_keeps_selection_explanation(self):
+        registry = FakeRegistry()
+        calls = []
+
+        def invoke(expert_id, operation, input_data, *, budget, fence, parent_path):
+            del budget, fence
+            calls.append((expert_id, operation, dict(input_data), parent_path))
+            return InvocationResult(
+                status="succeeded",
+                data={"kind": "nix"},
+                evidence=("ev:nix:child",),
+                explanation="NixExpert child completed through canonical Core",
+                model_calls=0,
+            )
+
+        child = CoreCatalogSelectedChildInvoker(
+            CoreExpertCatalogAdapter(registry, principal="user:catalog-child"),
+            invoke,
+            goal_for=lambda expert_id, operation, _input: (
+                f"{operation} {expert_id.rsplit('/', 1)[-1]}"
+            ),
+        )
+        budget = SharedSymbolicBudget(max_invocations=2, max_model_calls=0)
+        result = child(
+            "zara:expert/nix",
+            "inspect",
+            {"source": "{ x = 1; }"},
+            budget=budget,
+            fence=live_fence(),
+            parent_path=("zara:expert/dotfiles.inspect",),
+        )
+
+        self.assertEqual(result.status, "succeeded")
+        self.assertEqual(result.evidence, ("ev:nix:child",))
+        self.assertIn("canonical Zara ExpertRegistry selected", result.explanation)
+        self.assertIn("NixExpert child completed", result.explanation)
+        self.assertEqual(calls[0][0:2], ("zara:expert/nix", "inspect"))
+        self.assertEqual(
+            calls[0][3],
+            ("zara:expert/dotfiles.inspect",),
+        )
+        self.assertEqual(budget.max_model_calls, 0)
+        self.assertEqual(budget.model_calls_used, 0)
+
+    def test_delegated_child_catalog_disagreement_fails_before_child_dispatch(self):
+        registry = FakeRegistry()
+        called = False
+
+        def invoke(*args, **kwargs):
+            nonlocal called
+            called = True
+            raise AssertionError("mismatched delegated child must not dispatch")
+
+        child = CoreCatalogSelectedChildInvoker(
+            CoreExpertCatalogAdapter(registry, principal="user:catalog-child"),
+            invoke,
+            goal_for=lambda expert_id, operation, _input: f"{operation} nix",
+        )
+        with self.assertRaisesRegex(CompositionError, "disagrees with delegated expert"):
+            child(
+                "zara:expert/bash",
+                "inspect",
+                {"source": "printf ok"},
+                budget=SharedSymbolicBudget(max_model_calls=0),
+                fence=live_fence(),
+                parent_path=("zara:expert/dotfiles.inspect",),
+            )
+        self.assertFalse(called)
 
     def test_no_match_fails_before_composer_or_budget_use(self):
         registry = FakeRegistry()
