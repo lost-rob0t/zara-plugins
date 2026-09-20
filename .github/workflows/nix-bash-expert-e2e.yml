@@ -10,6 +10,7 @@ on:
       - 'tests/test_nix_bash_no_parallel_tools.py'
       - 'tests/test_nix_bash_shared_composition_e2e.py'
       - 'tests/test_nix_bash_zara_core_e2e.py'
+      - 'tests/test_nix_bash_core_explain_e2e.py'
       - 'flake.nix'
       - 'plugins.json'
       - '.github/workflows/nix-bash-expert-e2e.yml'
@@ -131,6 +132,30 @@ jobs:
             python3 -m unittest discover -s tests -t . -p 'test_nix_bash_zara_core_e2e.py'
           if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
             echo 'unexpected IPv4/IPv6 network syscall during pure-symbolic Core E2E' >&2
+            cat "$trace" >&2
+            exit 1
+          fi
+
+      - name: Prove Nix/Bash prior-decision why explanations stay pure symbolic
+        env:
+          ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles-nix-bash
+          ZARA_CORE_ROOT: ${{ github.workspace }}/.ci/zara-core
+        shell: bash
+        run: |
+          set -euo pipefail
+          trace="$RUNNER_TEMP/nix-bash-core-explain-network.trace"
+          env \
+            -u OPENAI_API_KEY \
+            -u ANTHROPIC_API_KEY \
+            -u OPENROUTER_API_KEY \
+            -u GOOGLE_API_KEY \
+            -u GEMINI_API_KEY \
+            -u GROQ_API_KEY \
+            -u ZAI_API_KEY \
+            strace -f -e trace=network -o "$trace" \
+            python3 -m unittest discover -s tests -t . -p 'test_nix_bash_core_explain_e2e.py'
+          if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
+            echo 'unexpected IPv4/IPv6 network syscall during pure-symbolic Nix/Bash explanation E2E' >&2
             cat "$trace" >&2
             exit 1
           fi
