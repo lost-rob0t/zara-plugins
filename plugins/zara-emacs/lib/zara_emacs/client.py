@@ -76,6 +76,24 @@ class EmacsClient:
         ]
         return {"operation": "command_catalog", "commands": rows, "count": len(rows)}
 
+    def resolve_voice(self, utterance: str) -> dict:
+        utterance = self._single_line("utterance", utterance, maximum=256)
+        normalized = " ".join(utterance.lower().split())
+        table = {
+            " ".join(phrase.strip().lower().split()): action_id
+            for phrase, action_id in self.config.voice_commands.items()
+        }
+        action_id = table.get(normalized)
+        if action_id is None:
+            raise EmacsError("voice utterance did not match a configured Emacs phrase")
+        return {
+            "operation": "resolve_voice",
+            "utterance": utterance,
+            "normalized": normalized,
+            "action_id": action_id,
+            "matched": True,
+        }
+
     def invoke_command(self, action_id: str) -> dict:
         action_id = self._single_line("action_id", action_id, maximum=128)
         command = self.config.commands.get(action_id)
