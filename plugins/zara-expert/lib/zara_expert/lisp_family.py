@@ -299,7 +299,12 @@ def make_lisp_expert_handler(host: ExpertHost, expert_id: str):
         evidence_refs = _core_evidence_refs(result)
         ok = result.get("ok")
         if ok is True:
-            verdict = "succeeded"
+            # A successful registered-predicate query proves only that the
+            # symbolic verifier ran. The canonical Lisp-family brains
+            # intentionally require a fresh dialect reader/compiler
+            # postcondition before a repair may be called verified, so Core must
+            # not receive a succeeded domain verdict from this predicate alone.
+            verdict = "unknown" if expert_operation == "repair.verify" else "succeeded"
         elif ok is False:
             verdict = "failed"
         else:
@@ -366,6 +371,7 @@ def _manifest_digest(spec: LispExpertSpec) -> str:
             SOURCE_OWNER,
             bindings,
             "dialect-repair-preview:delegate-to-zara:expert/lisp",
+            "repair.verify:fresh-dialect-postcondition-required",
             "repair.apply:canonical-zara-effect-path",
             f"max_model_calls={MAX_MODEL_CALLS}",
         )
