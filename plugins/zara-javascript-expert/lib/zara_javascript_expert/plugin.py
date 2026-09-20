@@ -28,52 +28,90 @@ MAX_GENERATION = 2_147_483_647
 REQUEST_ID_RE = re.compile(r"^[!-~]{1,128}$")
 ACTIVATION_ID_RE = re.compile(r"^act:[a-f0-9]{32}$")
 RESULT_VERDICTS = frozenset({"succeeded", "failed", "unknown", "blocked", "unsupported", "cancelled", "error"})
+
+# This surface is deliberately identical to zara-expert.language_family.
+# Language-specific parser/type/JVM/Android distinctions live in the canonical
+# Dotfiles brains and returned evidence, not in a second invocation protocol.
 OPERATION_FIELDS: dict[str, tuple[dict[str, object], ...]] = {
-    'applicable': (
-        {"name": 'source', "type": 'string', "required": False},
-        {"name": 'path', "type": 'string', "required": False},
-        {"name": 'project_metadata', "type": 'object', "required": False},
+    "match": (
+        {"name": "path", "type": "string", "required": True},
+        {"name": "source_generation", "type": "reference", "required": True},
     ),
-    'parse': (
-        {"name": 'source', "type": 'string', "required": True},
-        {"name": 'path', "type": 'string', "required": False},
-        {"name": 'language_variant', "type": 'string', "required": False},
+    "inspect": (
+        {"name": "source", "type": "string", "required": True},
+        {"name": "source_generation", "type": "reference", "required": True},
     ),
-    'inspect_module': (
-        {"name": 'source', "type": 'string', "required": True},
-        {"name": 'path', "type": 'string', "required": False},
-        {"name": 'project_metadata', "type": 'object', "required": False},
+    "diagnose": (
+        {"name": "source", "type": "string", "required": True},
+        {"name": "source_generation", "type": "reference", "required": True},
     ),
-    'inspect_jsx': (
-        {"name": 'source', "type": 'string', "required": True},
-        {"name": 'path', "type": 'string', "required": False},
+    "repair.preview": (
+        {"name": "source", "type": "string", "required": True},
+        {"name": "source_generation", "type": "reference", "required": True},
+        {"name": "diagnostic_ref", "type": "reference", "required": True},
     ),
-    'diagnose': (
-        {"name": 'source', "type": 'string', "required": True},
-        {"name": 'path', "type": 'string', "required": False},
-        {"name": 'project_metadata', "type": 'object', "required": False},
+    "repair.verify": (
+        {"name": "original_source", "type": "string", "required": True},
+        {"name": "candidate_source", "type": "string", "required": True},
+        {"name": "source_generation", "type": "reference", "required": True},
     ),
-    'style': (
-        {"name": 'source', "type": 'string', "required": True},
-        {"name": 'path', "type": 'string', "required": False},
-        {"name": 'style_profile', "type": 'string', "required": False},
+    "style.rules": (
+        {"name": "source", "type": "string", "required": True},
+        {"name": "project_style", "type": "reference", "required": True},
     ),
-    'repair_verify': (
-        {"name": 'source', "type": 'string', "required": True},
-        {"name": 'candidate_source', "type": 'string', "required": True},
-        {"name": 'path', "type": 'string', "required": False},
+    "explain": (
+        {"name": "decision_ref", "type": "reference", "required": True},
+        {"name": "source_generation", "type": "reference", "required": True},
     ),
-    'explain': (
-        {"name": 'subject', "type": 'object', "required": True},
+}
+OPERATION_OUTPUT_FIELDS: dict[str, tuple[dict[str, object], ...]] = {
+    "match": (
+        {"name": "applicable", "type": "boolean", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
+    ),
+    "inspect": (
+        {"name": "result", "type": "object", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
+    ),
+    "diagnose": (
+        {"name": "diagnostics", "type": "list", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
+    ),
+    "repair.preview": (
+        {"name": "repair", "type": "object", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
+    ),
+    "repair.verify": (
+        {"name": "verified", "type": "boolean", "required": True},
+        {"name": "postcondition_evidence", "type": "object", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
+    ),
+    "style.rules": (
+        {"name": "style_rules", "type": "list", "required": True},
+        {"name": "style_provenance", "type": "list", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
+    ),
+    "explain": (
+        {"name": "explanation", "type": "object", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
     ),
 }
 ALLOWED_OPERATIONS = frozenset(OPERATION_FIELDS)
+
+LANGUAGE_BOUNDARIES = {'language': 'javascript', 'extensions': ('.js', '.jsx', '.mjs', '.cjs'), 'evidence_topics': ('syntax', 'modules', 'jsx', 'diagnostics', 'style', 'repair-verification'), 'project_metadata_policy': 'not_applicable', 'jvm_project_metadata': False, 'gradle_project_metadata': False, 'android_project_metadata': False}
 
 class JavaScriptExpertAdapterError(RuntimeError):
     """Fail closed: this adapter never falls back to a provider or model."""
 
 
-MANIFEST_DIGEST = "sha256:032bd29d947a1a8012f772a1366d0a6050f7c2e860615474160bbf8d5a60d037"
+MANIFEST_DIGEST = 'sha256:032bd29d947a1a8012f772a1366d0a6050f7c2e860615474160bbf8d5a60d037'
 
 
 def _reject_json_constant(_value: str) -> None:
@@ -128,9 +166,7 @@ def _validate_activation_id(value: object) -> str:
 
 def _check_field(field: Mapping[str, object], value: object) -> None:
     kind = field["type"]
-    if kind == "string" and not isinstance(value, str):
-        raise JavaScriptExpertAdapterError("invalid-operation-input")
-    if kind == "object" and not isinstance(value, dict):
+    if kind in {"string", "reference"} and not isinstance(value, str):
         raise JavaScriptExpertAdapterError("invalid-operation-input")
 
 
@@ -150,11 +186,19 @@ def _operation_descriptor(operation: str) -> dict[str, object]:
     return {
         "operation_id": operation,
         "input_schema": {"fields": [dict(field) for field in OPERATION_FIELDS[operation]]},
-        "output_schema": {"fields": []},
+        "output_schema": {"fields": [dict(field) for field in OPERATION_OUTPUT_FIELDS[operation]]},
     }
 
 
-def _validate_result(result: Mapping[str, object], *, request_id: str, activation_id: str, expert_operation: str, registry_generation: int, runtime_generation: int) -> None:
+def _validate_result(
+    result: Mapping[str, object],
+    *,
+    request_id: str,
+    activation_id: str,
+    expert_operation: str,
+    registry_generation: int,
+    runtime_generation: int,
+) -> None:
     expected = {
         "protocol": PROTOCOL,
         "request_id": request_id,
@@ -167,7 +211,10 @@ def _validate_result(result: Mapping[str, object], *, request_id: str, activatio
     for key, value in expected.items():
         if result.get(key) != value:
             raise JavaScriptExpertAdapterError("expert-result-identity-mismatch")
-    if result.get("resolved_registry_generation") != registry_generation or result.get("resolved_runtime_generation") != runtime_generation:
+    if (
+        result.get("resolved_registry_generation") != registry_generation
+        or result.get("resolved_runtime_generation") != runtime_generation
+    ):
         raise JavaScriptExpertAdapterError("stale-expert-result")
     if result.get("verdict") not in RESULT_VERDICTS:
         raise JavaScriptExpertAdapterError("invalid-expert-verdict")
@@ -183,13 +230,17 @@ def _validate_result(result: Mapping[str, object], *, request_id: str, activatio
 
 
 class ZaraJavaScriptExpertPlugin(ServicePlugin):
-    metadata = PluginMetadata(name=PACKAGE_NAMESPACE, version=PLUGIN_VERSION, api_version="1", description='Deterministic JavaScript and JSX syntax, module, diagnostic, style, and repair-verification adapter.')
+    metadata = PluginMetadata(
+        name=PACKAGE_NAMESPACE,
+        version=PLUGIN_VERSION,
+        api_version="1",
+        description='Pure-symbolic JavaScriptExpert adapter over the canonical Zara language host',
+    )
 
     def __init__(self) -> None:
         self._runtime: Any | None = None
 
     def start(self, runtime: Any) -> None:
-        # Passive bind only. Discovery must not activate an expert or touch a provider/network/process.
         self._runtime = runtime
 
     def stop(self) -> None:
@@ -203,7 +254,7 @@ class ZaraJavaScriptExpertPlugin(ServicePlugin):
     def _decode_input(input_json: str) -> dict[str, Any]:
         if not isinstance(input_json, str):
             raise JavaScriptExpertAdapterError("input-must-be-json-text")
-        if len(input_json.encode()) > MAX_INPUT_BYTES:
+        if len(input_json.encode("utf-8")) > MAX_INPUT_BYTES:
             raise JavaScriptExpertAdapterError("input-too-large")
         try:
             value = json.loads(input_json, parse_constant=_reject_json_constant)
@@ -222,37 +273,56 @@ class ZaraJavaScriptExpertPlugin(ServicePlugin):
             "package_namespace": PACKAGE_NAMESPACE,
             "manifest_digest": MANIFEST_DIGEST,
             "name": EXPERT_NAME,
-            "description": 'Deterministic JavaScript and JSX syntax, module, diagnostic, style, and repair-verification adapter.',
+            "description": 'Pure-symbolic JavaScriptExpert adapter over the canonical Zara language host',
             "source_reference": SOURCE_REFERENCE,
             "reasoning_kind": "symbolic",
             "operations": [_operation_descriptor(operation) for operation in sorted(ALLOWED_OPERATIONS)],
-            "applicability": {"keywords": ['javascript', 'js', 'jsx', 'ecmascript', 'esm', 'commonjs']},
+            "applicability": {"keywords": ['javascript', 'js', 'jsx', 'mjs', 'cjs', 'ecmascript']},
             "required_capabilities": [HOST_CAPABILITY],
             "possible_effects": ["none"],
             "supported_engines": ["swipl"],
-            "supported_platforms": ['desktop', 'server', 'android'],
+            "supported_platforms": ["desktop", "server", "android"],
             "fallback_policy": "fail_closed",
             "delegation_policy": "never",
-            "resource_limits": {"timeout_ms": MAX_TIMEOUT_MS, "max_results": MAX_RESULTS, "max_output_bytes": MAX_OUTPUT_BYTES, "max_model_calls": 0},
+            "resource_limits": {
+                "timeout_ms": MAX_TIMEOUT_MS,
+                "max_results": MAX_RESULTS,
+                "max_output_bytes": MAX_OUTPUT_BYTES,
+                "max_model_calls": 0,
+            },
             "registry_generation": 1,
             "availability": "unavailable",
             "unavailable_reason": "canonical-source-or-host-not-activated",
         })
 
-    def invoke(self, request_id: str, activation_id: str, expert_operation: str, expected_registry_generation: int, expected_runtime_generation: int, input_json: str = "{}") -> str:
+    def invoke(
+        self,
+        request_id: str,
+        activation_id: str,
+        expert_operation: str,
+        expected_registry_generation: int,
+        expected_runtime_generation: int,
+        input_json: str = "{}",
+    ) -> str:
         if expert_operation not in ALLOWED_OPERATIONS:
             raise JavaScriptExpertAdapterError("unsupported-expert-operation")
         request_id = _validate_request_id(request_id)
         activation_id = _validate_activation_id(activation_id)
-        registry_generation = _validate_generation(expected_registry_generation, "registry-generation")
-        runtime_generation = _validate_generation(expected_runtime_generation, "runtime-generation")
+        registry_generation = _validate_generation(
+            expected_registry_generation, "registry-generation"
+        )
+        runtime_generation = _validate_generation(
+            expected_runtime_generation, "runtime-generation"
+        )
         payload = self._decode_input(input_json)
         _validate_operation_input(expert_operation, payload)
+
         runtime = self._runtime
         resolver = getattr(runtime, "resolve_capability", None)
         invoker = getattr(runtime, "invoke_capability", None)
         if not callable(resolver) or not callable(invoker):
             raise JavaScriptExpertAdapterError("expert-host-composition-unavailable")
+
         request = {
             "protocol": PROTOCOL,
             "request_id": request_id,
@@ -263,7 +333,12 @@ class ZaraJavaScriptExpertPlugin(ServicePlugin):
             "expected_registry_generation": registry_generation,
             "expected_runtime_generation": runtime_generation,
             "input": payload,
-            "limits": {"timeout_ms": MAX_TIMEOUT_MS, "max_results": MAX_RESULTS, "max_output_bytes": MAX_OUTPUT_BYTES, "max_model_calls": 0},
+            "limits": {
+                "timeout_ms": MAX_TIMEOUT_MS,
+                "max_results": MAX_RESULTS,
+                "max_output_bytes": MAX_OUTPUT_BYTES,
+                "max_model_calls": 0,
+            },
         }
         try:
             handle = resolver(HOST_CAPABILITY)
@@ -272,17 +347,23 @@ class ZaraJavaScriptExpertPlugin(ServicePlugin):
             raise
         except Exception as error:
             raise JavaScriptExpertAdapterError("expert-host-invocation-failed") from error
+
         if not isinstance(result, Mapping):
             raise JavaScriptExpertAdapterError("invalid-expert-result")
-        _validate_result(result, request_id=request_id, activation_id=activation_id, expert_operation=expert_operation, registry_generation=registry_generation, runtime_generation=runtime_generation)
+        _validate_result(
+            result,
+            request_id=request_id,
+            activation_id=activation_id,
+            expert_operation=expert_operation,
+            registry_generation=registry_generation,
+            runtime_generation=runtime_generation,
+        )
         encoded = self._json(dict(result))
-        if len(encoded.encode()) > MAX_OUTPUT_BYTES:
+        if len(encoded.encode("utf-8")) > MAX_OUTPUT_BYTES:
             raise JavaScriptExpertAdapterError("expert-result-too-large")
         return encoded
 
     def tools(self):
-        # ZARA-EXPERT/1 activation/invocation is owned by Zara Core. Do not expose
-        # an adapter-local StructuredTool surface that could bypass that authority.
         return ()
 
 
