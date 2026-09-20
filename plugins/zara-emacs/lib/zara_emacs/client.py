@@ -69,6 +69,35 @@ class EmacsClient:
             raise EmacsError(f"{name} must be a single line")
         return value.strip()
 
+    def command_catalog(self) -> dict:
+        rows = [
+            {"action_id": alias, "command": command}
+            for alias, command in sorted(self.config.commands.items())
+        ]
+        return {"operation": "command_catalog", "commands": rows, "count": len(rows)}
+
+    def invoke_command(self, action_id: str) -> dict:
+        action_id = self._single_line("action_id", action_id, maximum=128)
+        command = self.config.commands.get(action_id)
+        if command is None:
+            raise EmacsError(f"unknown Emacs action {action_id!r}")
+        encoded = json.dumps(command)
+        expression = (
+            "(let ((command (intern " + encoded + "))) "
+            "(unless (commandp command) "
+            "(error \"Configured symbol is not an interactive command: %s\" command)) "
+            "(call-interactively command) "
+            "(symbol-name command))"
+        )
+        observed = self._eval(expression)
+        return {
+            "operation": "invoke_command",
+            "action_id": action_id,
+            "command": command,
+            "observed": observed,
+            "acknowledged": True,
+        }
+
     def open_file(self, path: str) -> dict:
         resolved = Path(str(path)).expanduser()
         if not resolved.is_absolute() or "\x00" in str(resolved):
