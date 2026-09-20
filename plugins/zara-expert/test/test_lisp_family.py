@@ -123,7 +123,7 @@ class LispFamilyAdapterTests(unittest.TestCase):
     def test_configured_sources_are_files_and_unknown_adapters_fail_closed(self):
         with self.assertRaisesRegex(ExpertError, "regular file"):
             register_lisp_family(self.host, {"lisp": [self.root / "missing.pl"]})
-        with self.assertRaisesRegex(ExpertError, "unknown Lisp expert"):
+        with self.assertRaisesRegex(ExpertError, "unknown Lisp expert source keys"):
             register_lisp_family(self.host, {"scheme": [self._brain("scheme")]})
         self.assertEqual(self.backend.calls, [])
 
