@@ -160,7 +160,10 @@ def invoke_dotfiles_operation(
 
     evidence: list[str] = []
     data: dict[str, Any] = {"path": path}
-    verdict = "unknown"
+    # Canonical Core intentionally drops handler data/evidence for UNKNOWN external
+    # outcomes. A deterministic no-match is therefore FAILED, not UNKNOWN: it is a
+    # known fail-closed result whose reason/evidence must survive the Core boundary.
+    verdict = "failed"
     explanation: list[str] = []
 
     if operation in {"inspect", "explain"}:
