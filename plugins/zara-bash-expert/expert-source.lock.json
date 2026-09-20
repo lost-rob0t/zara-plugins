@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "expert_id": "zara:expert/bash",
+  "adapter_version": "0.1.0",
+  "canonical_source": {
+    "repository": "lost-rob0t/dotfiles",
+    "path": ".zara/experts/bash",
+    "issue": 287
+  },
+  "runtime_contract": {
+    "repository": "lost-rob0t/prolog-rlm",
+    "issue": 502
+  },
+  "zara_contract": {
+    "repository": "lost-rob0t/zara",
+    "issue": 1233,
+    "schema_pr": 1257
+  }
+}
