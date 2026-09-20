@@ -12,6 +12,7 @@ PROTOCOL = "ZARA-EXPERT/1"
 SYMBOL_KIND = "expert"
 SOURCE_OWNER = "lost-rob0t/dotfiles#292"
 MAX_MODEL_CALLS = 0
+RESERVED_HOST_INPUT_FIELDS = frozenset({"expert_operation"})
 
 
 @dataclass(frozen=True)
@@ -182,13 +183,73 @@ def invoke_lisp_operation(
     return method(spec.namespace, binding.predicate, arguments)
 
 
+def make_lisp_expert_handler(host: ExpertHost, expert_id: str):
+    """Return one handler compatible with Zara Core's ZARA-EXPERT/1 registry.
+
+    ``expert_operation`` is host-owned metadata injected by the canonical Core
+    registry. It is deliberately not part of any public operation input schema.
+    The adapter reports an explicit zero model-call ledger on every returned
+    outcome and never applies filesystem edits itself.
+    """
+
+    spec = _SPEC_BY_ID.get(expert_id)
+    if spec is None:
+        raise ExpertError(f"unknown Lisp expert: {expert_id!r}")
+
+    def handler(
+        *,
+        expert_operation: str,
+        arguments: list[Any] | None = None,
+        repair: dict[str, Any] | None = None,
+        expected_preimage: str | None = None,
+        source_generation: str | None = None,
+    ) -> dict[str, Any]:
+        if expert_operation == "repair.apply":
+            return {
+                "verdict": "blocked",
+                "data": {
+                    "reason": "canonical-typed-edit-required",
+                    "expert_id": spec.expert_id,
+                },
+                "evidence_refs": [],
+                "usage": {"model_calls": MAX_MODEL_CALLS},
+                "effect_receipts": [],
+            }
+
+        if repair is not None or expected_preimage is not None or source_generation is not None:
+            raise ExpertError(
+                "repair effect fields are accepted only for repair.apply through Zara Core"
+            )
+
+        result = invoke_lisp_operation(
+            host,
+            spec.expert_id,
+            expert_operation,
+            arguments,
+        )
+        verdict = "succeeded" if result.get("ok") is True else "unknown"
+        return {
+            "verdict": verdict,
+            "data": {"result": result},
+            "evidence_refs": [],
+            "usage": {"model_calls": MAX_MODEL_CALLS},
+            "effect_receipts": [],
+        }
+
+    return handler
+
+
 def _fields(*items: tuple[str, str, bool]) -> dict[str, list[dict[str, Any]]]:
-    return {
-        "fields": [
-            {"name": name, "type": field_type, "required": required}
-            for name, field_type, required in items
-        ]
-    }
+    seen: set[str] = set()
+    fields: list[dict[str, Any]] = []
+    for name, field_type, required in items:
+        if name in RESERVED_HOST_INPUT_FIELDS:
+            raise ExpertError(f"operation input field {name!r} is reserved host metadata")
+        if name in seen:
+            raise ExpertError(f"duplicate operation input field: {name!r}")
+        seen.add(name)
+        fields.append({"name": name, "type": field_type, "required": required})
+    return {"fields": fields}
 
 
 def _operation_descriptor(name: str) -> dict[str, Any]:
@@ -295,11 +356,13 @@ def register_descriptor_symbols(runtime: Any, registered: Iterable[str] = ()) ->
 __all__ = [
     "MAX_MODEL_CALLS",
     "PROTOCOL",
+    "RESERVED_HOST_INPUT_FIELDS",
     "LispExpertSpec",
     "descriptor",
     "descriptors",
     "invoke_lisp_operation",
     "lisp_family_specs",
+    "make_lisp_expert_handler",
     "register_descriptor_symbols",
     "register_lisp_family",
     "registered_predicates",
