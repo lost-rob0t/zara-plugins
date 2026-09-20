@@ -15,8 +15,10 @@ from .language_family import (
     descriptors as language_descriptors,
     invoke_language_operation,
     language_expert_schemas,
+    language_family_specs,
     register_descriptor_symbols as register_language_descriptor_symbols,
     register_language_family,
+    registered_predicates as language_registered_predicates,
 )
 from .language_handler import make_language_expert_handler
 from .language_source_contract import validate_language_source_contracts
@@ -88,14 +90,34 @@ class ZaraExpertPlugin(ServicePlugin):
             raise ExpertError("language_expert_sources must be a mapping")
         return sources
 
+    def _preflight_language_authority(
+        self,
+        sources: Mapping[str, Iterable[str | Path]],
+    ) -> None:
+        """Check configured language namespace authority without mutating host state."""
+
+        predicates = language_registered_predicates()
+        configured = set(sources)
+        for spec in language_family_specs():
+            if spec.key not in configured:
+                continue
+            files = tuple(Path(path).expanduser().resolve() for path in sources[spec.key])
+            self.host.preflight_registration(
+                spec.namespace,
+                files,
+                predicates=predicates,
+            )
+
     def start(self, runtime) -> None:
         lisp_sources = self._lisp_sources(runtime.configuration)
         language_sources = self._language_sources(runtime.configuration)
 
-        # Validate the strict pure-symbolic language ABI before mutating any
-        # expert namespace. A bad Prolog/Python/Nim brain must not leave an
-        # unrelated Lisp family partially active after startup fails.
+        # Validate both the strict pure-symbolic ABI and existing namespace
+        # authority before mutating any expert namespace. A bad or conflicting
+        # Prolog/Python/Nim brain must not leave an unrelated Lisp family
+        # partially active after startup fails.
         validate_language_source_contracts(language_sources)
+        self._preflight_language_authority(language_sources)
 
         self._registered_lisp_experts = register_lisp_family(
             self.host,
