@@ -110,8 +110,17 @@ def make_language_expert_handler(host: ExpertHost, expert_id: str):
             arguments,
         )
         evidence_refs = _evidence_refs(result)
+        verdict = result["verdict"]
+        if expert_operation == "repair.verify" and verdict == "succeeded":
+            # The canonical language brains intentionally return verified(false)
+            # until a fresh parser/compiler/eval/check postcondition is supplied
+            # through Zara's effect/verification authority. Predicate completion
+            # only proves the symbolic verifier ran; it cannot prove the repair.
+            # BLOCKED preserves the bounded evidence explaining the outstanding
+            # postcondition instead of false-greening a repair as successful.
+            verdict = "blocked"
         return {
-            "verdict": result["verdict"],
+            "verdict": verdict,
             "data": {"result": result},
             "evidence_refs": evidence_refs,
             "usage": {"model_calls": MAX_MODEL_CALLS},
