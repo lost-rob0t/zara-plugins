@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DOTFILES_ROOT = os.environ.get("ZARA_DOTFILES_ROOT")
 ZARA_CORE_ROOT = os.environ.get("ZARA_CORE_ROOT")
 EXPECTED_DOTFILES_COMMIT = "fe8f7fa3c42803e0e505dcb6f7e4600d27649d9e"
-EXPECTED_ZARA_CORE_COMMIT = "3c2f6ffe892fb5e39e395fa94fe5329f195d5923"
+EXPECTED_ZARA_CORE_COMMIT = "f7810b0cba602b1e00597d04dd419d30ac0ef949"
 ZARA_EXPERT_LIB = REPO_ROOT / "plugins" / "zara-expert" / "lib"
 
 if ZARA_CORE_ROOT:
@@ -19,7 +19,9 @@ if ZARA_CORE_ROOT:
 sys.path.insert(0, str(ZARA_EXPERT_LIB))
 
 from zara_expert.backend import SwiplBackend
+from zara_expert.catalog_composition import CoreCatalogSelectedChildInvoker
 from zara_expert.composition import InvocationFence, MetaExpertComposer, SharedSymbolicBudget
+from zara_expert.core_catalog import CoreExpertCatalogAdapter
 from zara_expert.domain import ExpertHost
 from zara_expert.dotfiles_composition import CoreDotfilesCompositionInvoker
 from zara_expert.dotfiles_family import descriptor as dotfiles_descriptor
@@ -123,16 +125,27 @@ class DotfilesZaraCoreE2ETests(unittest.TestCase):
             self.assertEqual(receipt["state"], "active")
             self.handles[expert_id] = handle
 
-        child_invoker = CoreLanguageFamilyCompositionInvoker(
+        language_invoker = CoreLanguageFamilyCompositionInvoker(
             self.registry,
             activation_for=lambda expert_id, _fence: self.handles[expert_id],
             limits_factory=ExpertLimits,
+        )
+        catalog_child_invoker = CoreCatalogSelectedChildInvoker(
+            CoreExpertCatalogAdapter(
+                self.registry,
+                principal="user:dotfiles-core-catalog-child",
+            ),
+            language_invoker,
+            goal_for=lambda expert_id, operation, _input: {
+                "zara:expert/nix": f"{operation} nix nixos flake",
+                "zara:expert/bash": f"{operation} bash shell sh",
+            }[expert_id],
         )
         self.invoker = CoreDotfilesCompositionInvoker(
             self.registry,
             activation_for=lambda expert_id, _fence: self.handles[expert_id],
             limits_factory=ExpertLimits,
-            child_invoker=child_invoker,
+            child_invoker=catalog_child_invoker,
         )
         self.composer = MetaExpertComposer(self.invoker)
         self.fence = InvocationFence(
@@ -144,7 +157,7 @@ class DotfilesZaraCoreE2ETests(unittest.TestCase):
             ),
         )
 
-    def test_real_dotfiles_root_delegates_to_real_core_nix_and_bash(self) -> None:
+    def test_real_dotfiles_root_delegates_to_catalog_selected_core_nix_and_bash(self) -> None:
         cases = (
             ("flake.nix", "{ x = 1; }", "nix", "zara:expert/nix"),
             ("bin/deploy.sh", "printf '%s\\n' ok", "bash", "zara:expert/bash"),
@@ -176,6 +189,10 @@ class DotfilesZaraCoreE2ETests(unittest.TestCase):
                 self.assertEqual(child.expert_id, child_id)
                 self.assertEqual(child.status, "succeeded")
                 self.assertIn("registered", child.reason)
+                self.assertIn(
+                    "canonical Zara ExpertRegistry selected",
+                    child.explanation,
+                )
                 self.assertIn("ZARA-EXPERT/1", child.explanation)
                 self.assertEqual(budget.invocations_used, 2)
                 self.assertEqual(budget.max_model_calls, 0)
