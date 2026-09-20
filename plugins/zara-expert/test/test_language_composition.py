@@ -34,6 +34,20 @@ class RecordingBackend:
         }
 
 
+class VerdictBackend(RecordingBackend):
+    def __init__(self, ok):
+        super().__init__()
+        self.ok = ok
+
+    def run(self, request):
+        self.calls.append(dict(request))
+        return {
+            "ok": self.ok,
+            "results": ["evidence:partial"],
+            "trace": ["rule:backend-verdict"],
+        }
+
+
 class LanguageCompositionTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -102,6 +116,34 @@ class LanguageCompositionTests(unittest.TestCase):
             [call["capability"].predicate for call in backend.calls],
             ["language_evidence", "language_evidence", "language_evidence"],
         )
+
+    def test_backend_failure_or_non_boolean_success_cannot_false_green_evidence(self):
+        cases = ((False, "failed"), (1, "unknown"), ("true", "unknown"))
+        for index, (backend_ok, expected_status) in enumerate(cases):
+            with self.subTest(backend_ok=backend_ok):
+                backend = VerdictBackend(backend_ok)
+                composer = self._composer(
+                    backend,
+                    {"python": [self._brain(f"python-verdict-{index}")]},
+                )
+                budget = SharedSymbolicBudget(max_invocations=1, max_evidence=1)
+                node = composer.invoke(
+                    "zara:expert/python",
+                    "inspect",
+                    {
+                        "source": "print('partial')",
+                        "source_generation": f"generation-verdict-{index}",
+                    },
+                    budget=budget,
+                    fence=self._fence(),
+                )
+
+                self.assertEqual(node.status, expected_status)
+                self.assertEqual(node.evidence, ("evidence:partial",))
+                self.assertEqual(budget.invocations_used, 1)
+                self.assertEqual(budget.evidence_used, 1)
+                self.assertEqual(budget.max_model_calls, 0)
+                self.assertEqual(budget.model_calls_used, 0)
 
     def test_cancellation_after_backend_dispatch_fences_late_language_output(self):
         state = {"cancelled": False}
