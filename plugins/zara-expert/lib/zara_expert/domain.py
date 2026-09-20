@@ -40,6 +40,7 @@ class ExpertHost:
         state_root: Path,
         query_timeout_seconds: float = 1.0,
         max_results: int = 16,
+        max_output_bytes: int = 65536,
     ) -> None:
         if (
             isinstance(query_timeout_seconds, bool)
@@ -51,11 +52,18 @@ class ExpertHost:
             raise ValueError("query_timeout_seconds must be a finite positive number")
         if isinstance(max_results, bool) or not isinstance(max_results, int) or max_results <= 0:
             raise ValueError("max_results must be a positive integer")
+        if (
+            isinstance(max_output_bytes, bool)
+            or not isinstance(max_output_bytes, int)
+            or max_output_bytes <= 0
+        ):
+            raise ValueError("max_output_bytes must be a positive integer")
         self._backend = backend
         self._state_root = Path(state_root)
         self._state_root.mkdir(parents=True, exist_ok=True)
         self._query_timeout_seconds = timeout
         self._max_results = max_results
+        self._max_output_bytes = max_output_bytes
         self._knowledge_bases: dict[str, tuple[str, ...]] = {}
 
     def register(self, namespace: str, knowledge_bases: Iterable[Path]) -> None:
@@ -64,11 +72,41 @@ class ExpertHost:
         self._knowledge_bases[namespace] = files
         self.state_files(namespace)
 
-    def query(self, namespace: str, goal: str) -> dict[str, Any]:
-        return self._run(namespace, "query", goal)
+    def query(
+        self,
+        namespace: str,
+        goal: str,
+        *,
+        timeout_seconds: float | None = None,
+        max_results: int | None = None,
+        max_output_bytes: int | None = None,
+    ) -> dict[str, Any]:
+        return self._run(
+            namespace,
+            "query",
+            goal,
+            timeout_seconds=timeout_seconds,
+            max_results=max_results,
+            max_output_bytes=max_output_bytes,
+        )
 
-    def explain(self, namespace: str, goal: str) -> dict[str, Any]:
-        return self._run(namespace, "explain", goal)
+    def explain(
+        self,
+        namespace: str,
+        goal: str,
+        *,
+        timeout_seconds: float | None = None,
+        max_results: int | None = None,
+        max_output_bytes: int | None = None,
+    ) -> dict[str, Any]:
+        return self._run(
+            namespace,
+            "explain",
+            goal,
+            timeout_seconds=timeout_seconds,
+            max_results=max_results,
+            max_output_bytes=max_output_bytes,
+        )
 
     def assert_fact(self, namespace: str, fact: str, *, persistent: bool = False) -> bool:
         namespace = self._validate_namespace(namespace)
@@ -108,11 +146,31 @@ class ExpertHost:
                 self._atomic_write(path, [])
         return session_path, persistent_path
 
-    def _run(self, namespace: str, operation: str, goal: str) -> dict[str, Any]:
+    def _run(
+        self,
+        namespace: str,
+        operation: str,
+        goal: str,
+        *,
+        timeout_seconds: float | None,
+        max_results: int | None,
+        max_output_bytes: int | None,
+    ) -> dict[str, Any]:
         namespace = self._validate_namespace(namespace)
         if namespace not in self._knowledge_bases:
             raise ExpertError(f"expert namespace {namespace!r} is not registered")
         goal = self._validate_query(goal)
+        timeout = self._bounded_timeout(timeout_seconds)
+        result_limit = self._bounded_positive_int(
+            max_results,
+            configured=self._max_results,
+            name="max_results",
+        )
+        output_limit = self._bounded_positive_int(
+            max_output_bytes,
+            configured=self._max_output_bytes,
+            name="max_output_bytes",
+        )
         session_path, persistent_path = self.state_files(namespace)
         request = {
             "namespace": namespace,
@@ -120,8 +178,9 @@ class ExpertHost:
             "goal": goal,
             "knowledge_bases": self._knowledge_bases[namespace],
             "state_files": (str(session_path), str(persistent_path)),
-            "timeout_seconds": self._query_timeout_seconds,
-            "max_results": self._max_results,
+            "timeout_seconds": timeout,
+            "max_results": result_limit,
+            "max_output_bytes": output_limit,
         }
         try:
             result = self._backend.run(request)
@@ -132,6 +191,24 @@ class ExpertHost:
         if not isinstance(result, dict):
             raise ExpertError(f"{namespace}: backend returned a non-object result")
         return result
+
+    def _bounded_timeout(self, value: float | None) -> float:
+        if value is None:
+            return self._query_timeout_seconds
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ExpertError("timeout_seconds must be a finite positive number")
+        requested = float(value)
+        if not math.isfinite(requested) or requested <= 0:
+            raise ExpertError("timeout_seconds must be a finite positive number")
+        return min(requested, self._query_timeout_seconds)
+
+    @staticmethod
+    def _bounded_positive_int(value: int | None, *, configured: int, name: str) -> int:
+        if value is None:
+            return configured
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ExpertError(f"{name} must be a positive integer")
+        return min(value, configured)
 
     @staticmethod
     def _validate_namespace(namespace: str) -> str:
