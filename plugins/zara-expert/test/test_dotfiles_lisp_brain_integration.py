@@ -85,7 +85,7 @@ class DotfilesLispBrainIntegrationTests(unittest.TestCase):
                 matched = self._invoke(
                     expert_id,
                     "match",
-                    [path, {"var": "Applicability"}],
+                    [path],
                 )
                 rendered_match = " ".join(matched["data"]["result"]["results"])
                 self.assertIn(f"applicability('{expert_id}',true)", rendered_match)
@@ -93,14 +93,14 @@ class DotfilesLispBrainIntegrationTests(unittest.TestCase):
                 checked = self._invoke(
                     expert_id,
                     "structural.check",
-                    [source, {"var": "Structural"}],
+                    [source],
                 )
                 self.assertIn("unmatched_open", " ".join(checked["data"]["result"]["results"]))
 
                 diagnosed = self._invoke(
                     expert_id,
                     "structural.diagnose",
-                    [source, {"var": "Diagnosis"}],
+                    [source],
                 )
                 self.assertIn("diagnosis", " ".join(diagnosed["data"]["result"]["results"]))
 
@@ -109,7 +109,7 @@ class DotfilesLispBrainIntegrationTests(unittest.TestCase):
         preview = self._invoke(
             "zara:expert/lisp",
             "repair.preview",
-            [source, "diagnostic:lisp:missing-close", {"var": "Repair"}],
+            [source, "diagnostic:lisp:missing-close"],
         )
         rendered = " ".join(preview["data"]["result"]["results"])
         self.assertIn("status(proposed)", rendered)
@@ -136,7 +136,7 @@ class DotfilesLispBrainIntegrationTests(unittest.TestCase):
                 verified = self._invoke(
                     expert_id,
                     "repair.verify",
-                    [original, candidate, {"var": "Verification"}],
+                    [original, candidate],
                 )
                 rendered = " ".join(verified["data"]["result"]["results"])
                 self.assertIn("verified(false)", rendered)
