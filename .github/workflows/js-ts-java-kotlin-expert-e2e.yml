@@ -1,0 +1,120 @@
+name: JS TS Java Kotlin Expert E2E
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/zara-javascript-expert/**'
+      - 'plugins/zara-typescript-expert/**'
+      - 'plugins/zara-java-expert/**'
+      - 'plugins/zara-kotlin-expert/**'
+      - 'plugins/zara-expert/lib/zara_expert/language_*.py'
+      - 'tests/test_expert_factory_4_packages.py'
+      - 'tests/test_expert_factory_canonical_host_abi.py'
+      - 'tests/test_expert_factory_source_locks.py'
+      - 'tests/test_js_ts_java_kotlin_current_core_delegation_e2e.py'
+      - '.github/workflows/js-ts-java-kotlin-expert-e2e.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'plugins/zara-javascript-expert/**'
+      - 'plugins/zara-typescript-expert/**'
+      - 'plugins/zara-java-expert/**'
+      - 'plugins/zara-kotlin-expert/**'
+      - 'plugins/zara-expert/lib/zara_expert/language_*.py'
+      - 'tests/test_expert_factory_4_packages.py'
+      - 'tests/test_expert_factory_canonical_host_abi.py'
+      - 'tests/test_expert_factory_source_locks.py'
+      - 'tests/test_js_ts_java_kotlin_current_core_delegation_e2e.py'
+      - '.github/workflows/js-ts-java-kotlin-expert-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  current-core-delegation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout zara-plugins
+        uses: actions/checkout@v4
+
+      - name: Fetch exact canonical Dotfiles brains
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=423a00e4a93fbea8d191502b29b1d6ab0e1333fd
+          rm -rf .ci/dotfiles-js-ts-java-kotlin
+          git init .ci/dotfiles-js-ts-java-kotlin
+          git -C .ci/dotfiles-js-ts-java-kotlin remote add origin https://github.com/lost-rob0t/dotfiles.git
+          git -C .ci/dotfiles-js-ts-java-kotlin config core.sparseCheckout true
+          mkdir -p .ci/dotfiles-js-ts-java-kotlin/.git/info
+          cat > .ci/dotfiles-js-ts-java-kotlin/.git/info/sparse-checkout <<'EOF'
+          /.zara/experts/language/
+          /.zara/experts/javascript/
+          /.zara/experts/typescript/
+          /.zara/experts/java/
+          /.zara/experts/kotlin/
+          EOF
+          git -C .ci/dotfiles-js-ts-java-kotlin fetch --depth=1 origin "$revision"
+          git -C .ci/dotfiles-js-ts-java-kotlin checkout --detach FETCH_HEAD
+          test "$(git -C .ci/dotfiles-js-ts-java-kotlin rev-parse HEAD)" = "$revision"
+
+      - name: Fetch exact current Zara Core authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=89a9ab12461b7c6fa1630b2137ed5a500724e6c7
+          rm -rf .ci/zara-core-current
+          git init .ci/zara-core-current
+          git -C .ci/zara-core-current remote add origin https://github.com/lost-rob0t/zara.git
+          git -C .ci/zara-core-current config core.sparseCheckout true
+          mkdir -p .ci/zara-core-current/.git/info
+          printf '%s\n' '/zara/' > .ci/zara-core-current/.git/info/sparse-checkout
+          git -C .ci/zara-core-current fetch --depth=1 origin "$revision"
+          git -C .ci/zara-core-current checkout --detach FETCH_HEAD
+          test "$(git -C .ci/zara-core-current rev-parse HEAD)" = "$revision"
+
+      - name: Install symbolic runtime and network audit tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y swi-prolog-nox strace
+
+      - name: Prove package and host language boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest \
+            tests.test_expert_factory_4_packages \
+            tests.test_expert_factory_canonical_host_abi \
+            tests.test_expert_factory_source_locks
+
+      - name: Prove real four-language nested delegation with zero model calls
+        env:
+          ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles-js-ts-java-kotlin
+          ZARA_CURRENT_CORE_ROOT: ${{ github.workspace }}/.ci/zara-core-current
+        shell: bash
+        run: |
+          set -euo pipefail
+          trace="$RUNNER_TEMP/js-ts-java-kotlin-current-core-network.trace"
+          env \
+            -u OPENAI_API_KEY \
+            -u ANTHROPIC_API_KEY \
+            -u OPENROUTER_API_KEY \
+            -u GOOGLE_API_KEY \
+            -u GEMINI_API_KEY \
+            -u GROQ_API_KEY \
+            -u ZAI_API_KEY \
+            -u AZURE_OPENAI_API_KEY \
+            -u HF_TOKEN \
+            strace -f -e trace=network -o "$trace" \
+            python3 -m unittest \
+              tests.test_js_ts_java_kotlin_current_core_delegation_e2e
+          if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
+            echo 'unexpected IPv4/IPv6 network syscall during JS/TS/Java/Kotlin delegation E2E' >&2
+            cat "$trace" >&2
+            exit 1
+          fi
