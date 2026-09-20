@@ -1,3 +1,4 @@
+import base64
 import json
 import sys
 import unittest
@@ -28,18 +29,44 @@ class Runner:
         return self.results.pop(0)
 
 
+def bridge_result(operation, result=None, *, ok=True, error=None):
+    payload = {
+        "bridge": "ZARA-EMACS/1",
+        "session_id": "test-session",
+        "operation": operation,
+        "ok": ok,
+    }
+    payload["result" if ok else "error"] = result if ok else (error or {"message": "failed"})
+    return Result(stdout=json.dumps(json.dumps(payload)) + "\n")
+
+
+def bridge_payload(runner, index=0):
+    expression = runner.calls[index][0][-1]
+    prefix = "(progn (require 'zara) (zara-bridge-call \""
+    suffix = "\"))"
+    if not expression.startswith(prefix) or not expression.endswith(suffix):
+        raise AssertionError(f"not a Zara bridge expression: {expression!r}")
+    encoded = expression[len(prefix):-len(suffix)]
+    return json.loads(base64.b64decode(encoded).decode("utf-8"))
+
+
 class EmacsClientTest(unittest.TestCase):
     def client(self, results, **config):
         runner = Runner(results)
         client = EmacsClient(EmacsConfig(projects={"zara": "/work/zara"}, **config), runner=runner)
         return client, runner
 
-    def test_open_file_uses_argv_not_shell_and_returns_ack(self):
-        client, runner = self.client([Result(stdout="")])
+    def test_open_file_uses_versioned_bridge_and_hides_path_from_elisp(self):
+        client, runner = self.client(
+            [bridge_result("buffer.open", {"buffer_id": "b-1", "file": "/tmp/note.org"})]
+        )
         result = client.open_file("/tmp/note.org")
-        argv, kwargs = runner.calls[0]
-        self.assertEqual(argv[-1], "/tmp/note.org")
-        self.assertFalse(kwargs.get("shell", False))
+        payload = bridge_payload(runner)
+        self.assertEqual(payload["bridge"], "ZARA-EMACS/1")
+        self.assertEqual(payload["operation"], "buffer.open")
+        self.assertEqual(payload["args"]["path"], "/tmp/note.org")
+        self.assertNotIn("/tmp/note.org", runner.calls[0][0][-1])
+        self.assertFalse(runner.calls[0][1].get("shell", False))
         self.assertTrue(result["acknowledged"])
 
     def test_daily_emits_dictation_request_but_never_claims_started(self):
@@ -247,11 +274,16 @@ class EmacsClientTest(unittest.TestCase):
             client.shared_memory(501)
         self.assertEqual(runner.calls, [])
 
-    def test_magit_resolves_only_known_project_alias(self):
-        client, runner = self.client([Result(stdout='t\n')])
+    def test_magit_resolves_alias_before_versioned_bridge(self):
+        client, runner = self.client(
+            [bridge_result("magit.open_project", {"path": "/work/zara", "opened": True})]
+        )
         result = client.open_magit("zara")
         self.assertEqual(result["project_id"], "zara")
-        self.assertIn(json.dumps("/work/zara"), runner.calls[0][0][-1])
+        payload = bridge_payload(runner)
+        self.assertEqual(payload["operation"], "magit.open_project")
+        self.assertEqual(payload["args"]["path"], "/work/zara")
+        self.assertNotIn("/work/zara", runner.calls[0][0][-1])
         with self.assertRaisesRegex(EmacsError, "unknown project"):
             client.open_magit("$(touch /tmp/pwned)")
         self.assertEqual(len(runner.calls), 1)
@@ -260,6 +292,42 @@ class EmacsClientTest(unittest.TestCase):
         client, _ = self.client([Result(returncode=1, stderr="server unavailable")])
         with self.assertRaisesRegex(EmacsError, "server unavailable"):
             client.open_scratch()
+
+
+    def test_deep_context_and_edit_methods_use_closed_bridge(self):
+        client, runner = self.client(
+            [
+                bridge_result(
+                    "buffer.context",
+                    {"buffer_id": "b-7", "modified_tick": 12, "point": 3},
+                ),
+                bridge_result(
+                    "edit.preview",
+                    {"edit_id": "e-1", "state": "previewed", "buffer_id": "b-7"},
+                ),
+            ]
+        )
+        context = client.buffer_context()
+        self.assertEqual(context["buffer_id"], "b-7")
+        preview = client.preview_edit("b-7", 1, 2, 12, "λ")
+        self.assertEqual(preview["edit_id"], "e-1")
+        payload = bridge_payload(runner, 1)
+        self.assertEqual(payload["operation"], "edit.preview")
+        self.assertEqual(payload["args"]["replacement"], "λ")
+        self.assertNotIn("λ", runner.calls[1][0][-1])
+
+    def test_bridge_error_is_explicit(self):
+        client, _ = self.client(
+            [
+                bridge_result(
+                    "session.describe",
+                    ok=False,
+                    error={"code": "operation_failed", "message": "native bridge unavailable"},
+                )
+            ]
+        )
+        with self.assertRaisesRegex(EmacsError, "native bridge unavailable"):
+            client.describe_session()
 
 
 if __name__ == "__main__":
