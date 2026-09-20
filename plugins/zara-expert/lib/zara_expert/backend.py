@@ -31,6 +31,7 @@ class SwiplBackend:
 
         timeout_value = request["timeout_seconds"]
         max_results_value = request["max_results"]
+        max_output_value = request.get("max_output_bytes", self.output_limit)
         if (
             isinstance(timeout_value, bool)
             or not isinstance(timeout_value, (int, float))
@@ -39,10 +40,14 @@ class SwiplBackend:
             or isinstance(max_results_value, bool)
             or not isinstance(max_results_value, int)
             or max_results_value <= 0
+            or isinstance(max_output_value, bool)
+            or not isinstance(max_output_value, int)
+            or max_output_value <= 0
         ):
             raise ExpertError("expert execution bounds are invalid")
         timeout = float(timeout_value)
         max_results = max_results_value
+        max_output_bytes = min(max_output_value, self.output_limit)
         goal = str(request["goal"])
         source_files = [*request.get("knowledge_bases", ()), *request.get("state_files", ())]
 
@@ -70,7 +75,7 @@ class SwiplBackend:
         except FileNotFoundError as exc:
             raise ExpertError(f"SWI-Prolog executable not found: {self.program}") from exc
 
-        stdout, stderr = self._communicate_bounded(process, timeout)
+        stdout, stderr = self._communicate_bounded(process, timeout, max_output_bytes)
         if process.returncode != 0:
             detail = " ".join(stderr.decode("utf-8", errors="replace").split())[:512]
             raise ExpertError(f"SWI-Prolog failed with exit {process.returncode}: {detail}")
@@ -82,7 +87,12 @@ class SwiplBackend:
             raise ExpertError("SWI-Prolog returned an invalid expert result")
         return payload
 
-    def _communicate_bounded(self, process: subprocess.Popen, timeout: float) -> tuple[bytes, bytes]:
+    def _communicate_bounded(
+        self,
+        process: subprocess.Popen,
+        timeout: float,
+        output_limit: int,
+    ) -> tuple[bytes, bytes]:
         stdout = bytearray()
         stderr = bytearray()
         streams = ((process.stdout, stdout), (process.stderr, stderr))
@@ -99,13 +109,13 @@ class SwiplBackend:
                     self._stop(process)
                     raise ExpertError(f"expert query exceeded {timeout:.2f}s timeout")
                 for key, _ in selector.select(timeout=min(0.1, remaining)):
-                    chunk = os.read(key.fd, min(4096, self.output_limit + 1))
+                    chunk = os.read(key.fd, min(4096, output_limit + 1))
                     if not chunk:
                         selector.unregister(key.fileobj)
                         continue
                     buffer = key.data
                     buffer.extend(chunk)
-                    if len(buffer) > self.output_limit:
+                    if len(buffer) > output_limit:
                         self._stop(process)
                         raise ExpertError("expert Prolog output exceeded configured limit")
 
