@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import json
+import sys
 import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "lib"))
 
 from zara_bash_expert.plugin import BashExpertAdapterError, ZaraBashExpertPlugin
 
