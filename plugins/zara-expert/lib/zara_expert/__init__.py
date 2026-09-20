@@ -1,6 +1,7 @@
 from .composition import (
     CompositionError,
     DelegationRequest,
+    DotfilesExpertSourceAdapter,
     EffectiveStyle,
     EvidenceNode,
     ExpertCatalogAdapter,
@@ -8,6 +9,7 @@ from .composition import (
     InvocationFence,
     InvocationResult,
     MetaExpertComposer,
+    ProjectExpertResource,
     SharedSymbolicBudget,
     StyleOverlay,
     StyleScope,
@@ -18,6 +20,7 @@ from .domain import ExpertError, ExpertHost
 __all__ = [
     "CompositionError",
     "DelegationRequest",
+    "DotfilesExpertSourceAdapter",
     "EffectiveStyle",
     "EvidenceNode",
     "ExpertCatalogAdapter",
@@ -27,6 +30,7 @@ __all__ = [
     "InvocationFence",
     "InvocationResult",
     "MetaExpertComposer",
+    "ProjectExpertResource",
     "SharedSymbolicBudget",
     "StyleOverlay",
     "StyleScope",
