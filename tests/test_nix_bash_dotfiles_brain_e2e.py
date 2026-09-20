@@ -53,12 +53,11 @@ class NixBashCanonicalBrainE2ETests(unittest.TestCase):
         checkout = _run("git", "rev-parse", "HEAD", cwd=cls.dotfiles_root)
         if checkout.returncode != 0:
             raise AssertionError(f"cannot resolve Dotfiles checkout: {checkout.stderr}")
-        cls.assertEqual(
-            cls,
-            checkout.stdout.strip(),
-            EXPECTED_DOTFILES_COMMIT,
-            "CI checkout must be the exact producer revision pinned by the adapters",
-        )
+        if checkout.stdout.strip() != EXPECTED_DOTFILES_COMMIT:
+            raise AssertionError(
+                "CI checkout must be the exact producer revision pinned by the adapters: "
+                f"expected {EXPECTED_DOTFILES_COMMIT}, got {checkout.stdout.strip()}"
+            )
 
         cls.nix_source = cls.dotfiles_root / ".zara" / "experts" / "nix" / "kb" / "expert.pl"
         cls.bash_source = cls.dotfiles_root / ".zara" / "experts" / "bash" / "kb" / "expert.pl"
@@ -81,13 +80,18 @@ class NixBashCanonicalBrainE2ETests(unittest.TestCase):
                 lock = self._load_lock(plugin)
                 self.assertEqual(lock["schema_version"], 1)
                 self.assertEqual(lock["expert_id"], expert_id)
-                self.assertEqual(lock["runtime_contract"], {
-                    "repository": "lost-rob0t/prolog-rlm",
-                    "issue": runtime_issue,
-                })
-                self.assertEqual(lock["canonical_source"]["repository"], "lost-rob0t/dotfiles")
-                self.assertEqual(lock["canonical_source"]["path"], source_path)
-                self.assertEqual(lock["canonical_source"]["commit"], EXPECTED_DOTFILES_COMMIT)
+                self.assertEqual(
+                    lock["runtime_contract"],
+                    {
+                        "repository": "lost-rob0t/prolog-rlm",
+                        "issue": runtime_issue,
+                    },
+                )
+                canonical_source = lock["canonical_source"]
+                self.assertIsInstance(canonical_source, dict)
+                self.assertEqual(canonical_source["repository"], "lost-rob0t/dotfiles")
+                self.assertEqual(canonical_source["path"], source_path)
+                self.assertEqual(canonical_source["commit"], EXPECTED_DOTFILES_COMMIT)
 
     def test_nix_brain_enforces_read_only_zero_model_contract(self) -> None:
         for goal in (
@@ -107,7 +111,12 @@ class NixBashCanonicalBrainE2ETests(unittest.TestCase):
             with self.subTest(goal=goal):
                 _prolog_fact(self.nix_source, goal)
 
-        parsed = _run("nix-instantiate", "--parse", "--expr", 'builtins.abort "must-not-evaluate"')
+        parsed = _run(
+            "nix-instantiate",
+            "--parse",
+            "--expr",
+            'builtins.abort "must-not-evaluate"',
+        )
         self.assertEqual(parsed.returncode, 0, parsed.stderr)
 
         rejected = _run("nix-instantiate", "--parse", "--expr", "{ broken = ; }")
