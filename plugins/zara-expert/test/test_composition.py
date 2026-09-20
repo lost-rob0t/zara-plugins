@@ -317,6 +317,8 @@ class CompositionTests(unittest.TestCase):
                 {"indent": 8},
                 "session:42",
                 "s1",
+                workspace_id="dotfiles",
+                workspace_generation=7,
             ),
         ]
 

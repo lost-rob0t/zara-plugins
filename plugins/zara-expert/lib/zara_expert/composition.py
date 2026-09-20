@@ -540,6 +540,9 @@ class StyleOverlay:
         if self.scope in (StyleScope.PROJECT_GLOBAL, StyleScope.PROJECT_LANGUAGE):
             if not self.workspace_id or self.workspace_generation is None:
                 raise CompositionError("project style overlay requires workspace generation")
+        if self.scope is StyleScope.SESSION:
+            if not self.workspace_id or self.workspace_generation is None:
+                raise CompositionError("session style overlay requires workspace generation")
 
 
 @dataclass(frozen=True)
@@ -565,6 +568,11 @@ def resolve_style(
                 continue
             if overlay.workspace_generation != fence.workspace_generation:
                 raise CompositionError("stale project style generation")
+        if overlay.scope is StyleScope.SESSION:
+            if overlay.workspace_id != fence.workspace_id:
+                continue
+            if overlay.workspace_generation != fence.workspace_generation:
+                raise CompositionError("stale session style generation")
         applicable.append((int(overlay.scope), ordinal, overlay))
 
     fence.check()
