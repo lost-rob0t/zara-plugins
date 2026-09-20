@@ -95,8 +95,15 @@ class LispFamilyCompositionInvoker:
         if isinstance(trace, (str, bytes)):
             raise CompositionError("zara-expert Lisp host trace must be a sequence")
         evidence = tuple(str(item) for item in trace)
+        ok = raw.get("ok")
+        if ok is True:
+            status = "succeeded"
+        elif ok is False:
+            status = "failed"
+        else:
+            status = "unknown"
         return InvocationResult(
-            status="succeeded" if raw.get("ok", False) else "failed",
+            status=status,
             data={"results": raw.get("results", ())},
             evidence=evidence,
             explanation=f"{expert_id} handled {operation} through the registered Lisp expert host",
