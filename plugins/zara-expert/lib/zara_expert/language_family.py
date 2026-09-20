@@ -13,6 +13,17 @@ SYMBOL_KIND = "expert"
 SOURCE_OWNER = "lost-rob0t/dotfiles#292"
 MAX_MODEL_CALLS = 0
 RESERVED_HOST_INPUT_FIELDS = frozenset({"expert_operation"})
+_BASE_DESCRIPTOR_KEYS = frozenset(
+    {
+        "prolog",
+        "python",
+        "nim",
+        "javascript",
+        "typescript",
+        "java",
+        "kotlin",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -126,6 +137,28 @@ _SPECS: tuple[LanguageExpertSpec, ...] = (
         applicability_keywords=("kotlin", "kt", "kts", "kotlinc"),
         source_reference="dotfiles:.zara/experts/kotlin",
         upstream_issue="lost-rob0t/prolog-rlm#501",
+    ),
+    LanguageExpertSpec(
+        key="nix",
+        expert_id="zara:expert/nix",
+        namespace="nix-expert",
+        name="NixExpert",
+        language="nix",
+        extensions=(".nix",),
+        applicability_keywords=("nix", "nixos", "flake", "home-manager"),
+        source_reference="dotfiles:.zara/experts/nix",
+        upstream_issue="lost-rob0t/prolog-rlm#503",
+    ),
+    LanguageExpertSpec(
+        key="bash",
+        expert_id="zara:expert/bash",
+        namespace="bash-expert",
+        name="BashExpert",
+        language="bash",
+        extensions=(".sh", ".bash"),
+        applicability_keywords=("bash", "shell", "sh"),
+        source_reference="dotfiles:.zara/experts/bash",
+        upstream_issue="lost-rob0t/prolog-rlm#502",
     ),
 )
 
@@ -429,7 +462,15 @@ def descriptor(spec: LanguageExpertSpec, *, available: bool) -> dict[str, Any]:
 
 def descriptors(registered: Iterable[str] = ()) -> tuple[dict[str, Any], ...]:
     available = frozenset(registered)
-    return tuple(descriptor(spec, available=spec.key in available) for spec in _SPECS)
+    # Keep the core language descriptors visible as absent while optional
+    # packaged brains (currently Nix/Bash) enter the canonical registry only
+    # when their exact source is configured and preflighted. This prevents
+    # discovery from advertising a package whose pinned brain is not installed.
+    return tuple(
+        descriptor(spec, available=spec.key in available)
+        for spec in _SPECS
+        if spec.key in _BASE_DESCRIPTOR_KEYS or spec.key in available
+    )
 
 
 def register_descriptor_symbols(
