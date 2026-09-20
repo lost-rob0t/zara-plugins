@@ -26,6 +26,15 @@ _PACKAGE_NAME_RE = re.compile(r"^[a-z][a-z0-9-]{0,63}$")
 _FORBIDDEN_STYLE_KEYS = frozenset(
     {"authority", "capabilities", "permissions", "required_capabilities"}
 )
+_BUDGET_FIELDS = (
+    "max_invocations",
+    "max_depth",
+    "max_evidence",
+    "max_model_calls",
+    "invocations_used",
+    "evidence_used",
+    "model_calls_used",
+)
 
 
 def _normalized_inert_value(value: Any) -> Any:
@@ -95,31 +104,50 @@ class SharedSymbolicBudget:
     model_calls_used: int = 0
 
     def __post_init__(self) -> None:
-        for name in (
-            "max_invocations",
-            "max_depth",
-            "max_evidence",
-            "max_model_calls",
-            "invocations_used",
-            "evidence_used",
-            "model_calls_used",
-        ):
+        self._assert_integrity()
+        self.assert_zero_model_usage()
+
+    def _assert_integrity(self) -> None:
+        for name in _BUDGET_FIELDS:
             value = getattr(self, name)
-            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            if type(value) is not int or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
         if self.max_invocations == 0:
             raise ValueError("max_invocations must be positive")
         if self.max_evidence == 0:
             raise ValueError("max_evidence must be positive")
+
+    def snapshot(self) -> tuple[tuple[str, int], ...]:
+        self._assert_integrity()
         self.assert_zero_model_usage()
+        return tuple((name, getattr(self, name)) for name in _BUDGET_FIELDS)
+
+    def assert_unchanged_by_invoker(
+        self,
+        snapshot: tuple[tuple[str, int], ...],
+    ) -> None:
+        changed = []
+        expected = dict(snapshot)
+        for name in _BUDGET_FIELDS:
+            current = getattr(self, name)
+            wanted = expected[name]
+            if type(current) is not int or current != wanted:
+                changed.append(name)
+        if not changed:
+            return
+        for name in _BUDGET_FIELDS:
+            setattr(self, name, expected[name])
+        names = ", ".join(changed)
+        raise CompositionError(f"expert invoker mutated shared symbolic budget: {names}")
 
     def assert_zero_model_usage(self) -> None:
-        if self.max_model_calls != 0:
+        if type(self.max_model_calls) is not int or self.max_model_calls != 0:
             raise ValueError("pure symbolic composition requires max_model_calls=0")
-        if self.model_calls_used != 0:
+        if type(self.model_calls_used) is not int or self.model_calls_used != 0:
             raise CompositionError("pure symbolic model-call ledger is nonzero")
 
     def admit(self, depth: int) -> None:
+        self._assert_integrity()
         self.assert_zero_model_usage()
         if depth > self.max_depth:
             raise CompositionError("expert delegation depth budget exceeded")
@@ -128,9 +156,10 @@ class SharedSymbolicBudget:
         self.invocations_used += 1
 
     def record_evidence(self, count: int) -> None:
+        self._assert_integrity()
         self.assert_zero_model_usage()
-        if count < 0:
-            raise ValueError("evidence count must be non-negative")
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            raise ValueError("evidence count must be a non-negative integer")
         if self.evidence_used + count > self.max_evidence:
             raise CompositionError("expert evidence budget exceeded")
         self.evidence_used += count
@@ -417,14 +446,18 @@ class MetaExpertComposer:
         next_signatures = (*signatures, signature)
         next_labels = (*labels, label)
         budget.admit(len(signatures))
-        result = self._invoker(
-            expert_id,
-            operation,
-            _normalized_inert_value(input_data),
-            budget=budget,
-            fence=fence,
-            parent_path=labels,
-        )
+        budget_snapshot = budget.snapshot()
+        try:
+            result = self._invoker(
+                expert_id,
+                operation,
+                _normalized_inert_value(input_data),
+                budget=budget,
+                fence=fence,
+                parent_path=labels,
+            )
+        finally:
+            budget.assert_unchanged_by_invoker(budget_snapshot)
         fence.check()
         budget.assert_zero_model_usage()
         if result.model_calls != 0:
