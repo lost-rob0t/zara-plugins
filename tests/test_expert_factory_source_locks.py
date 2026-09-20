@@ -7,8 +7,8 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-DOTFILES_PRODUCER_PR = 293
-DOTFILES_PRODUCER_COMMIT = "5977ca3c45d431c6f7f7589c962dcd714877ae18"
+DOTFILES_PRODUCER_PR = 295
+DOTFILES_PRODUCER_COMMIT = "113cfdedfc4db25557ef072315e48ac4c6e760fd"
 PACKAGES = {
     "javascript": {
         "package": "zara-javascript-expert",
