@@ -106,6 +106,34 @@ def _build_expert_authority():
             self._knowledge_bases: dict[str, tuple[str, ...]] = {}
             registries[self] = {}
 
+        def preflight_registration(
+            self,
+            namespace: str,
+            knowledge_bases: Iterable[Path],
+            *,
+            predicates: Mapping[str, int] | None = None,
+        ) -> tuple[str, tuple[str, ...], dict[str, int]]:
+            namespace, files, requested_predicates = self._registration_request(
+                namespace,
+                knowledge_bases,
+                predicates,
+            )
+            existing_files = self._knowledge_bases.get(namespace)
+            if existing_files is None:
+                return namespace, files, requested_predicates
+
+            existing_capabilities = registries[self].get(namespace, {})
+            existing_predicates = {
+                predicate: capability.arity
+                for predicate, capability in existing_capabilities.items()
+                if is_registered_predicate_capability(capability)
+            }
+            if existing_files != files or existing_predicates != requested_predicates:
+                raise ExpertError(
+                    f"expert namespace {namespace!r} is already registered with different authority"
+                )
+            return namespace, files, requested_predicates
+
         def register(
             self,
             namespace: str,
@@ -113,24 +141,13 @@ def _build_expert_authority():
             *,
             predicates: Mapping[str, int] | None = None,
         ) -> None:
-            namespace, files, requested_predicates = self._registration_request(
+            namespace, files, requested_predicates = self.preflight_registration(
                 namespace,
                 knowledge_bases,
-                predicates,
+                predicates=predicates,
             )
-            existing_files = self._knowledge_bases.get(namespace)
-            if existing_files is not None:
-                existing_capabilities = registries[self].get(namespace, {})
-                existing_predicates = {
-                    predicate: capability.arity
-                    for predicate, capability in existing_capabilities.items()
-                    if is_registered_predicate_capability(capability)
-                }
-                if existing_files == files and existing_predicates == requested_predicates:
-                    return
-                raise ExpertError(
-                    f"expert namespace {namespace!r} is already registered with different authority"
-                )
+            if namespace in self._knowledge_bases:
+                return
 
             self.state_files(namespace)
             capabilities = {
