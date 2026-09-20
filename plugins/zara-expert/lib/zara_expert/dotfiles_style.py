@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
+from .composition import InvocationFence
 from .domain import ExpertError, ExpertHost
 from .dotfiles_family import NAMESPACE
 
@@ -22,9 +23,18 @@ class DotfilesStyleSource:
     language: str
     source_reference: str
     revision: str
+    workspace_id: str
+    workspace_generation: int
 
-    @property
-    def reference(self) -> str:
+    def reference_for(self, fence: InvocationFence) -> str:
+        """Return an inert style reference only for the generation that resolved it."""
+
+        fence.check()
+        if (
+            fence.workspace_id != self.workspace_id
+            or fence.workspace_generation != self.workspace_generation
+        ):
+            raise ExpertError("DotfilesExpert style source is stale for workspace generation")
         return f"style:{self.revision}:{self.source_reference}"
 
 
@@ -42,14 +52,33 @@ def _single_result(result: dict, *, predicate: str) -> str:
     return value
 
 
-def _style_source(host: ExpertHost, *, scope: str, language: str) -> DotfilesStyleSource:
-    raw = _single_result(
-        host.query(
-            NAMESPACE,
-            "style_source",
-            [scope, language, {"var": "Path"}, {"var": "Revision"}],
-        ),
+def _query_one(
+    host: ExpertHost,
+    *,
+    predicate: str,
+    arguments: list,
+    fence: InvocationFence,
+) -> str:
+    """Fence every registered-predicate read before and after host dispatch."""
+
+    fence.check()
+    result = host.query(NAMESPACE, predicate, arguments)
+    fence.check()
+    return _single_result(result, predicate=predicate)
+
+
+def _style_source(
+    host: ExpertHost,
+    *,
+    scope: str,
+    language: str,
+    fence: InvocationFence,
+) -> DotfilesStyleSource:
+    raw = _query_one(
+        host,
         predicate="style_source",
+        arguments=[scope, language, {"var": "Path"}, {"var": "Revision"}],
+        fence=fence,
     )
     match = _STYLE_SOURCE_RE.fullmatch(raw)
     if match is None:
@@ -67,13 +96,11 @@ def _style_source(host: ExpertHost, *, scope: str, language: str) -> DotfilesSty
         raise ExpertError("DotfilesExpert style_source escaped the canonical .zara/style root")
 
     revision_key = "project" if scope == "project" else language
-    revision_raw = _single_result(
-        host.query(
-            NAMESPACE,
-            "style_revision",
-            [revision_key, {"var": "Revision"}],
-        ),
+    revision_raw = _query_one(
+        host,
         predicate="style_revision",
+        arguments=[revision_key, {"var": "Revision"}],
+        fence=fence,
     )
     revision_match = _STYLE_REVISION_RE.fullmatch(revision_raw)
     if revision_match is None:
@@ -87,27 +114,37 @@ def _style_source(host: ExpertHost, *, scope: str, language: str) -> DotfilesSty
         language=language,
         source_reference=source_reference,
         revision=revision,
+        workspace_id=fence.workspace_id,
+        workspace_generation=fence.workspace_generation,
     )
 
 
 def style_sources_for_language(
     host: ExpertHost,
     language: str,
+    *,
+    fence: InvocationFence,
 ) -> tuple[DotfilesStyleSource, DotfilesStyleSource]:
     """Resolve trusted project + language style refs through registered predicates.
 
-    This returns inert source references only. It does not read, consult, execute,
-    or grant authority from the style files, and it has no provider/model fallback.
+    Resolution is bound to the caller-owned workspace generation. Every host read
+    is fenced before and after dispatch, so cancellation or a project switch can
+    never publish a late style reference. Returned references are inert and must
+    be revalidated against the same fence before use; no style file is read,
+    consulted, executed, or granted authority here.
     """
 
     if language not in _SUPPORTED_LANGUAGES:
         raise ExpertError(f"unsupported DotfilesExpert style language: {language!r}")
-    project = _style_source(host, scope="project", language="any")
+    fence.check()
+    project = _style_source(host, scope="project", language="any", fence=fence)
     language_source = _style_source(
         host,
         scope="project_language",
         language=language,
+        fence=fence,
     )
+    fence.check()
     return project, language_source
 
 
