@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -48,7 +49,7 @@ _PREDICATES: Mapping[str, int] = {
 _SPECS: tuple[LispExpertSpec, ...] = (
     LispExpertSpec(
         key="lisp",
-        expert_id="lisp",
+        expert_id="zara:expert/lisp",
         namespace="lisp",
         name="LispExpert",
         dialect="lisp",
@@ -57,7 +58,7 @@ _SPECS: tuple[LispExpertSpec, ...] = (
     ),
     LispExpertSpec(
         key="common-lisp",
-        expert_id="common-lisp",
+        expert_id="zara:expert/common-lisp",
         namespace="common-lisp",
         name="CommonLispExpert",
         dialect="common-lisp",
@@ -66,7 +67,7 @@ _SPECS: tuple[LispExpertSpec, ...] = (
     ),
     LispExpertSpec(
         key="emacs-lisp",
-        expert_id="emacs-lisp",
+        expert_id="zara:expert/emacs-lisp",
         namespace="emacs-lisp",
         name="EmacsLispExpert",
         dialect="emacs-lisp",
@@ -75,7 +76,17 @@ _SPECS: tuple[LispExpertSpec, ...] = (
     ),
 )
 
-_SPEC_BY_ID = {spec.expert_id: spec for spec in _SPECS}
+_SPEC_BY_ID: dict[str, LispExpertSpec] = {}
+for _spec in _SPECS:
+    _SPEC_BY_ID[_spec.key] = _spec
+    _SPEC_BY_ID[_spec.expert_id] = _spec
+
+
+_APP_KEYWORDS: Mapping[str, tuple[str, ...]] = {
+    "lisp": ("lisp",),
+    "common-lisp": ("common-lisp", "commonlisp", "lisp"),
+    "emacs-lisp": ("emacs-lisp", "elisp", "lisp"),
+}
 
 
 def lisp_family_specs() -> tuple[LispExpertSpec, ...]:
@@ -113,7 +124,7 @@ def register_lisp_family(
         raise ExpertError("lisp_family_sources must be a mapping")
 
     registered: set[str] = set()
-    unknown = set(source_files_by_expert) - set(_SPEC_BY_ID)
+    unknown = set(source_files_by_expert) - {spec.key for spec in _SPECS}
     if unknown:
         raise ExpertError(f"unknown Lisp expert source keys: {sorted(unknown)!r}")
 
@@ -125,7 +136,7 @@ def register_lisp_family(
             raise ExpertError(f"source list for {spec.key!r} must be a sequence of paths")
         files = _source_files(configured)
         host.register(spec.namespace, files, predicates=_PREDICATES)
-        registered.add(spec.expert_id)
+        registered.add(spec.key)
     return frozenset(registered)
 
 
@@ -143,6 +154,12 @@ def invoke_lisp_operation(
             "repair.apply requires Zara's canonical typed edit/effect path; "
             "expert registration grants no write authority"
         )
+    if operation == "repair.preview" and spec.key != "lisp":
+        raise ExpertError(
+            f"repair.preview for {spec.expert_id} requires canonical ZARA-EXPERT/1 "
+            "delegation to zara:expert/lisp with the caller's remaining shared budget; "
+            "direct dialect-host dispatch is forbidden"
+        )
     binding = _OPERATION_BINDINGS.get(operation)
     if binding is None:
         raise ExpertError(f"unsupported Lisp expert operation: {operation!r}")
@@ -150,67 +167,98 @@ def invoke_lisp_operation(
     return method(spec.namespace, binding.predicate, arguments)
 
 
-def _operation_descriptor(name: str, binding: OperationBinding) -> dict[str, Any]:
+def _fields(*items: tuple[str, str, bool]) -> dict[str, list[dict[str, Any]]]:
     return {
-        "name": name,
-        "kind": "symbolic",
-        "binding": {
-            "authority": "registered-predicate",
-            "predicate": binding.predicate,
-            "arity": binding.arity,
-        },
-        "effects": [],
-        "max_model_calls": 0,
+        "fields": [
+            {"name": name, "type": field_type, "required": required}
+            for name, field_type, required in items
+        ]
     }
+
+
+def _operation_descriptor(name: str) -> dict[str, Any]:
+    if name == "repair.apply":
+        return {
+            "operation_id": name,
+            "input_schema": _fields(
+                ("repair", "object", True),
+                ("expected_preimage", "string", True),
+                ("source_generation", "reference", True),
+            ),
+            "output_schema": _fields(
+                ("effect_receipt", "object", True),
+                ("postcondition_evidence", "object", True),
+            ),
+        }
+    return {
+        "operation_id": name,
+        "input_schema": _fields(("arguments", "list", False)),
+        "output_schema": _fields(
+            ("result", "object", True),
+            ("evidence_refs", "list", False),
+        ),
+    }
+
+
+def _manifest_digest(spec: LispExpertSpec) -> str:
+    bindings = ",".join(
+        f"{operation}:{binding.predicate}/{binding.arity}:{binding.mode}"
+        for operation, binding in sorted(_OPERATION_BINDINGS.items())
+    )
+    material = "|".join(
+        (
+            PROTOCOL,
+            spec.expert_id,
+            spec.source_reference,
+            spec.upstream_issue,
+            SOURCE_OWNER,
+            bindings,
+            "dialect-repair-preview:delegate-to-zara:expert/lisp",
+            "repair.apply:canonical-zara-effect-path",
+            f"max_model_calls={MAX_MODEL_CALLS}",
+        )
+    )
+    return f"sha256:{hashlib.sha256(material.encode('utf-8')).hexdigest()}"
 
 
 def descriptor(spec: LispExpertSpec, *, available: bool) -> dict[str, Any]:
     operations = [
-        _operation_descriptor(name, binding)
-        for name, binding in _OPERATION_BINDINGS.items()
+        _operation_descriptor(name)
+        for name in (*_OPERATION_BINDINGS.keys(), "repair.apply")
     ]
-    operations.append(
-        {
-            "name": "repair.apply",
-            "kind": "effect",
-            "binding": None,
-            "effects": [
-                {
-                    "type": "typed-edit",
-                    "authority": "canonical-zara-effect-path",
-                    "requires_expected_preimage": True,
-                    "requires_fresh_postcondition": True,
-                }
-            ],
-            "availability": "requires-canonical-edit-capability",
-            "max_model_calls": 0,
-        }
-    )
-    return {
+    item: dict[str, Any] = {
         "protocol": PROTOCOL,
         "expert_id": spec.expert_id,
-        "version": "1",
+        "expert_version": "1",
         "package_namespace": "zara-expert",
+        "manifest_digest": _manifest_digest(spec),
         "name": spec.name,
-        "description": f"Pure-symbolic {spec.name} adapter for {spec.dialect} structural and style reasoning.",
+        "description": (
+            f"Pure-symbolic {spec.name} adapter for {spec.dialect} structural and style reasoning; "
+            f"semantics {spec.upstream_issue}, canonical brain {SOURCE_OWNER}."
+        ),
         "source_reference": spec.source_reference,
-        "upstream_semantics": spec.upstream_issue,
-        "canonical_source_owner": SOURCE_OWNER,
         "reasoning_kind": "symbolic",
-        "dialect": spec.dialect,
         "operations": operations,
-        "required_observations": ["source-bytes", "source-generation", "project-style-context"],
+        "applicability": {"keywords": list(_APP_KEYWORDS[spec.key])},
         "required_capabilities": [],
-        "fallback": {"provider": False, "model": False, "remote": False},
-        "delegation": {"shared_budget_required": True, "authority_may_only_narrow": True},
+        "possible_effects": ["filesystem_write"],
+        "supported_engines": ["swipl"],
+        "supported_platforms": [],
+        "fallback_policy": "fail_closed",
+        "delegation_policy": "never" if spec.key == "lisp" else "children",
         "resource_limits": {"max_model_calls": MAX_MODEL_CALLS},
-        "availability": "available" if available else "source-unavailable",
+        "registry_generation": 0,
+        "availability": "available" if available else "absent",
     }
+    if not available:
+        item["unavailable_reason"] = "source-unavailable"
+    return item
 
 
 def descriptors(registered: Iterable[str] = ()) -> tuple[dict[str, Any], ...]:
     available = frozenset(registered)
-    return tuple(descriptor(spec, available=spec.expert_id in available) for spec in _SPECS)
+    return tuple(descriptor(spec, available=spec.key in available) for spec in _SPECS)
 
 
 def register_descriptor_symbols(runtime: Any, registered: Iterable[str] = ()) -> tuple[int, ...]:
@@ -218,7 +266,7 @@ def register_descriptor_symbols(runtime: Any, registered: Iterable[str] = ()) ->
     for item in descriptors(registered):
         registrations.append(
             runtime.register_symbol(
-                f"zara:expert/{item['expert_id']}",
+                item["expert_id"],
                 SYMBOL_KIND,
                 item,
                 docs=item["description"],

@@ -20,6 +20,30 @@ from zara_expert.lisp_family import (
 from zara_expert.plugin import ZaraExpertPlugin
 
 
+_CANONICAL_DESCRIPTOR_KEYS = {
+    "protocol",
+    "expert_id",
+    "expert_version",
+    "package_namespace",
+    "manifest_digest",
+    "name",
+    "description",
+    "source_reference",
+    "reasoning_kind",
+    "operations",
+    "applicability",
+    "required_capabilities",
+    "possible_effects",
+    "supported_engines",
+    "supported_platforms",
+    "fallback_policy",
+    "delegation_policy",
+    "resource_limits",
+    "registry_generation",
+    "availability",
+}
+
+
 class RecordingBackend:
     def __init__(self):
         self.calls = []
@@ -58,31 +82,52 @@ class LispFamilyAdapterTests(unittest.TestCase):
         path.write_text("% canonical-brain-fixture\n", encoding="utf-8")
         return path
 
-    def test_descriptors_are_symbolic_provider_free_and_zero_model(self):
+    def test_descriptors_are_canonical_symbolic_provider_free_and_zero_model(self):
         items = descriptors()
-        self.assertEqual([item["expert_id"] for item in items], ["lisp", "common-lisp", "emacs-lisp"])
+        self.assertEqual(
+            [item["expert_id"] for item in items],
+            [
+                "zara:expert/lisp",
+                "zara:expert/common-lisp",
+                "zara:expert/emacs-lisp",
+            ],
+        )
         for item in items:
             with self.subTest(expert=item["expert_id"]):
                 self.assertEqual(item["protocol"], PROTOCOL)
                 self.assertEqual(item["reasoning_kind"], "symbolic")
                 self.assertEqual(item["resource_limits"]["max_model_calls"], 0)
-                self.assertEqual(item["fallback"], {"provider": False, "model": False, "remote": False})
-                self.assertEqual(item["availability"], "source-unavailable")
+                self.assertEqual(item["fallback_policy"], "fail_closed")
+                self.assertNotIn("model_inference", item["possible_effects"])
+                self.assertEqual(item["availability"], "absent")
+                self.assertEqual(item["unavailable_reason"], "source-unavailable")
                 self.assertTrue(item["source_reference"].startswith("dotfiles:.zara/experts/"))
+                self.assertTrue(item["manifest_digest"].startswith("sha256:"))
+                self.assertEqual(len(item["manifest_digest"].split(":", 1)[1]), 64)
         self.assertEqual(MAX_MODEL_CALLS, 0)
 
-    def test_operation_bindings_are_registered_predicates_not_raw_goals(self):
+    def test_public_descriptor_does_not_leak_private_predicate_authority(self):
+        private_predicates = set(registered_predicates())
+        self.assertTrue(private_predicates)
         for item in descriptors():
+            keys = set(item)
+            self.assertEqual(keys - {"unavailable_reason"}, _CANONICAL_DESCRIPTOR_KEYS)
+            rendered = json.dumps(item, sort_keys=True)
+            for predicate in private_predicates:
+                self.assertNotIn(predicate, rendered)
             for operation in item["operations"]:
-                if operation["name"] == "repair.apply":
-                    self.assertIsNone(operation["binding"])
-                    continue
-                binding = operation["binding"]
-                self.assertEqual(binding["authority"], "registered-predicate")
-                self.assertIn(binding["predicate"], registered_predicates())
-                self.assertNotIn("goal", binding)
-                self.assertNotIn("module", binding)
-                self.assertNotIn("path", binding)
+                self.assertEqual(
+                    set(operation),
+                    {"operation_id", "input_schema", "output_schema"},
+                )
+                self.assertEqual(set(operation["input_schema"]), {"fields"})
+                self.assertEqual(set(operation["output_schema"]), {"fields"})
+
+    def test_dialect_specializations_declare_canonical_child_delegation(self):
+        items = {item["expert_id"]: item for item in descriptors()}
+        self.assertEqual(items["zara:expert/lisp"]["delegation_policy"], "never")
+        self.assertEqual(items["zara:expert/common-lisp"]["delegation_policy"], "children")
+        self.assertEqual(items["zara:expert/emacs-lisp"]["delegation_policy"], "children")
 
     def test_structural_apply_never_bypasses_canonical_effect_boundary(self):
         source = self._brain("lisp")
@@ -97,28 +142,51 @@ class LispFamilyAdapterTests(unittest.TestCase):
             )
         self.assertEqual(self.backend.calls, [])
 
-    def test_preview_and_verify_route_through_host_owned_predicate_capabilities(self):
-        source = self._brain("common-lisp")
-        register_lisp_family(self.host, {"common-lisp": [source]})
+    def test_base_preview_and_dialect_verify_use_registered_predicate_capabilities(self):
+        lisp_source = self._brain("lisp")
+        common_source = self._brain("common-lisp")
+        register_lisp_family(
+            self.host,
+            {"lisp": [lisp_source], "common-lisp": [common_source]},
+        )
 
         preview = invoke_lisp_operation(
             self.host,
-            "common-lisp",
+            "lisp",
             "repair.preview",
             ["(defun x ()", "missing-close", {"var": "Repair"}],
         )
         verify = invoke_lisp_operation(
             self.host,
-            "common-lisp",
+            "zara:expert/common-lisp",
             "repair.verify",
             ["(defun x ()", "(defun x ())", {"var": "Evidence"}],
         )
 
         self.assertEqual(preview["results"], ["symbolic-result"])
         self.assertEqual(verify["results"], ["symbolic-result"])
-        self.assertEqual([call["capability"].predicate for call in self.backend.calls], ["preview_repair", "verify_repair"])
+        self.assertEqual(
+            [call["capability"].predicate for call in self.backend.calls],
+            ["preview_repair", "verify_repair"],
+        )
         self.assertNotIn("goal", self.backend.calls[0])
         self.assertNotIn("predicate", self.backend.calls[0])
+
+    def test_dialect_preview_fails_closed_until_canonical_shared_budget_delegation(self):
+        common_source = self._brain("common-lisp")
+        register_lisp_family(self.host, {"common-lisp": [common_source]})
+
+        with self.assertRaisesRegex(
+            ExpertError,
+            "canonical ZARA-EXPERT/1 delegation to zara:expert/lisp",
+        ):
+            invoke_lisp_operation(
+                self.host,
+                "common-lisp",
+                "repair.preview",
+                ["(defun x ()", "missing-close", {"var": "Repair"}],
+            )
+        self.assertEqual(self.backend.calls, [])
 
     def test_configured_sources_are_files_and_unknown_adapters_fail_closed(self):
         with self.assertRaisesRegex(ExpertError, "regular file"):
@@ -155,10 +223,18 @@ class LispFamilyAdapterTests(unittest.TestCase):
 
         rendered = json.loads(plugin.lisp_family_descriptors())
         availability = {item["expert_id"]: item["availability"] for item in rendered}
-        self.assertEqual(availability["emacs-lisp"], "available")
-        self.assertEqual(availability["lisp"], "source-unavailable")
+        self.assertEqual(availability["zara:expert/emacs-lisp"], "available")
+        self.assertEqual(availability["zara:expert/lisp"], "absent")
         self.assertEqual(json.loads(plugin.status())["model_calls"], 0)
         self.assertEqual(len(runtime.registrations), 3)
+
+    def test_lisp_family_does_not_export_parallel_invocation_or_descriptor_tools(self):
+        plugin = ZaraExpertPlugin(backend=self.backend, state_root=self.root / "plugin-state")
+        names = {tool.name for tool in plugin.tools()}
+        self.assertNotIn("expert.lisp_invoke", names)
+        self.assertNotIn("expert.lisp_descriptors", names)
+        self.assertIn("expert.query", names)
+        self.assertIn("expert.explain", names)
 
 
 if __name__ == "__main__":
