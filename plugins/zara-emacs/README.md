@@ -46,6 +46,8 @@ emacsclient = "emacsclient"
 server_name = "server"
 timeout_seconds = 10
 notes_root = "/home/me/notes/org"
+commands = { "window.split-right" = "split-window-right", "window.other" = "other-window" }
+voice_commands = { "split window right" = "window.split-right", "other window" = "window.other" }
 
 [projects]
 zara = "/home/me/src/zara"
