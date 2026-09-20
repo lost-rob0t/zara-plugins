@@ -76,13 +76,18 @@ def _constants(package: str, module: str) -> dict[str, object]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     values: dict[str, object] = {}
     for node in tree.body:
-        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+            value = node.value
+        elif isinstance(node, ast.AnnAssign):
+            target = node.target
+            value = node.value
+        else:
             continue
-        target = node.targets[0]
-        if not isinstance(target, ast.Name):
+        if not isinstance(target, ast.Name) or value is None:
             continue
         try:
-            values[target.id] = ast.literal_eval(node.value)
+            values[target.id] = ast.literal_eval(value)
         except (TypeError, ValueError):
             continue
     return values
@@ -122,9 +127,10 @@ class ExpertFactoryLanguageContractTests(unittest.TestCase):
                     field["name"]: field
                     for field in operation_fields["inspect_jvm_project"]
                 }
+                self.assertEqual(set(inspect_fields) & JVM_METADATA_FIELDS, JVM_METADATA_FIELDS, language)
                 self.assertTrue(inspect_fields["jvm_project_metadata"]["required"], language)
                 for name in JVM_METADATA_FIELDS:
-                    self.assertEqual(inspect_fields.get(name, {"type": "object"})["type"], "object", language)
+                    self.assertEqual(inspect_fields[name]["type"], "object", language)
             else:
                 self.assertTrue(JVM_METADATA_FIELDS.isdisjoint(names), language)
 
@@ -141,6 +147,8 @@ class ExpertFactoryLanguageContractTests(unittest.TestCase):
                 case["upstream"],
                 language,
             )
+            self.assertEqual(lock["zara_contract"]["issue"], 1233, language)
+            self.assertEqual(lock["zara_contract"]["schema_pr"], 1273, language)
 
 
 if __name__ == "__main__":
