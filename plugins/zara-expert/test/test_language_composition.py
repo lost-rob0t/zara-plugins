@@ -239,7 +239,15 @@ class LanguageCompositionTests(unittest.TestCase):
         )
         result = SimpleNamespace(
             verdict=SimpleNamespace(value="succeeded"),
-            data={"result": {"kind": "nix-inspection"}},
+            data={
+                "result": {
+                    "kind": "nix-inspection",
+                    "model_calls": 0,
+                    "effect_receipts": [],
+                    "evidence": ["raw:nix-evidence"],
+                    "explanation": ["rule:nix-inspection"],
+                }
+            },
             evidence_refs=("ev:core:nix",),
             usage={"model_calls": 0},
             effect_receipts=(),
