@@ -14,6 +14,7 @@ SOURCE_OWNER = "lost-rob0t/dotfiles#292"
 MAX_MODEL_CALLS = 0
 RESERVED_HOST_INPUT_FIELDS = frozenset({"expert_operation"})
 _RESULT_VARIABLE = {"var": "Result"}
+_MAX_CORE_EVIDENCE_REFS = 32
 
 
 @dataclass(frozen=True)
@@ -216,6 +217,35 @@ def _core_operation_arguments(
     return [*public_arguments, dict(_RESULT_VARIABLE)]
 
 
+def _core_evidence_refs(result: Mapping[str, Any]) -> list[str]:
+    """Project bounded proof lineage without exposing raw result text as a ref."""
+
+    raw_trace = result.get("trace", ())
+    if isinstance(raw_trace, (str, bytes)) or not isinstance(raw_trace, (list, tuple)):
+        raise ExpertError("Lisp expert trace must be a sequence")
+    if len(raw_trace) > _MAX_CORE_EVIDENCE_REFS:
+        raise ExpertError(
+            f"Lisp expert trace exceeds {_MAX_CORE_EVIDENCE_REFS} entries"
+        )
+    if raw_trace:
+        return [str(item) for item in raw_trace]
+
+    raw_results = result.get("results", ())
+    if isinstance(raw_results, (str, bytes)) or not isinstance(raw_results, (list, tuple)):
+        raise ExpertError("Lisp expert results must be a sequence")
+    if len(raw_results) > _MAX_CORE_EVIDENCE_REFS:
+        raise ExpertError(
+            f"Lisp expert evidence exceeds {_MAX_CORE_EVIDENCE_REFS} entries"
+        )
+
+    refs: list[str] = []
+    for item in raw_results:
+        encoded = str(item).encode("utf-8", errors="strict")
+        digest = hashlib.sha256(encoded).hexdigest()
+        refs.append(f"evidence:lisp:sha256:{digest}")
+    return refs
+
+
 def make_lisp_expert_handler(host: ExpertHost, expert_id: str):
     """Return one handler compatible with Zara Core's ZARA-EXPERT/1 registry.
 
@@ -266,6 +296,7 @@ def make_lisp_expert_handler(host: ExpertHost, expert_id: str):
             expert_operation,
             private_arguments,
         )
+        evidence_refs = _core_evidence_refs(result)
         ok = result.get("ok")
         if ok is True:
             verdict = "succeeded"
@@ -276,7 +307,7 @@ def make_lisp_expert_handler(host: ExpertHost, expert_id: str):
         return {
             "verdict": verdict,
             "data": {"result": result},
-            "evidence_refs": [],
+            "evidence_refs": evidence_refs,
             "usage": {"model_calls": MAX_MODEL_CALLS},
             "effect_receipts": [],
         }
