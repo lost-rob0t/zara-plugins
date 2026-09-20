@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -11,8 +12,6 @@ PROTOCOL = "ZARA-EXPERT/1"
 SYMBOL_KIND = "expert"
 SOURCE_OWNER = "lost-rob0t/dotfiles#292"
 MAX_MODEL_CALLS = 0
-APPLICABILITY_SCHEMA = "schema:zara.language-expert.applicability.v1"
-RESULT_SCHEMA = "schema:zara.language-expert.result.v1"
 
 
 @dataclass(frozen=True)
@@ -30,6 +29,7 @@ class LanguageExpertSpec:
     name: str
     language: str
     extensions: tuple[str, ...]
+    applicability_keywords: tuple[str, ...]
     source_reference: str
     upstream_issue: str
 
@@ -51,37 +51,43 @@ _PREDICATES: Mapping[str, int] = {
 _SPECS: tuple[LanguageExpertSpec, ...] = (
     LanguageExpertSpec(
         key="prolog",
-        expert_id="prolog",
+        expert_id="zara:expert/prolog",
         namespace="prolog-expert",
         name="PrologExpert",
         language="prolog",
         extensions=(".pl", ".pro", ".prolog"),
+        applicability_keywords=("prolog", "swi-prolog", "dcg"),
         source_reference="dotfiles:.zara/experts/prolog",
         upstream_issue="lost-rob0t/prolog-rlm#495",
     ),
     LanguageExpertSpec(
         key="python",
-        expert_id="python",
+        expert_id="zara:expert/python",
         namespace="python-expert",
         name="PythonExpert",
         language="python",
         extensions=(".py", ".pyi"),
+        applicability_keywords=("python", "py", "pyi"),
         source_reference="dotfiles:.zara/experts/python",
         upstream_issue="lost-rob0t/prolog-rlm#498",
     ),
     LanguageExpertSpec(
         key="nim",
-        expert_id="nim",
+        expert_id="zara:expert/nim",
         namespace="nim-expert",
         name="NimExpert",
         language="nim",
         extensions=(".nim", ".nims", ".nimble"),
+        applicability_keywords=("nim", "nims", "nimble"),
         source_reference="dotfiles:.zara/experts/nim",
         upstream_issue="lost-rob0t/prolog-rlm#499",
     ),
 )
 
-_SPEC_BY_ID = {spec.expert_id: spec for spec in _SPECS}
+_SPEC_BY_ID: dict[str, LanguageExpertSpec] = {}
+for _spec in _SPECS:
+    _SPEC_BY_ID[_spec.key] = _spec
+    _SPEC_BY_ID[_spec.expert_id] = _spec
 
 
 def language_family_specs() -> tuple[LanguageExpertSpec, ...]:
@@ -97,46 +103,128 @@ def matching_experts(path: str | Path) -> tuple[str, ...]:
     return tuple(spec.expert_id for spec in _SPECS if suffix in spec.extensions)
 
 
+def _fields(*items: tuple[str, str, bool]) -> dict[str, list[dict[str, Any]]]:
+    return {
+        "fields": [
+            {"name": name, "type": field_type, "required": required}
+            for name, field_type, required in items
+        ]
+    }
+
+
+def _operation_schema(operation: str) -> dict[str, Any]:
+    common_input = (
+        ("source", "string", True),
+        ("source_generation", "reference", True),
+        ("project_style", "reference", False),
+    )
+    common_output = (
+        ("evidence_refs", "list", False),
+        ("explanation_refs", "list", False),
+    )
+    if operation == "match":
+        return {
+            "operation_id": operation,
+            "input_schema": _fields(
+                ("path", "string", True),
+                ("source_generation", "reference", True),
+                ("project_style", "reference", False),
+            ),
+            "output_schema": _fields(
+                ("applicable", "boolean", True),
+                *common_output,
+            ),
+        }
+    if operation == "diagnose":
+        return {
+            "operation_id": operation,
+            "input_schema": _fields(*common_input),
+            "output_schema": _fields(
+                ("diagnostics", "list", True),
+                *common_output,
+            ),
+        }
+    if operation == "repair.preview":
+        return {
+            "operation_id": operation,
+            "input_schema": _fields(
+                *common_input,
+                ("diagnostic_ref", "reference", True),
+            ),
+            "output_schema": _fields(
+                ("repair", "object", True),
+                *common_output,
+            ),
+        }
+    if operation == "repair.verify":
+        return {
+            "operation_id": operation,
+            "input_schema": _fields(
+                ("original_source", "string", True),
+                ("candidate_source", "string", True),
+                ("source_generation", "reference", True),
+                ("project_style", "reference", False),
+            ),
+            "output_schema": _fields(
+                ("verified", "boolean", True),
+                ("postcondition_evidence", "object", True),
+                *common_output,
+            ),
+        }
+    if operation == "style.rules":
+        return {
+            "operation_id": operation,
+            "input_schema": _fields(*common_input),
+            "output_schema": _fields(
+                ("style_rules", "list", True),
+                ("style_provenance", "list", True),
+                *common_output,
+            ),
+        }
+    if operation == "explain":
+        return {
+            "operation_id": operation,
+            "input_schema": _fields(
+                ("decision_ref", "reference", True),
+                ("source_generation", "reference", True),
+            ),
+            "output_schema": _fields(
+                ("explanation", "object", True),
+                *common_output,
+            ),
+        }
+    if operation == "repair.apply":
+        return {
+            "operation_id": operation,
+            "input_schema": _fields(
+                ("repair", "object", True),
+                ("expected_preimage", "string", True),
+                ("source_generation", "reference", True),
+            ),
+            "output_schema": _fields(
+                ("effect_receipt", "object", True),
+                ("postcondition_evidence", "object", True),
+            ),
+        }
+    return {
+        "operation_id": operation,
+        "input_schema": _fields(*common_input),
+        "output_schema": _fields(
+            ("result", "object", True),
+            *common_output,
+        ),
+    }
+
+
 def language_expert_schemas() -> dict[str, dict[str, Any]]:
-    """Return inert domain schemas; ZARA-EXPERT/1 itself remains Zara-owned."""
+    """Expose closed operation schemas without creating a second protocol."""
 
     return {
-        APPLICABILITY_SCHEMA: {
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["path", "source_generation", "project_style"],
-            "properties": {
-                "path": {"type": "string", "minLength": 1, "maxLength": 4096},
-                "source_generation": {"type": "string", "minLength": 1, "maxLength": 128},
-                "project_style": {"type": "string", "minLength": 1, "maxLength": 128},
-            },
-        },
-        RESULT_SCHEMA: {
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "type": "object",
-            "additionalProperties": False,
-            "required": [
-                "protocol",
-                "expert_id",
-                "operation",
-                "source_reference",
-                "evidence",
-                "explanation",
-                "model_calls",
-            ],
-            "properties": {
-                "protocol": {"const": PROTOCOL},
-                "expert_id": {"enum": [spec.expert_id for spec in _SPECS]},
-                "operation": {
-                    "enum": [*list(_OPERATION_BINDINGS), "repair.apply"],
-                },
-                "source_reference": {"type": "string"},
-                "evidence": {"type": "array"},
-                "explanation": {"type": "array"},
-                "model_calls": {"const": 0},
-            },
-        },
+        operation: {
+            "input_schema": _operation_schema(operation)["input_schema"],
+            "output_schema": _operation_schema(operation)["output_schema"],
+        }
+        for operation in (*_OPERATION_BINDINGS, "repair.apply")
     }
 
 
@@ -158,11 +246,11 @@ def register_language_family(
     host: ExpertHost,
     source_files_by_expert: Mapping[str, Iterable[str | Path]],
 ) -> frozenset[str]:
-    """Bind configured Dotfiles-owned brains to the existing host authority."""
+    """Bind configured Dotfiles-owned brains to existing host-issued authority."""
 
     if not isinstance(source_files_by_expert, Mapping):
         raise ExpertError("language_expert_sources must be a mapping")
-    unknown = set(source_files_by_expert) - set(_SPEC_BY_ID)
+    unknown = set(source_files_by_expert) - {spec.key for spec in _SPECS}
     if unknown:
         raise ExpertError(f"unknown language expert source keys: {sorted(unknown)!r}")
 
@@ -175,7 +263,7 @@ def register_language_family(
             raise ExpertError(f"source list for {spec.key!r} must be a sequence of paths")
         files = _source_files(configured, spec.expert_id)
         host.register(spec.namespace, files, predicates=_PREDICATES)
-        registered.add(spec.expert_id)
+        registered.add(spec.key)
     return frozenset(registered)
 
 
@@ -210,92 +298,80 @@ def invoke_language_operation(
         "evidence": evidence,
         "explanation": explanation,
         "model_calls": MAX_MODEL_CALLS,
+        "effect_receipts": [],
     }
 
 
-def _operation_descriptor(name: str, binding: OperationBinding) -> dict[str, Any]:
-    return {
-        "name": name,
-        "kind": "symbolic",
-        "input_schema": APPLICABILITY_SCHEMA,
-        "output_schema": RESULT_SCHEMA,
-        "binding": {
-            "authority": "registered-predicate",
-            "predicate": binding.predicate,
-            "arity": binding.arity,
-        },
-        "effects": [],
-        "max_model_calls": MAX_MODEL_CALLS,
-    }
+def _manifest_digest(spec: LanguageExpertSpec) -> str:
+    bindings = ",".join(
+        f"{operation}:{binding.predicate}/{binding.arity}:{binding.mode}"
+        for operation, binding in sorted(_OPERATION_BINDINGS.items())
+    )
+    material = "|".join(
+        (
+            PROTOCOL,
+            spec.expert_id,
+            spec.source_reference,
+            spec.upstream_issue,
+            SOURCE_OWNER,
+            bindings,
+            "repair.apply:canonical-zara-effect-path",
+            "style.rules:canonical-project-style-provenance",
+            f"max_model_calls={MAX_MODEL_CALLS}",
+        )
+    )
+    return f"sha256:{hashlib.sha256(material.encode('utf-8')).hexdigest()}"
 
 
 def descriptor(spec: LanguageExpertSpec, *, available: bool) -> dict[str, Any]:
-    operations = [
-        _operation_descriptor(name, binding)
-        for name, binding in _OPERATION_BINDINGS.items()
-    ]
-    operations.append(
-        {
-            "name": "repair.apply",
-            "kind": "effect",
-            "input_schema": APPLICABILITY_SCHEMA,
-            "output_schema": RESULT_SCHEMA,
-            "binding": None,
-            "effects": [
-                {
-                    "type": "typed-edit",
-                    "authority": "canonical-zara-effect-path",
-                    "requires_expected_preimage": True,
-                    "requires_fresh_postcondition": True,
-                }
-            ],
-            "availability": "requires-canonical-edit-capability",
-            "max_model_calls": MAX_MODEL_CALLS,
-        }
-    )
-    return {
+    item: dict[str, Any] = {
         "protocol": PROTOCOL,
         "expert_id": spec.expert_id,
-        "version": "1",
+        "expert_version": "1",
         "package_namespace": "zara-expert",
+        "manifest_digest": _manifest_digest(spec),
         "name": spec.name,
         "description": (
             f"Pure-symbolic {spec.name} adapter for deterministic {spec.language} "
-            "analysis, evidence, diagnostics and style rules."
+            f"analysis, evidence, diagnostics and style rules; semantics "
+            f"{spec.upstream_issue}, canonical brain {SOURCE_OWNER}."
         ),
         "source_reference": spec.source_reference,
-        "upstream_semantics": spec.upstream_issue,
-        "canonical_source_owner": SOURCE_OWNER,
         "reasoning_kind": "symbolic",
-        "language": spec.language,
-        "extensions": list(spec.extensions),
-        "applicability_schema": APPLICABILITY_SCHEMA,
-        "result_schema": RESULT_SCHEMA,
-        "operations": operations,
-        "required_observations": [
-            "source-bytes",
-            "source-generation",
-            "project-style-context",
+        "operations": [
+            _operation_schema(name)
+            for name in (*_OPERATION_BINDINGS.keys(), "repair.apply")
         ],
+        "applicability": {"keywords": list(spec.applicability_keywords)},
         "required_capabilities": [],
-        "fallback": {"provider": False, "model": False, "remote": False},
-        "delegation": {"shared_budget_required": True, "authority_may_only_narrow": True},
+        "possible_effects": ["filesystem_write"],
+        "supported_engines": ["swipl"],
+        "supported_platforms": [],
+        "fallback_policy": "fail_closed",
+        "delegation_policy": "children",
         "resource_limits": {"max_model_calls": MAX_MODEL_CALLS},
-        "availability": "available" if available else "source-unavailable",
+        "registry_generation": 0,
+        "availability": "available" if available else "absent",
     }
+    if not available:
+        item["unavailable_reason"] = "source-unavailable"
+    return item
 
 
 def descriptors(registered: Iterable[str] = ()) -> tuple[dict[str, Any], ...]:
     available = frozenset(registered)
-    return tuple(descriptor(spec, available=spec.expert_id in available) for spec in _SPECS)
+    return tuple(descriptor(spec, available=spec.key in available) for spec in _SPECS)
 
 
-def register_descriptor_symbols(runtime: Any, registered: Iterable[str] = ()) -> tuple[int, ...]:
+def register_descriptor_symbols(
+    runtime: Any,
+    registered: Iterable[str] = (),
+) -> tuple[int, ...]:
     registrations: list[int] = []
     for item in descriptors(registered):
         registrations.append(
             runtime.register_symbol(
-                f"zara:expert/{item['expert_id']}",
+                item["expert_id"],
                 SYMBOL_KIND,
                 item,
                 docs=item["description"],
@@ -307,10 +383,8 @@ def register_descriptor_symbols(runtime: Any, registered: Iterable[str] = ()) ->
 
 
 __all__ = [
-    "APPLICABILITY_SCHEMA",
     "MAX_MODEL_CALLS",
     "PROTOCOL",
-    "RESULT_SCHEMA",
     "LanguageExpertSpec",
     "descriptor",
     "descriptors",
