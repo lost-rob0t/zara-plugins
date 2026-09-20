@@ -43,7 +43,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: lost-rob0t/dotfiles
-          ref: c85c1e488a668d9ba23c21d7d48d27058e057945
+          ref: 423a00e4a93fbea8d191502b29b1d6ab0e1333fd
           path: .ci/dotfiles
           persist-credentials: true
           sparse-checkout: |
