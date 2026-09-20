@@ -19,6 +19,7 @@ class EmacsConfig:
     timeout_seconds: float = 10.0
     notes_root: str = "~/Documents/Notes/org"
     projects: Mapping[str, str] = field(default_factory=dict)
+    commands: Mapping[str, str] = field(default_factory=dict)
 
     @classmethod
     def load(cls, mapping: Mapping[str, Any] | None) -> "EmacsConfig":
@@ -28,6 +29,7 @@ class EmacsConfig:
         timeout_seconds = source.get("timeout_seconds", 10.0)
         notes_root = source.get("notes_root", "~/Documents/Notes/org")
         raw_projects = source.get("projects", {})
+        raw_commands = source.get("commands", {})
         if not isinstance(emacsclient, str):
             raise EmacsConfigError("emacsclient must be a string")
         if not isinstance(server_name, str):
@@ -42,17 +44,25 @@ class EmacsConfig:
             raise EmacsConfigError("notes_root must be a string")
         if not isinstance(raw_projects, Mapping):
             raise EmacsConfigError("projects must be an alias-to-path mapping")
+        if not isinstance(raw_commands, Mapping):
+            raise EmacsConfigError("commands must be an alias-to-command mapping")
         projects: dict[str, str] = {}
         for alias, path in raw_projects.items():
             if not isinstance(alias, str) or not isinstance(path, str):
                 raise EmacsConfigError("project aliases and paths must be strings")
             projects[alias] = path
+        commands: dict[str, str] = {}
+        for alias, command in raw_commands.items():
+            if not isinstance(alias, str) or not isinstance(command, str):
+                raise EmacsConfigError("command aliases and command names must be strings")
+            commands[alias] = command
         config = cls(
             emacsclient=emacsclient,
             server_name=server_name,
             timeout_seconds=float(timeout_seconds),
             notes_root=notes_root,
             projects=projects,
+            commands=commands,
         )
         config.validate()
         return config
@@ -86,3 +96,12 @@ class EmacsConfig:
                 raise EmacsConfigError("project aliases must contain 1 to 128 characters")
             if not Path(path).expanduser().is_absolute():
                 raise EmacsConfigError(f"project {alias!r} must map to an absolute path")
+        if not isinstance(self.commands, Mapping):
+            raise EmacsConfigError("commands must be an alias-to-command mapping")
+        for alias, command in self.commands.items():
+            if not isinstance(alias, str) or not isinstance(command, str):
+                raise EmacsConfigError("command aliases and command names must be strings")
+            if not alias or len(alias) > 128 or any(ch.isspace() for ch in alias):
+                raise EmacsConfigError("command aliases must contain 1 to 128 non-whitespace characters")
+            if not command or len(command) > 256 or any(ch in command for ch in ("\\x00", "\\n", "\\r")):
+                raise EmacsConfigError("Emacs command names must contain 1 to 256 single-line characters")
