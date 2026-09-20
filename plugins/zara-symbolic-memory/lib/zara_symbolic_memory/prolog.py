@@ -50,6 +50,7 @@ class PrologQueryEngine:
             "limit": limit,
             "now": int(time.time()),
             "vector": vector,
+            "model": "" if self.embedder is None else self.embedder.model,
         }
         query_file = self._query_file(payload)
         try:
@@ -98,6 +99,7 @@ class PrologQueryEngine:
             f"query_limit({payload['limit']}).",
             f"query_now({payload['now']}).",
             f"query_vector({term(payload['vector'])}).",
+            f"query_model({term(payload['model'])}).",
         ]
         fd, path = tempfile.mkstemp(prefix="zara-memory-query-", suffix=".pl")
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
