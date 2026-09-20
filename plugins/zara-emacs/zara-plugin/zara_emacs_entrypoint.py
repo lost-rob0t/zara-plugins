@@ -1,6 +1,6 @@
 """Zara discovery entry for the Emacs service plugin."""
 
-PLUGIN_VERSION = "0.2.0"
+PLUGIN_VERSION = "0.3.0"
 
 
 def create_plugin():
