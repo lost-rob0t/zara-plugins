@@ -137,6 +137,7 @@ def _validated_lisp_payload(
 def _validated_core_result(
     expert_id: str,
     operation: str,
+    input_data: Mapping[str, Any],
     outcome: Any,
 ) -> InvocationResult:
     usage = getattr(outcome, "usage", None)
@@ -209,10 +210,35 @@ def _validated_core_result(
                 raise CompositionError(
                     "Core Lisp repair.apply effect receipt does not match canonical receipt"
                 )
+
+            request_generation = input_data.get("source_generation")
+            if not isinstance(request_generation, str) or not request_generation:
+                raise CompositionError(
+                    "Core Lisp repair.apply request source generation must be a reference"
+                )
+            receipt_generation = effect_receipts[0].get("source_generation")
+            if receipt_generation != request_generation:
+                raise CompositionError(
+                    "Core Lisp repair.apply effect receipt source generation does not match request"
+                )
+
             postcondition = data.get("postcondition_evidence")
             if not isinstance(postcondition, Mapping) or not postcondition:
                 raise CompositionError(
                     "Core Lisp repair.apply success requires fresh postcondition evidence"
+                )
+            if postcondition.get("verified") is not True:
+                raise CompositionError(
+                    "Core Lisp repair.apply success requires verified postcondition evidence"
+                )
+            observed_generation = postcondition.get("observed_generation")
+            if not isinstance(observed_generation, str) or not observed_generation:
+                raise CompositionError(
+                    "Core Lisp repair.apply success requires an observed postcondition generation"
+                )
+            if observed_generation == request_generation:
+                raise CompositionError(
+                    "Core Lisp repair.apply success requires fresh postcondition generation evidence"
                 )
             if not evidence:
                 raise CompositionError(
@@ -427,7 +453,7 @@ class CoreLispFamilyCompositionInvoker:
 
         fence.check()
         budget.assert_zero_model_usage()
-        return _validated_core_result(expert_id, operation, outcome)
+        return _validated_core_result(expert_id, operation, payload, outcome)
 
 
 __all__ = [
