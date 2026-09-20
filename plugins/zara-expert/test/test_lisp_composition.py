@@ -18,14 +18,15 @@ from zara_expert.lisp_family import register_lisp_family
 
 
 class RecordingBackend:
-    def __init__(self):
+    def __init__(self, *, ok=True):
         self.requests = []
+        self.ok = ok
 
     def run(self, request):
         self.requests.append(request)
         capability = request["capability"]
         return {
-            "ok": True,
+            "ok": self.ok,
             "results": [{"repair": "(print 1)"}],
             "trace": [
                 f"{capability.namespace}:{capability.predicate}/{capability.arity}"
@@ -82,10 +83,19 @@ class LispCompositionTests(unittest.TestCase):
             )
 
             self.assertEqual(tree.expert_id, "zara:expert/common-lisp")
+            self.assertEqual(tree.status, "unknown")
+            self.assertEqual(
+                tree.data,
+                {
+                    "delegated_to": "zara:expert/lisp",
+                    "delegation_required": True,
+                },
+            )
             self.assertEqual(len(tree.children), 1)
             child = tree.children[0]
             self.assertEqual(child.expert_id, "zara:expert/lisp")
             self.assertEqual(child.operation, "repair.preview")
+            self.assertEqual(child.status, "succeeded")
             self.assertEqual(child.evidence, ("lisp:preview_repair/3",))
             self.assertEqual(child.data["results"], [{"repair": "(print 1)"}])
             self.assertEqual(budget.invocations_used, 2)
@@ -96,6 +106,35 @@ class LispCompositionTests(unittest.TestCase):
             self.assertEqual(capability.namespace, "lisp")
             self.assertEqual(capability.predicate, "preview_repair")
             self.assertEqual(capability.arity, 3)
+
+    def test_failed_generic_lisp_child_cannot_false_green_dialect_repair(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            backend = RecordingBackend(ok=False)
+            host = self.make_host(root, backend)
+            budget = SharedSymbolicBudget(max_invocations=2, max_depth=1, max_model_calls=0)
+
+            tree = MetaExpertComposer(LispFamilyCompositionInvoker(host)).invoke(
+                "zara:expert/emacs-lisp",
+                "repair.preview",
+                {
+                    "arguments": [
+                        "(message \"broken\"",
+                        "missing-close-paren",
+                        {"var": "Repair"},
+                    ]
+                },
+                budget=budget,
+                fence=current_fence(),
+            )
+
+            self.assertEqual(tree.status, "unknown")
+            self.assertEqual(len(tree.children), 1)
+            self.assertEqual(tree.children[0].status, "failed")
+            self.assertEqual(tree.children[0].evidence, ("lisp:preview_repair/3",))
+            self.assertEqual(budget.invocations_used, 2)
+            self.assertEqual(budget.model_calls_used, 0)
+            self.assertEqual(len(backend.requests), 1)
 
     def test_public_input_cannot_select_a_predicate_or_goal(self):
         with tempfile.TemporaryDirectory() as temporary:
