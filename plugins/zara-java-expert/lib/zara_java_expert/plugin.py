@@ -234,7 +234,8 @@ class ZaraJavaExpertPlugin(ServicePlugin):
         if not isinstance(result, Mapping):
             raise JavaExpertAdapterError("invalid-expert-result")
         usage = result.get("usage")
-        if not isinstance(usage, Mapping) or usage.get("model_calls") != 0:
+        model_calls = usage.get("model_calls") if isinstance(usage, Mapping) else None
+        if type(model_calls) is not int or model_calls != 0:
             raise JavaExpertAdapterError("zero-model-proof-missing")
         if result.get("request_id") != request_id:
             raise JavaExpertAdapterError("stale-or-unbound-expert-result")
@@ -246,7 +247,7 @@ class ZaraJavaExpertPlugin(ServicePlugin):
         explanation = result.get("explanation")
         if not isinstance(evidence, list) or not isinstance(explanation, list):
             raise JavaExpertAdapterError("evidence-or-explanation-missing")
-        receipts = result.get("side_effect_receipts", [])
+        receipts = result.get("side_effect_receipts")
         if not isinstance(receipts, list) or receipts:
             raise JavaExpertAdapterError("unexpected-side-effect-receipt")
 
