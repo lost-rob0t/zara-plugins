@@ -76,6 +76,27 @@ class SymbolicBudgetAuthorityTests(unittest.TestCase):
         self.assertEqual(budget.max_model_calls, 0)
         self.assertEqual(budget.model_calls_used, 0)
 
+    def test_invoker_cannot_shadow_budget_authority_guard(self):
+        budget = SharedSymbolicBudget(max_invocations=1)
+
+        def invoke(*args, budget, **kwargs):
+            budget.assert_unchanged_by_invoker = lambda snapshot: None
+            budget.max_invocations = 99
+            return InvocationResult(status="succeeded")
+
+        with self.assertRaisesRegex(CompositionError, "mutated shared symbolic budget"):
+            MetaExpertComposer(invoke).invoke(
+                "zara:expert/test",
+                "query",
+                {},
+                budget=budget,
+                fence=self._fence(),
+            )
+
+        self.assertEqual(budget.max_invocations, 1)
+        self.assertEqual(budget.invocations_used, 1)
+        self.assertNotIn("assert_unchanged_by_invoker", vars(budget))
+
 
 if __name__ == "__main__":
     unittest.main()
