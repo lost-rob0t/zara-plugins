@@ -13,6 +13,7 @@ PLUGIN_VERSION = "0.1.0"
 PROTOCOL = "ZARA-EXPERT/1"
 EXPERT_ID = "zara:expert/nix"
 HOST_CAPABILITY = "expert.invoke"
+MANIFEST_DIGEST = "sha256:79ed16fd0c6100baefdd6ce562296ef99d9dc51fb7f90935888f9860ccb6e140"
 MAX_INPUT_BYTES = 65536
 MAX_OUTPUT_BYTES = 65536
 MAX_INPUT_DEPTH = 16
@@ -28,6 +29,29 @@ ALLOWED_OPERATIONS = frozenset(
         "check_plan",
     }
 )
+OPERATION_SCHEMAS = {
+    "parse": ("schema:nix-expert-parse-input-v1", "schema:nix-expert-result-v1"),
+    "inspect_flake": (
+        "schema:nix-expert-inspect-flake-input-v1",
+        "schema:nix-expert-result-v1",
+    ),
+    "inspect_module": (
+        "schema:nix-expert-inspect-module-input-v1",
+        "schema:nix-expert-result-v1",
+    ),
+    "inspect_home_manager": (
+        "schema:nix-expert-inspect-home-manager-input-v1",
+        "schema:nix-expert-result-v1",
+    ),
+    "style_check": (
+        "schema:nix-expert-style-check-input-v1",
+        "schema:nix-expert-result-v1",
+    ),
+    "check_plan": (
+        "schema:nix-expert-check-plan-input-v1",
+        "schema:nix-expert-result-v1",
+    ),
+}
 
 
 class NixExpertAdapterError(RuntimeError):
@@ -57,6 +81,17 @@ def _validate_json_tree(value: object) -> None:
             raise NixExpertAdapterError("invalid-input-number")
         elif current is not None and not isinstance(current, (str, int, float, bool)):
             raise NixExpertAdapterError("invalid-input-value")
+
+
+def _operation_descriptor(operation: str) -> dict[str, object]:
+    input_schema, output_schema = OPERATION_SCHEMAS[operation]
+    return {
+        "id": operation,
+        "input_schema": input_schema,
+        "output_schema": output_schema,
+        "effects": [],
+        "required_capabilities": [HOST_CAPABILITY],
+    }
 
 
 class ZaraNixExpertPlugin(ServicePlugin):
@@ -105,16 +140,17 @@ class ZaraNixExpertPlugin(ServicePlugin):
                 "expert_id": EXPERT_ID,
                 "expert_version": PLUGIN_VERSION,
                 "package_namespace": "zara-nix-expert",
+                "manifest_digest": MANIFEST_DIGEST,
                 "name": "NixExpert",
                 "description": "Deterministic Nix, flake, module, and Home Manager inspection.",
-                "source_reference": {
-                    "repository": "lost-rob0t/dotfiles",
-                    "path": ".zara/experts/nix",
-                    "issue": 286,
-                    "runtime_contract": "lost-rob0t/prolog-rlm#503",
-                },
+                "source_reference": "source:dotfiles-nix-expert-v1",
                 "reasoning_kind": "symbolic",
-                "operations": sorted(ALLOWED_OPERATIONS),
+                "operations": [
+                    _operation_descriptor(operation)
+                    for operation in sorted(ALLOWED_OPERATIONS)
+                ],
+                "applicability_schema": "schema:nix-expert-applicability-v1",
+                "required_observations": [],
                 "required_capabilities": [HOST_CAPABILITY],
                 "possible_effects": [
                     "nix.eval",
@@ -122,16 +158,23 @@ class ZaraNixExpertPlugin(ServicePlugin):
                     "nix.build",
                     "home-manager.switch",
                 ],
-                "fallback_policy": "fail-closed-no-model",
-                "resource_limits": {
-                    "max_model_calls": 0,
-                    "max_input_bytes": MAX_INPUT_BYTES,
-                    "max_output_bytes": MAX_OUTPUT_BYTES,
-                    "max_input_depth": MAX_INPUT_DEPTH,
-                    "max_input_nodes": MAX_INPUT_NODES,
+                "supported_engines": ["swi-prolog"],
+                "supported_platforms": ["desktop", "server"],
+                "placement": {
+                    "node_id": "local",
+                    "runtime_id": "zara-python",
                 },
-                "availability": "inactive",
-                "unavailable_reason": "activation-required",
+                "fallback_policy": "none",
+                "delegation_policy": "none",
+                "resource_limits": {
+                    "timeout_ms": 3000,
+                    "max_results": 32,
+                    "max_output_bytes": MAX_OUTPUT_BYTES,
+                    "max_model_calls": 0,
+                },
+                "registry_generation": 1,
+                "availability": "unavailable",
+                "unavailable_reason": "canonical-source-or-host-not-activated",
             }
         )
 
