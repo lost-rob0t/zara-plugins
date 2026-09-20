@@ -5,7 +5,9 @@
   "canonical_source": {
     "repository": "lost-rob0t/dotfiles",
     "path": ".zara/experts/nix",
-    "issue": 286
+    "issue": 286,
+    "producer_pr": 294,
+    "commit": "5c8d8670a18c97cebc33af8be85549a8fcb6bf02"
   },
   "runtime_contract": {
     "repository": "lost-rob0t/prolog-rlm",
@@ -14,6 +16,6 @@
   "zara_contract": {
     "repository": "lost-rob0t/zara",
     "issue": 1233,
-    "schema_pr": 1257
+    "schema_pr": 1273
   }
 }
