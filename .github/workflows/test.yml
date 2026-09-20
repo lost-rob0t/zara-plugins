@@ -39,22 +39,16 @@ jobs:
       - name: Run compatibility gate contract tests
         run: python3 -m unittest discover -s tests -t .
 
-      - name: Check out canonical Dotfiles Nix/Bash brains
-        shell: bash
-        run: |
-          set -euo pipefail
-          revision=5c8d8670a18c97cebc33af8be85549a8fcb6bf02
-          rm -rf .ci/dotfiles
-          git init .ci/dotfiles
-          git -C .ci/dotfiles remote add origin https://github.com/lost-rob0t/dotfiles.git
-          git -C .ci/dotfiles config core.sparseCheckout true
-          mkdir -p .ci/dotfiles/.git/info
-          printf '%s\n' '/.zara/experts/nix/' '/.zara/experts/bash/' > .ci/dotfiles/.git/info/sparse-checkout
-          git -C .ci/dotfiles fetch --depth=1 origin "$revision"
-          git -C .ci/dotfiles checkout --detach FETCH_HEAD
-          test "$(git -C .ci/dotfiles rev-parse HEAD)" = "$revision"
-          test -f .ci/dotfiles/.zara/experts/nix/kb/expert.pl
-          test -f .ci/dotfiles/.zara/experts/bash/kb/expert.pl
+      - name: Check out canonical Dotfiles language brains
+        uses: actions/checkout@v4
+        with:
+          repository: lost-rob0t/dotfiles
+          ref: 5b01f03bdce98bc55f9f3cc76a1023b91ab63784
+          path: .ci/dotfiles
+          persist-credentials: true
+          sparse-checkout: |
+            .zara/experts
+          sparse-checkout-cone-mode: false
 
       - name: Install SWI-Prolog for canonical brain E2E
         shell: bash
@@ -63,19 +57,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends swi-prolog-nox
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@v31
-
-      - name: Run canonical Dotfiles Nix/Bash brain E2E
+      - name: Run canonical Dotfiles language brain E2E
         env:
           ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles
         shell: bash
         run: |
           set -euo pipefail
           python3 -m unittest discover \
-            -s tests \
-            -t . \
-            -p 'test_nix_bash_dotfiles_brain_e2e.py'
+            -s plugins/zara-expert/test \
+            -t plugins/zara-expert/test \
+            -p 'test_dotfiles_language_brain_integration.py'
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
 
       - name: Capture source compatibility diagnostics
         continue-on-error: true

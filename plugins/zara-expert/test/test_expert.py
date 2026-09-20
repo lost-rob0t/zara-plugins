@@ -1,4 +1,3 @@
-import json
 import sys
 import tempfile
 import unittest
@@ -36,9 +35,18 @@ class ExpertHostTests(unittest.TestCase):
             query_timeout_seconds=1.0,
             max_results=4,
         )
+        self.predicates = {
+            "thing": 1,
+            "can_handle": 1,
+            "safe": 1,
+            "verify": 2,
+        }
 
     def tearDown(self):
         self.temporary.cleanup()
+
+    def register(self, namespace, knowledge_bases=()):
+        self.host.register(namespace, knowledge_bases, predicates=self.predicates)
 
     def test_query_policy_is_typed_before_state_root_creation(self):
         for value in (True, "1", None, float("nan"), float("inf")):
@@ -65,8 +73,8 @@ class ExpertHostTests(unittest.TestCase):
                 self.assertFalse(root.exists())
 
     def test_two_plugins_are_namespace_isolated(self):
-        self.host.register("alpha", [self.root / "alpha.pl"])
-        self.host.register("beta", [self.root / "beta.pl"])
+        self.register("alpha", [self.root / "alpha.pl"])
+        self.register("beta", [self.root / "beta.pl"])
         self.backend.responses[("alpha", "query")] = {
             "ok": True,
             "results": [{"value": "alpha"}],
@@ -78,22 +86,22 @@ class ExpertHostTests(unittest.TestCase):
             "trace": ["beta:fact"],
         }
 
-        self.assertEqual(self.host.query("alpha", "thing(X)")["results"][0]["value"], "alpha")
-        self.assertEqual(self.host.query("beta", "thing(X)")["results"][0]["value"], "beta")
+        self.assertEqual(self.host.query("alpha", "thing", [{"var": "X"}])["results"][0]["value"], "alpha")
+        self.assertEqual(self.host.query("beta", "thing", [{"var": "X"}])["results"][0]["value"], "beta")
         self.assertNotEqual(
             self.backend.calls[0]["state_files"],
             self.backend.calls[1]["state_files"],
         )
 
     def test_query_limits_are_always_forwarded(self):
-        self.host.register("alpha", [])
-        self.host.query("alpha", "can_handle(test)")
+        self.register("alpha")
+        self.host.query("alpha", "can_handle", ["test"])
         request = self.backend.calls[-1]
         self.assertEqual(request["timeout_seconds"], 1.0)
         self.assertEqual(request["max_results"], 4)
 
     def test_session_and_persistent_facts_are_distinct(self):
-        self.host.register("alpha", [])
+        self.register("alpha")
         self.host.assert_fact("alpha", "seen(test)", persistent=False)
         self.host.assert_fact("alpha", "trusted(test)", persistent=True)
 
@@ -104,30 +112,34 @@ class ExpertHostTests(unittest.TestCase):
         self.assertNotIn("seen(test).", persistent_file.read_text(encoding="utf-8"))
 
     def test_retract_is_scoped_and_idempotent(self):
-        self.host.register("alpha", [])
+        self.register("alpha")
+        self.register("beta")
         self.host.assert_fact("alpha", "seen(test)")
         self.host.assert_fact("beta", "seen(test)")
         self.assertTrue(self.host.retract_fact("alpha", "seen(test)"))
         self.assertFalse(self.host.retract_fact("alpha", "seen(test)"))
         self.assertIn("seen(test).", self.host.state_files("beta")[0].read_text(encoding="utf-8"))
 
-    def test_malformed_or_executable_terms_fail_before_backend(self):
-        self.host.register("alpha", [])
-        for term in (
-            "thing(X). halt",
-            "shell('rm -rf /')",
-            ":- initialization(halt)",
-            "assertz(pwned)",
-            "consult('/tmp/x')",
-            "x(a);halt",
+    def test_unregistered_or_executable_predicates_fail_before_backend(self):
+        self.register("alpha")
+        for predicate in (
+            "shell",
+            "call",
+            "assertz",
+            "consult",
+            "open",
+            "process_create",
+            "user:thing",
+            ":-",
+            "thing(X)",
         ):
-            with self.subTest(term=term):
+            with self.subTest(predicate=predicate):
                 with self.assertRaises(ExpertError):
-                    self.host.query("alpha", term)
+                    self.host.query("alpha", predicate, ["payload"])
         self.assertEqual(self.backend.calls, [])
 
     def test_fact_mutation_requires_ground_fact_syntax(self):
-        self.host.register("alpha", [])
+        self.register("alpha")
         for fact in ("seen(X)", "seen(a),other(b)", "seen(a):-other(a)"):
             with self.subTest(fact=fact):
                 with self.assertRaises(ExpertError):
@@ -135,25 +147,25 @@ class ExpertHostTests(unittest.TestCase):
 
     def test_unregistered_namespace_fails_closed(self):
         with self.assertRaisesRegex(ExpertError, "not registered"):
-            self.host.query("missing", "thing(test)")
+            self.host.query("missing", "thing", ["test"])
 
     def test_backend_failure_is_namespaced_and_does_not_corrupt_state(self):
-        self.host.register("alpha", [])
+        self.register("alpha")
         self.host.assert_fact("alpha", "safe(test)")
         before = self.host.state_files("alpha")[0].read_text(encoding="utf-8")
         self.backend.responses[("alpha", "query")] = ExpertError("backend-failed")
         with self.assertRaisesRegex(ExpertError, "backend-failed"):
-            self.host.query("alpha", "safe(test)")
+            self.host.query("alpha", "safe", ["test"])
         self.assertEqual(before, self.host.state_files("alpha")[0].read_text(encoding="utf-8"))
 
     def test_explain_returns_structured_evidence(self):
-        self.host.register("alpha", [])
+        self.register("alpha")
         self.backend.responses[("alpha", "explain")] = {
             "ok": True,
             "results": [{"goal": "verify(build, ok)", "proved": True}],
             "trace": ["rule:verify/2", "fact:build_ok"],
         }
-        result = self.host.explain("alpha", "verify(build, ok)")
+        result = self.host.explain("alpha", "verify", ["build", "ok"])
         self.assertTrue(result["results"][0]["proved"])
         self.assertEqual(result["trace"], ["rule:verify/2", "fact:build_ok"])
 
