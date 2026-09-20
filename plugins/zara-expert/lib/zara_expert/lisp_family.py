@@ -299,12 +299,12 @@ def make_lisp_expert_handler(host: ExpertHost, expert_id: str):
         evidence_refs = _core_evidence_refs(result)
         ok = result.get("ok")
         if ok is True:
-            # A successful registered-predicate query proves only that the
-            # symbolic verifier ran. The canonical Lisp-family brains
-            # intentionally require a fresh dialect reader/compiler
-            # postcondition before a repair may be called verified, so Core must
-            # not receive a succeeded domain verdict from this predicate alone.
-            verdict = "unknown" if expert_operation == "repair.verify" else "succeeded"
+            # Predicate completion proves that the symbolic verifier ran, not
+            # that the proposed repair passed its required fresh dialect
+            # reader/compiler postcondition. Use BLOCKED rather than UNKNOWN so
+            # Zara Core preserves the bounded result/evidence needed to explain
+            # exactly which postcondition remains outstanding.
+            verdict = "blocked" if expert_operation == "repair.verify" else "succeeded"
         elif ok is False:
             verdict = "failed"
         else:
