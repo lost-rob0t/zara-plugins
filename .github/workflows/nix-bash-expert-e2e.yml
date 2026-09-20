@@ -7,6 +7,8 @@ on:
       - 'plugins/zara-bash-expert/**'
       - 'plugins/zara-expert/**'
       - 'tests/test_nix_bash_dotfiles_brain_e2e.py'
+      - 'tests/test_nix_bash_no_parallel_tools.py'
+      - 'tests/test_nix_bash_shared_composition_e2e.py'
       - 'tests/test_nix_bash_zara_core_e2e.py'
       - 'flake.nix'
       - 'plugins.json'
@@ -78,6 +80,20 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests -t . -p 'test_nix_bash_dotfiles_brain_e2e.py'
+
+      - name: Prove shared expert composition budget and cancellation fence
+        env:
+          ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles-nix-bash
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -t . -p 'test_nix_bash_shared_composition_e2e.py'
+
+      - name: Prove no adapter-local parallel expert tool surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -t . -p 'test_nix_bash_no_parallel_tools.py'
 
       - name: Prove Zara Core activation cancellation generation and effect fences
         env:
