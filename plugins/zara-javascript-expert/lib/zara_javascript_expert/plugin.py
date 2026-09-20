@@ -7,7 +7,6 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from langchain_core.tools import StructuredTool
 from zara.plugins import PluginMetadata, ServicePlugin
 
 PLUGIN_VERSION = "0.1.0"
@@ -112,7 +111,7 @@ def _validate_json_tree(value: object, *, depth: int = 0) -> None:
         return
     if isinstance(value, str):
         if len(value) > MAX_STRING_LENGTH:
-            raise JavaScriptExpertAdapterError("input-string-too-lare")
+            raise JavaScriptExpertAdapterError("input-string-too-large")
         return
     if isinstance(value, float) and not math.isfinite(value):
         raise JavaScriptExpertAdapterError("invalid-input-number")
@@ -294,11 +293,9 @@ class ZaraJavaScriptExpertPlugin(ServicePlugin):
         return encoded
 
     def tools(self):
-        prefix = EXPERT_ID.rsplit("/", 1)[-1]
-        return (
-            StructuredTool.from_function(func=self.descriptor, name=f"{prefix}.expert.descriptor", description=f"Return the passive {EXPERT_NAME} ZARA-EXPERT/1 descriptor."),
-            StructuredTool.from_function(func=self.invoke, name=f"{prefix}.expert.invoke", description=f"Invoke one allowlisted read-only {EXPERT_NAME} operation through canonical expert.invoke with max_model_calls=0."),
-        )
+        # ZARA-EXPERT/1 activation/invocation is owned by Zara Core. Do not expose
+        # an adapter-local StructuredTool surface that could bypass that authority.
+        return ()
 
 
 def create_plugin():
