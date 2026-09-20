@@ -28,6 +28,7 @@ class SwiplBackendTests(unittest.TestCase):
             "state_files": (str(root / "session.pl"), str(root / "persistent.pl")),
             "timeout_seconds": 0.5,
             "max_results": 3,
+            "max_output_bytes": 65536,
         }
         request.update(overrides)
         return request
@@ -61,6 +62,15 @@ class SwiplBackendTests(unittest.TestCase):
             with self.assertRaisesRegex(ExpertError, "timeout"):
                 SwiplBackend(str(program)).run(self._request(root, timeout_seconds=0.05))
 
+    def test_request_output_budget_is_enforced(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            program = self._program(root, "print('x' * 1024)\n")
+            with self.assertRaisesRegex(ExpertError, "output exceeded"):
+                SwiplBackend(str(program), output_limit=4096).run(
+                    self._request(root, max_output_bytes=128)
+                )
+
     def test_nonzero_exit_fails_with_bounded_error(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -83,7 +93,7 @@ class SwiplBackendTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             backend = SwiplBackend(str(root / "must-not-run"))
-            for key in ("timeout_seconds", "max_results"):
+            for key in ("timeout_seconds", "max_results", "max_output_bytes"):
                 with self.subTest(key=key):
                     with self.assertRaisesRegex(ExpertError, "execution bounds"):
                         backend.run(self._request(root, **{key: True}))
