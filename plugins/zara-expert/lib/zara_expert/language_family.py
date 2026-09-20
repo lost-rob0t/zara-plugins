@@ -254,14 +254,20 @@ def register_language_family(
     if unknown:
         raise ExpertError(f"unknown language expert source keys: {sorted(unknown)!r}")
 
-    registered: set[str] = set()
+    prepared: dict[str, tuple[Path, ...]] = {}
     for spec in _SPECS:
         configured = source_files_by_expert.get(spec.key)
         if configured is None:
             continue
         if isinstance(configured, (str, bytes, Path)):
             raise ExpertError(f"source list for {spec.key!r} must be a sequence of paths")
-        files = _source_files(configured, spec.expert_id)
+        prepared[spec.key] = _source_files(configured, spec.expert_id)
+
+    registered: set[str] = set()
+    for spec in _SPECS:
+        files = prepared.get(spec.key)
+        if files is None:
+            continue
         host.register(spec.namespace, files, predicates=_PREDICATES)
         registered.add(spec.key)
     return frozenset(registered)
