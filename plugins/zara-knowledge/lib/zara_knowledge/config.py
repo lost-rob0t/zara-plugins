@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import os
 import stat
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -51,6 +51,51 @@ def _integer(source: Mapping[str, Any], key: str, default: int) -> int:
     return value
 
 
+def _path(source: Mapping[str, Any], key: str, default: Path) -> Path:
+    value = source.get(key, default)
+    if not isinstance(value, (str, os.PathLike)):
+        raise KnowledgeConfigError(f"{key} must be a path string")
+    return Path(value).expanduser()
+
+
+def _gate_list(source: Mapping[str, Any], key: str) -> tuple[str, ...]:
+    value = source.get(key, ())
+    if isinstance(value, str):
+        values = value.split(",")
+    elif isinstance(value, (list, tuple)):
+        values = value
+    else:
+        raise KnowledgeConfigError(f"{key} must be a string or list of strings")
+    result: list[str] = []
+    for item in values:
+        if not isinstance(item, str) or not item.strip():
+            raise KnowledgeConfigError(f"{key} must contain non-empty strings")
+        normalized = item.strip().lower()
+        if normalized not in result:
+            result.append(normalized)
+    return tuple(result)
+
+
+def _gate_mapping(source: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    value = source.get("wiki_gates", {})
+    if not isinstance(value, Mapping):
+        raise KnowledgeConfigError("wiki_gates must be a mapping")
+    result: dict[str, Mapping[str, Any]] = {}
+    for gate_id, raw in value.items():
+        if not isinstance(gate_id, str) or not gate_id.strip():
+            raise KnowledgeConfigError("wiki_gates keys must be non-empty strings")
+        if not isinstance(raw, Mapping):
+            raise KnowledgeConfigError(f"wiki gate {gate_id!r} must be a mapping")
+        result[gate_id.strip().lower()] = dict(raw)
+    return result
+
+
+def _default_store_path() -> Path:
+    configured = os.environ.get("XDG_DATA_HOME")
+    root = Path(configured).expanduser() if configured else Path.home() / ".local" / "share"
+    return root / "zarathushtra" / "zara-knowledge" / "wiki.sqlite3"
+
+
 @dataclass(frozen=True)
 class KnowledgeConfig:
     default_provider: str = "brave"
@@ -59,6 +104,10 @@ class KnowledgeConfig:
     timeout_seconds: float = 10.0
     max_response_bytes: int = 2 * 1024 * 1024
     max_results: int = 10
+    wiki_store_path: Path = field(default_factory=_default_store_path)
+    wiki_max_gates: int = 4
+    wiki_default_gates: tuple[str, ...] = ()
+    wiki_gates: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
 
     @classmethod
     def load(cls, mapping: Mapping[str, Any] | None) -> "KnowledgeConfig":
@@ -83,6 +132,10 @@ class KnowledgeConfig:
             timeout_seconds=_timeout(source),
             max_response_bytes=_integer(source, "max_response_bytes", 2 * 1024 * 1024),
             max_results=_integer(source, "max_results", 10),
+            wiki_store_path=_path(source, "wiki_store_path", _default_store_path()),
+            wiki_max_gates=_integer(source, "wiki_max_gates", 4),
+            wiki_default_gates=_gate_list(source, "wiki_default_gates"),
+            wiki_gates=_gate_mapping(source),
         )
         config.validate()
         return config
@@ -96,3 +149,5 @@ class KnowledgeConfig:
             raise KnowledgeConfigError("max_response_bytes must be between 1024 and 8388608")
         if not 1 <= self.max_results <= 20:
             raise KnowledgeConfigError("max_results must be between 1 and 20")
+        if not 1 <= self.wiki_max_gates <= 16:
+            raise KnowledgeConfigError("wiki_max_gates must be between 1 and 16")
