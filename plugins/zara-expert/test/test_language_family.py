@@ -234,6 +234,42 @@ class LanguageFamilyAdapterTests(unittest.TestCase):
             )
         self.assertEqual(self.backend.calls, [])
 
+    def test_authority_preflight_is_atomic_before_family_registration(self):
+        original_python = self._brain("python-original")
+        replacement_python = self._brain("python-replacement")
+        prolog_source = self._brain("prolog-authority")
+        self.host.register(
+            "python-expert",
+            [original_python],
+            predicates=registered_predicates(),
+        )
+
+        with self.assertRaisesRegex(ExpertError, "different authority"):
+            register_language_family(
+                self.host,
+                {
+                    "prolog": [prolog_source],
+                    "python": [replacement_python],
+                },
+            )
+
+        with self.assertRaisesRegex(ExpertError, "namespace 'prolog-expert' is not registered"):
+            invoke_language_operation(
+                self.host,
+                "prolog",
+                "inspect",
+                ["fact(a).", "generation-1", {"var": "Evidence"}],
+            )
+        self.host.query(
+            "python-expert",
+            "language_evidence",
+            ["print('ok')", "generation-1", {"var": "Evidence"}],
+        )
+        self.assertEqual(
+            self.backend.calls[-1]["knowledge_bases"],
+            (str(original_python.resolve()),),
+        )
+
     def test_operation_schemas_expose_evidence_explanation_and_style_provenance(self):
         schemas = language_expert_schemas()
         self.assertEqual(
