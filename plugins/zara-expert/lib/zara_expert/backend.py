@@ -183,6 +183,7 @@ class SwiplBackend:
     @staticmethod
     def _driver_goal() -> str:
         return (
+            "use_module(library(http/json)),"
             "getenv('ZARA_EXPERT_GOAL', Atom),"
             "getenv('ZARA_EXPERT_LIMIT', LimitAtom),"
             "atom_number(LimitAtom, Limit),"
