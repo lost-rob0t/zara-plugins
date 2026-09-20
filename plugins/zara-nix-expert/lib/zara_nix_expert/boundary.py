@@ -73,6 +73,14 @@ class ZaraNixExpertBoundaryPlugin(ZaraNixExpertPlugin):
             max_output_bytes,
         )
 
+    def tools(self):
+        # NixExpert discovery/invocation is owned by canonical ZARA-EXPERT/1.
+        # Publishing adapter-local descriptor/invoke StructuredTools would let
+        # callers bypass Core activation, cancellation, generation and shared
+        # budget fencing, so the public plugin surface intentionally exposes no
+        # parallel expert tool namespace.
+        return ()
+
 
 def create_plugin() -> ZaraNixExpertBoundaryPlugin:
     return ZaraNixExpertBoundaryPlugin()
