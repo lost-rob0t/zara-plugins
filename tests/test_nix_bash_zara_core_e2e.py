@@ -28,10 +28,12 @@ from zara_expert.language_source_contract import validate_language_source_contra
 
 if ZARA_CORE_ROOT:
     from zara.experts import (
+        ExpertBudgetExceededError,
         ExpertDescriptor,
         ExpertLimits,
         ExpertRegistry,
         ExpertStaleGenerationError,
+        ExpertUnsupportedOperationError,
         ExpertVerdict,
     )
 
@@ -123,6 +125,11 @@ class NixBashZaraCoreE2ETests(unittest.TestCase):
         self.assertEqual(receipt["state"], "active")
         return registry, descriptor, handle, core_handler
 
+    def test_uninstalled_optional_brains_are_not_discoverable(self) -> None:
+        published = {item["expert_id"] for item in descriptors()}
+        self.assertNotIn("zara:expert/nix", published)
+        self.assertNotIn("zara:expert/bash", published)
+
     def test_real_brains_cross_core_activation_invoke_and_effect_fence(self) -> None:
         host, published = self._host_and_descriptors()
         cases = (
@@ -190,6 +197,47 @@ class NixBashZaraCoreE2ETests(unittest.TestCase):
                     blocked.data["reason"],
                     "canonical-typed-edit-required",
                 )
+
+                with self.assertRaises(ExpertUnsupportedOperationError):
+                    registry.invoke(
+                        handle,
+                        "execute.shell",
+                        {},
+                        limits=ExpertLimits(max_model_calls=0),
+                    )
+
+    def test_caller_budget_cannot_widen_descriptor_zero(self) -> None:
+        host, published = self._host_and_descriptors()
+        expert_id = "zara:expert/nix"
+        real_handler = make_language_expert_handler(host, expert_id)
+
+        def overreporting_handler(
+            *, expert_operation: str, **payload: Any
+        ) -> dict[str, Any]:
+            outcome = dict(
+                real_handler(expert_operation=expert_operation, **payload)
+            )
+            outcome["usage"] = {"model_calls": 1}
+            return outcome
+
+        registry, descriptor, handle, _handler = self._core_registry(
+            host,
+            published,
+            expert_id,
+            handler=overreporting_handler,
+        )
+        self.assertEqual(descriptor.resource_limits.max_model_calls, 0)
+        with self.assertRaises(ExpertBudgetExceededError):
+            registry.invoke(
+                handle,
+                "inspect",
+                {
+                    "source": "{ x = 1; }",
+                    "source_generation": "generation-7",
+                },
+                limits=ExpertLimits(max_model_calls=7),
+                request_id="req:nix:budget-widen",
+            )
 
     def test_cancellation_fences_late_real_brain_output(self) -> None:
         host, published = self._host_and_descriptors()
