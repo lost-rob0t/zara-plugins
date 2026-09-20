@@ -82,7 +82,20 @@ class LanguageFamilyAdapterTests(unittest.TestCase):
 
     def _brain(self, name):
         path = self.root / f"{name}.pl"
-        path.write_text("% canonical-language-brain-fixture\n", encoding="utf-8")
+        exports = [
+            *(f"{predicate}/{arity}" for predicate, arity in registered_predicates().items()),
+            "provider_policy/1",
+            "max_model_calls/1",
+            "model_calls/1",
+        ]
+        module_name = name.replace("-", "_")
+        path.write_text(
+            f":- module({module_name}, [{', '.join(exports)}]).\n"
+            "provider_policy(disabled).\n"
+            "max_model_calls(0).\n"
+            "model_calls(0).\n",
+            encoding="utf-8",
+        )
         return path
 
     def test_descriptors_match_canonical_zara_expert_shape(self):
