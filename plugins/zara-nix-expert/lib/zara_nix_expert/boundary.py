@@ -37,8 +37,11 @@ def _validate_operation_payload(operation: str, payload: Mapping[str, Any]) -> N
         expected_type = _FIELD_TYPES.get(str(field_type))
         if expected_type is None:
             raise NixExpertAdapterError("unsupported-input-field-type")
-        if not isinstance(payload[name], expected_type):
+        value = payload[name]
+        if not isinstance(value, expected_type):
             raise NixExpertAdapterError("invalid-input-field-type")
+        if name == "path" and (not value or "\x00" in value):
+            raise NixExpertAdapterError("invalid-input-path")
 
 
 class ZaraNixExpertBoundaryPlugin(ZaraNixExpertPlugin):
