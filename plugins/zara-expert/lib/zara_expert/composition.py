@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import IntEnum
+from pathlib import PurePosixPath
+import re
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
 
@@ -199,6 +201,94 @@ class HostExpertInvoker:
             explanation=f"{expert_id} handled {operation} through zara-expert",
             model_calls=0,
         )
+
+
+_PACKAGE_NAME_RE = re.compile(r"^[a-z][a-z0-9-]{0,63}$")
+
+
+@dataclass(frozen=True)
+class ProjectExpertResource:
+    workspace_id: str
+    workspace_generation: int
+    package: str
+    relative_path: str
+    source_reference: str
+    content: str
+
+
+class DotfilesExpertSourceAdapter:
+    """Transport-neutral reader for the canonical project `.zara/experts/` tree."""
+
+    ROOT = ".zara/experts"
+
+    def __init__(
+        self,
+        *,
+        list_package_names: Callable[[str, int], Sequence[str]],
+        read_package_text: Callable[[str, int, str, str], str],
+    ) -> None:
+        self._list_package_names = list_package_names
+        self._read_package_text = read_package_text
+
+    def list_packages(self, *, fence: InvocationFence) -> tuple[str, ...]:
+        fence.check()
+        names = tuple(self._list_package_names(
+            fence.workspace_id,
+            fence.workspace_generation,
+        ))
+        normalized: list[str] = []
+        folded: set[str] = set()
+        for name in names:
+            if not isinstance(name, str) or not _PACKAGE_NAME_RE.fullmatch(name):
+                raise CompositionError(f"invalid project expert package name: {name!r}")
+            key = name.casefold()
+            if key in folded:
+                raise CompositionError(f"duplicate project expert package name: {name!r}")
+            folded.add(key)
+            normalized.append(name)
+        fence.check()
+        return tuple(sorted(normalized))
+
+    def read_resource(
+        self,
+        package: str,
+        relative_path: str,
+        *,
+        fence: InvocationFence,
+    ) -> ProjectExpertResource:
+        if not isinstance(package, str) or not _PACKAGE_NAME_RE.fullmatch(package):
+            raise CompositionError("invalid project expert package name")
+        path = self._validate_relative_path(relative_path)
+        fence.check()
+        content = self._read_package_text(
+            fence.workspace_id,
+            fence.workspace_generation,
+            package,
+            path,
+        )
+        fence.check()
+        if not isinstance(content, str):
+            raise CompositionError("project expert resource must be text")
+        return ProjectExpertResource(
+            workspace_id=fence.workspace_id,
+            workspace_generation=fence.workspace_generation,
+            package=package,
+            relative_path=path,
+            source_reference=f"{self.ROOT}/{package}/{path}",
+            content=content,
+        )
+
+    @staticmethod
+    def _validate_relative_path(relative_path: str) -> str:
+        if not isinstance(relative_path, str) or not relative_path:
+            raise CompositionError("project expert resource path must be relative text")
+        path = PurePosixPath(relative_path)
+        if path.is_absolute() or any(part in ("", ".", "..") for part in path.parts):
+            raise CompositionError("project expert resource path escapes package")
+        normalized = str(path)
+        if normalized.startswith("../") or "/../" in normalized:
+            raise CompositionError("project expert resource path escapes package")
+        return normalized
 
 
 class MetaExpertComposer:
