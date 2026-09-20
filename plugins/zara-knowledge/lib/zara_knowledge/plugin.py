@@ -23,7 +23,7 @@ class ZaraKnowledgePlugin(ServicePlugin):
         name="zara-knowledge",
         version=PLUGIN_VERSION,
         api_version="1",
-        description="Provider-neutral web and wiki search with provenance-preserving imports",
+        description="Federated Brave and wiki search with provenance-preserving local wiki imports and gate routing",
     )
 
     def __init__(self) -> None:
