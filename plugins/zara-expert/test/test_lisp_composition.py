@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
+from zara_expert import LispFamilyCompositionInvoker
 from zara_expert.composition import (
     CompositionError,
     InvocationFence,
@@ -13,7 +14,6 @@ from zara_expert.composition import (
     SharedSymbolicBudget,
 )
 from zara_expert.domain import ExpertError, ExpertHost
-from zara_expert.lisp_composition import LispFamilyCompositionInvoker
 from zara_expert.lisp_family import register_lisp_family
 
 
