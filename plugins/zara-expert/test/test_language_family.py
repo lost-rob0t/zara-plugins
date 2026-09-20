@@ -20,6 +20,7 @@ from zara_expert.language_family import (
     register_language_family,
     registered_predicates,
 )
+from zara_expert.lisp_family import lisp_family_specs
 from zara_expert.plugin import ZaraExpertPlugin
 
 
@@ -100,9 +101,12 @@ class LanguageFamilyAdapterTests(unittest.TestCase):
 
     def test_descriptors_match_canonical_zara_expert_shape(self):
         items = descriptors()
+        specs = tuple(
+            spec for spec in language_family_specs() if spec.key not in {"nix", "bash"}
+        )
         self.assertEqual(
             [item["expert_id"] for item in items],
-            ["zara:expert/prolog", "zara:expert/python", "zara:expert/nim"],
+            [spec.expert_id for spec in specs],
         )
         private_predicates = set(registered_predicates())
         self.assertTrue(private_predicates)
@@ -147,12 +151,30 @@ class LanguageFamilyAdapterTests(unittest.TestCase):
             matching_experts("src/main.nim"),
             ("zara:expert/nim",),
         )
+        self.assertEqual(
+            matching_experts("src/app.js"),
+            ("zara:expert/javascript",),
+        )
+        self.assertEqual(
+            matching_experts("src/app.ts"),
+            ("zara:expert/typescript",),
+        )
+        self.assertEqual(
+            matching_experts("src/Main.java"),
+            ("zara:expert/java",),
+        )
+        self.assertEqual(
+            matching_experts("src/Main.kt"),
+            ("zara:expert/kotlin",),
+        )
         self.assertEqual(matching_experts("README.md"), ())
 
         specs = {spec.key: spec for spec in language_family_specs()}
         self.assertIn(".pyi", specs["python"].extensions)
         self.assertIn(".nimble", specs["nim"].extensions)
         self.assertIn("dcg", specs["prolog"].applicability_keywords)
+        self.assertNotEqual(specs["javascript"].extensions, specs["typescript"].extensions)
+        self.assertNotEqual(specs["java"].extensions, specs["kotlin"].extensions)
 
     def test_registered_predicate_authority_is_private_to_host(self):
         source = self._brain("python")
@@ -319,15 +341,14 @@ class LanguageFamilyAdapterTests(unittest.TestCase):
 
     def test_descriptor_symbols_use_canonical_runtime_registry(self):
         runtime = RecordingRuntime()
+        specs = tuple(
+            spec for spec in language_family_specs() if spec.key not in {"nix", "bash"}
+        )
         ids = register_descriptor_symbols(runtime, {"prolog", "nim"})
-        self.assertEqual(ids, (1, 2, 3))
+        self.assertEqual(ids, tuple(range(1, len(specs) + 1)))
         self.assertEqual(
             [item[0] for item in runtime.registrations],
-            [
-                "zara:expert/prolog",
-                "zara:expert/python",
-                "zara:expert/nim",
-            ],
+            [spec.expert_id for spec in specs],
         )
         availability = {
             value["expert_id"]: value["availability"]
@@ -336,6 +357,12 @@ class LanguageFamilyAdapterTests(unittest.TestCase):
         self.assertEqual(availability["zara:expert/prolog"], "available")
         self.assertEqual(availability["zara:expert/python"], "absent")
         self.assertEqual(availability["zara:expert/nim"], "available")
+        self.assertEqual(availability["zara:expert/javascript"], "absent")
+        self.assertEqual(availability["zara:expert/typescript"], "absent")
+        self.assertEqual(availability["zara:expert/java"], "absent")
+        self.assertEqual(availability["zara:expert/kotlin"], "absent")
+        self.assertNotIn("zara:expert/nix", availability)
+        self.assertNotIn("zara:expert/bash", availability)
         for _, kind, value, metadata in runtime.registrations:
             self.assertEqual(kind, "expert")
             self.assertEqual(value["resource_limits"]["max_model_calls"], 0)
@@ -363,10 +390,15 @@ class LanguageFamilyAdapterTests(unittest.TestCase):
         }
         self.assertEqual(availability["zara:expert/python"], "available")
         self.assertEqual(availability["zara:expert/prolog"], "absent")
+        self.assertNotIn("zara:expert/nix", availability)
+        self.assertNotIn("zara:expert/bash", availability)
         status = json.loads(plugin.status())
         self.assertEqual(status["model_calls"], 0)
         self.assertEqual(status["language_family"], ["python"])
-        self.assertEqual(len(runtime.registrations), 6)
+        self.assertEqual(
+            len(runtime.registrations),
+            len(descriptors({"python"})) + len(lisp_family_specs()),
+        )
 
     def test_language_family_exports_no_parallel_descriptor_or_invoke_tools(self):
         plugin = ZaraExpertPlugin(

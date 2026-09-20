@@ -157,6 +157,24 @@ def _build_expert_authority():
             self._knowledge_bases[namespace] = files
             registries[self][namespace] = capabilities
 
+        def unregister(self, namespace: str) -> bool:
+            """Revoke one namespace authority while preserving its durable state files."""
+
+            namespace = self._validate_namespace(namespace)
+            capabilities = registries[self].pop(namespace, {})
+            registered = self._knowledge_bases.pop(namespace, None) is not None
+            for capability in capabilities.values():
+                issued.pop(capability, None)
+            return registered
+
+        def clear_registrations(self) -> tuple[str, ...]:
+            """Revoke every registered namespace without deleting session/persistent state."""
+
+            namespaces = tuple(self._knowledge_bases)
+            for namespace in namespaces:
+                self.unregister(namespace)
+            return namespaces
+
         def _registration_request(
             self,
             namespace: str,

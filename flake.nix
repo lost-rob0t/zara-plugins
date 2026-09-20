@@ -59,16 +59,29 @@
             hash = "sha256-mgxOcusFdBjAPHf4f8bjg2sQo8RLuGrfMOSbNmMfQ/Y=";
           };
 
+          # The EmacsExpert adapter consumes the newer canonical ZARA-EXPERT/1
+          # contract without changing the registry-wide compatibility baseline.
+          zaraExpertSource = pkgs.fetchFromGitHub {
+            owner = "lost-rob0t";
+            repo = "zara";
+            rev = "577364a69050ab3725361cad420d15c1306b7e29";
+            hash = "sha256-7ovxMghrtsdPHu/XakHdgzKcW5QfqmvXJKcIdQpXLEI=";
+          };
+
           # Export a stable, immutable runtime layout for Home Manager and
           # other declarative consumers:
           #
           #   share/zara/runtime/<name>/entrypoint.py
           #   share/zara/runtime/<name>/lib/
+          #   share/zara/runtime/<name>/expert-source.lock.json (when present)
           #
           # The lib directory combines plugin-owned Python modules with the
           # complete Python environment needed by declared dependencies. A
           # discovery entry can therefore prepend one directory and run
           # without an imperative installer copying dependencies into $HOME.
+          # Expert adapters also expose their immutable upstream source lock
+          # next to the runtime entrypoint so the canonical host can resolve
+          # the exact producer revision without guessing a checkout path.
           runtimeLibraryFor = entry:
             let
               pluginSource = ./. + ("/plugins/" + entry.name);
@@ -95,6 +108,7 @@
           mkPluginPackage = entry:
             let
               runtimeLibrary = runtimeLibraryFor entry;
+              expertSourceLock = ./. + ("/plugins/" + entry.name + "/expert-source.lock.json");
             in
             pkgs.stdenv.mkDerivation {
               pname = entry.name;
@@ -113,6 +127,10 @@
                 ln -s \
                   $out/share/zara/plugins/${entry.name}/${entry.entrypoint} \
                   $out/share/zara/runtime/${entry.name}/entrypoint.py
+              '' + pkgs.lib.optionalString (builtins.pathExists expertSourceLock) ''
+                ln -s \
+                  $out/share/zara/plugins/${entry.name}/expert-source.lock.json \
+                  $out/share/zara/runtime/${entry.name}/expert-source.lock.json
               '' + pkgs.lib.optionalString
                 (builtins.pathExists (./. + "/plugins/${entry.name}/tools/${entry.name}")) ''
                 mkdir -p $out/bin
@@ -196,10 +214,29 @@
             runtime-layout = pkgs.runCommand "zara-check-runtime-layout"
               { nativeBuildInputs = [ python ]; }
               (pkgs.lib.concatMapStringsSep "\n"
-                (entry: ''
-                  test -f ${pluginPackages.${entry.name}}/share/zara/runtime/${entry.name}/entrypoint.py
-                  test -d ${pluginPackages.${entry.name}}/share/zara/runtime/${entry.name}/lib
-                '')
+                (entry:
+                  let
+                    expertSourceLock = ./. + ("/plugins/" + entry.name + "/expert-source.lock.json");
+                  in
+                  ''
+                    test -f ${pluginPackages.${entry.name}}/share/zara/runtime/${entry.name}/entrypoint.py
+                    test -d ${pluginPackages.${entry.name}}/share/zara/runtime/${entry.name}/lib
+                  '' + pkgs.lib.optionalString (builtins.pathExists expertSourceLock) ''
+                    test -L ${pluginPackages.${entry.name}}/share/zara/runtime/${entry.name}/expert-source.lock.json
+                    cmp \
+                      ${pluginPackages.${entry.name}}/share/zara/plugins/${entry.name}/expert-source.lock.json \
+                      ${pluginPackages.${entry.name}}/share/zara/runtime/${entry.name}/expert-source.lock.json
+                    ${python}/bin/python3 -c '
+                    import json, sys
+                    with open(sys.argv[1], encoding="utf-8") as handle:
+                        lock = json.load(handle)
+                    assert lock["schema_version"] == 1
+                    source = lock["canonical_source"]
+                    assert source["repository"]
+                    assert source["path"]
+                    assert len(source["commit"]) == 40
+                    ' ${pluginPackages.${entry.name}}/share/zara/runtime/${entry.name}/expert-source.lock.json
+                  '')
                 plugins
               + ''
                 PYTHONPATH=${pluginPackages.zara-discord}/share/zara/runtime/zara-discord/lib \
@@ -217,7 +254,7 @@
                   }
                   ''
                     export HOME=$(mktemp -d)
-                    export PYTHONPATH=${zaraSource}
+                    export PYTHONPATH=${if entry.name == "zara-emacs" then zaraExpertSource else zaraSource}
                     cp -r $src ./tree
                     chmod -R u+w ./tree
                     cd ./tree/plugins/${entry.name}
@@ -239,8 +276,7 @@
           };
 
           apps = { } // pkgs.lib.listToAttrs (
-            map
-              (entry: pkgs.lib.nameValuePair entry.name {
+            map (entry: pkgs.lib.nameValuePair entry.name {
                 type = "app";
                 program = "${pluginPackages.${entry.name}}/bin/${entry.name}";
               })

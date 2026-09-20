@@ -13,6 +13,17 @@ SYMBOL_KIND = "expert"
 SOURCE_OWNER = "lost-rob0t/dotfiles#292"
 MAX_MODEL_CALLS = 0
 RESERVED_HOST_INPUT_FIELDS = frozenset({"expert_operation"})
+_BASE_DESCRIPTOR_KEYS = frozenset(
+    {
+        "prolog",
+        "python",
+        "nim",
+        "javascript",
+        "typescript",
+        "java",
+        "kotlin",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -82,6 +93,72 @@ _SPECS: tuple[LanguageExpertSpec, ...] = (
         applicability_keywords=("nim", "nims", "nimble"),
         source_reference="dotfiles:.zara/experts/nim",
         upstream_issue="lost-rob0t/prolog-rlm#499",
+    ),
+    LanguageExpertSpec(
+        key="javascript",
+        expert_id="zara:expert/javascript",
+        namespace="javascript-expert",
+        name="JavaScriptExpert",
+        language="javascript",
+        extensions=(".js", ".jsx", ".mjs", ".cjs"),
+        applicability_keywords=("javascript", "js", "jsx", "mjs", "cjs", "ecmascript"),
+        source_reference="dotfiles:.zara/experts/javascript",
+        upstream_issue="lost-rob0t/prolog-rlm#500",
+    ),
+    LanguageExpertSpec(
+        key="typescript",
+        expert_id="zara:expert/typescript",
+        namespace="typescript-expert",
+        name="TypeScriptExpert",
+        language="typescript",
+        extensions=(".ts", ".tsx", ".mts", ".cts"),
+        applicability_keywords=("typescript", "ts", "tsx", "mts", "cts"),
+        source_reference="dotfiles:.zara/experts/typescript",
+        upstream_issue="lost-rob0t/prolog-rlm#500",
+    ),
+    LanguageExpertSpec(
+        key="java",
+        expert_id="zara:expert/java",
+        namespace="java-expert",
+        name="JavaExpert",
+        language="java",
+        extensions=(".java",),
+        applicability_keywords=("java", "javac"),
+        source_reference="dotfiles:.zara/experts/java",
+        upstream_issue="lost-rob0t/prolog-rlm#501",
+    ),
+    LanguageExpertSpec(
+        key="kotlin",
+        expert_id="zara:expert/kotlin",
+        namespace="kotlin-expert",
+        name="KotlinExpert",
+        language="kotlin",
+        extensions=(".kt", ".kts"),
+        applicability_keywords=("kotlin", "kt", "kts", "kotlinc"),
+        source_reference="dotfiles:.zara/experts/kotlin",
+        upstream_issue="lost-rob0t/prolog-rlm#501",
+    ),
+    LanguageExpertSpec(
+        key="nix",
+        expert_id="zara:expert/nix",
+        namespace="nix-expert",
+        name="NixExpert",
+        language="nix",
+        extensions=(".nix",),
+        applicability_keywords=("nix", "nixos", "flake", "home-manager"),
+        source_reference="dotfiles:.zara/experts/nix",
+        upstream_issue="lost-rob0t/prolog-rlm#503",
+    ),
+    LanguageExpertSpec(
+        key="bash",
+        expert_id="zara:expert/bash",
+        namespace="bash-expert",
+        name="BashExpert",
+        language="bash",
+        extensions=(".sh", ".bash"),
+        applicability_keywords=("bash", "shell", "sh"),
+        source_reference="dotfiles:.zara/experts/bash",
+        upstream_issue="lost-rob0t/prolog-rlm#502",
     ),
 )
 
@@ -315,11 +392,19 @@ def invoke_language_operation(
     explanation = result.get("trace", [])
     if not isinstance(evidence, list) or not isinstance(explanation, list):
         raise ExpertError(f"{spec.namespace}: malformed expert evidence")
+    ok = result.get("ok")
+    if ok is True:
+        verdict = "succeeded" if evidence else "unknown"
+    elif ok is False:
+        verdict = "failed"
+    else:
+        verdict = "unknown"
     return {
         "protocol": PROTOCOL,
         "expert_id": spec.expert_id,
         "operation": operation,
         "source_reference": spec.source_reference,
+        "verdict": verdict,
         "evidence": evidence,
         "explanation": explanation,
         "model_calls": MAX_MODEL_CALLS,
@@ -385,7 +470,15 @@ def descriptor(spec: LanguageExpertSpec, *, available: bool) -> dict[str, Any]:
 
 def descriptors(registered: Iterable[str] = ()) -> tuple[dict[str, Any], ...]:
     available = frozenset(registered)
-    return tuple(descriptor(spec, available=spec.key in available) for spec in _SPECS)
+    # Keep the core language descriptors visible as absent while optional
+    # packaged brains (currently Nix/Bash) enter the canonical registry only
+    # when their exact source is configured and preflighted. This prevents
+    # discovery from advertising a package whose pinned brain is not installed.
+    return tuple(
+        descriptor(spec, available=spec.key in available)
+        for spec in _SPECS
+        if spec.key in _BASE_DESCRIPTOR_KEYS or spec.key in available
+    )
 
 
 def register_descriptor_symbols(

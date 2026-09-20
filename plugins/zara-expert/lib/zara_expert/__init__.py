@@ -17,10 +17,15 @@ from .composition import (
     resolve_style,
 )
 from .domain import ExpertError, ExpertHost
+from .language_composition import (
+    CoreLanguageFamilyCompositionInvoker,
+    LanguageFamilyCompositionInvoker,
+)
 from .lisp_composition import LispFamilyCompositionInvoker
 
 __all__ = [
     "CompositionError",
+    "CoreLanguageFamilyCompositionInvoker",
     "DelegationRequest",
     "DotfilesExpertSourceAdapter",
     "EffectiveStyle",
@@ -31,6 +36,7 @@ __all__ = [
     "HostExpertInvoker",
     "InvocationFence",
     "InvocationResult",
+    "LanguageFamilyCompositionInvoker",
     "LispFamilyCompositionInvoker",
     "MetaExpertComposer",
     "ProjectExpertResource",
