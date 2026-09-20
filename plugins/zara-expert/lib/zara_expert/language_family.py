@@ -246,7 +246,12 @@ def register_language_family(
     host: ExpertHost,
     source_files_by_expert: Mapping[str, Iterable[str | Path]],
 ) -> frozenset[str]:
-    """Bind configured Dotfiles-owned brains to existing host-issued authority."""
+    """Bind configured Dotfiles-owned brains to existing host-issued authority.
+
+    Source and authority validation is completed for the whole configured family
+    before any namespace is mutated. A bad later source or conflicting later
+    namespace therefore cannot leave a partially activated language family.
+    """
 
     if not isinstance(source_files_by_expert, Mapping):
         raise ExpertError("language_expert_sources must be a mapping")
@@ -262,6 +267,11 @@ def register_language_family(
         if isinstance(configured, (str, bytes, Path)):
             raise ExpertError(f"source list for {spec.key!r} must be a sequence of paths")
         prepared[spec.key] = _source_files(configured, spec.expert_id)
+
+    for spec in _SPECS:
+        files = prepared.get(spec.key)
+        if files is not None:
+            host.preflight_registration(spec.namespace, files, predicates=_PREDICATES)
 
     registered: set[str] = set()
     for spec in _SPECS:
