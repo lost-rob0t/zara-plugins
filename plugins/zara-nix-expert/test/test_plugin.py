@@ -167,6 +167,37 @@ class NixExpertPluginTests(unittest.TestCase):
 
         self.assertEqual(runtime.requests, [])
 
+    def test_json_integer_semantics_match_zara_expert_schema(self) -> None:
+        runtime = FakeRuntime()
+        plugin = ZaraNixExpertPlugin()
+        plugin.start(runtime)
+
+        plugin.invoke(
+            "req-1",
+            "activation-1",
+            "parse",
+            7.0,
+            3.0,
+            timeout_ms=2500.0,
+            max_results=8.0,
+            max_output_bytes=32768.0,
+        )
+        request = runtime.requests[-1]
+        self.assertIs(type(request["expected_registry_generation"]), int)
+        self.assertIs(type(request["expected_runtime_generation"]), int)
+        self.assertIs(type(request["limits"]["timeout_ms"]), int)
+        self.assertIs(type(request["limits"]["max_results"]), int)
+        self.assertIs(type(request["limits"]["max_output_bytes"]), int)
+
+        with self.assertRaisesRegex(NixExpertAdapterError, "invalid-registry-generation"):
+            plugin.invoke("req-1", "activation-1", "parse", True, 1)
+        with self.assertRaisesRegex(NixExpertAdapterError, "invalid-runtime-generation"):
+            plugin.invoke("req-1", "activation-1", "parse", 1, 1.5)
+        with self.assertRaisesRegex(NixExpertAdapterError, "invalid-timeout-ms"):
+            plugin.invoke("req-1", "activation-1", "parse", 1, 1, timeout_ms=1.5)
+
+        self.assertEqual(len(runtime.requests), 1)
+
     def test_missing_composition_fails_closed_without_fallback(self) -> None:
         plugin = ZaraNixExpertPlugin()
         plugin.start(object())
