@@ -36,7 +36,9 @@ These adapters deliberately do not duplicate Core's invocation or budget logic. 
 - the reserved `expert_operation` discriminator must never be admitted as user-declared operation input; the host-selected operation is trusted metadata only;
 - caller limits may only narrow descriptor/host ceilings. In particular, an expert descriptor with `resource_limits.max_model_calls=0` must remain zero-model even when a caller presents a larger `max_model_calls` value.
 
-If either invariant is unavailable in the active Zara Core contract, the Lisp-family integration is not accepted as pure-symbolic and must stay fail-closed rather than adding a plugin-local dispatcher or accounting shim.
+`make_lisp_expert_handler(...)` and `ZaraExpertPlugin.lisp_expert_handler(...)` provide the adapter half of that boundary without creating another dispatcher. Core binds one returned handler to one descriptor. The handler accepts `expert_operation` only as a keyword-only host parameter, accepts the descriptor-declared payload fields, and returns an explicit `usage.model_calls=0` ledger. `repair.apply` returns a blocked outcome before backend dispatch so Core must route the requested write through the canonical typed effect/approval path. The handler is intentionally not a StructuredTool and cannot be invoked through a parallel public command namespace.
+
+If either Core invariant is unavailable in the active Zara Core contract, the Lisp-family integration is not accepted as pure-symbolic and must stay fail-closed rather than adding a plugin-local dispatcher or accounting shim.
 
 Canonical source files are opt-in through trusted plugin configuration:
 
