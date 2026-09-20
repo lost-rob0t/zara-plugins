@@ -55,6 +55,15 @@
           zaraSource = pkgs.fetchFromGitHub {
             owner = "lost-rob0t";
             repo = "zara";
+            rev = "b1ca89d52e0ffc84f8ad6eb18987f3f77fc841e5";
+            hash = "sha256-mgxOcusFdBjAPHf4f8bjg2sQo8RLuGrfMOSbNmMfQ/Y=";
+          };
+
+          # The EmacsExpert adapter consumes the newer canonical ZARA-EXPERT/1
+          # contract without changing the registry-wide compatibility baseline.
+          zaraExpertSource = pkgs.fetchFromGitHub {
+            owner = "lost-rob0t";
+            repo = "zara";
             rev = "577364a69050ab3725361cad420d15c1306b7e29";
             hash = "sha256-7ovxMghrtsdPHu/XakHdgzKcW5QfqmvXJKcIdQpXLEI=";
           };
@@ -217,7 +226,7 @@
                   }
                   ''
                     export HOME=$(mktemp -d)
-                    export PYTHONPATH=${zaraSource}
+                    export PYTHONPATH=${if entry.name == "zara-emacs" then zaraExpertSource else zaraSource}
                     cp -r $src ./tree
                     chmod -R u+w ./tree
                     cd ./tree/plugins/${entry.name}
