@@ -6,7 +6,7 @@ from tests import test_js_ts_java_kotlin_current_core_delegation_e2e as base
 
 
 CURRENT_DOTFILES_COMMIT = "fe8f7fa3c42803e0e505dcb6f7e4600d27649d9e"
-CURRENT_ZARA_CORE_COMMIT = "f7810b0cba602b1e00597d04dd419d30ac0ef949"
+CURRENT_ZARA_CORE_COMMIT = "0561fdbeadde3c2d7ed4ac94c5427f0c10421dac"
 
 # Reuse the canonical lane test instead of creating a second expert/registry path.
 # Only the exact producer revisions change here.
