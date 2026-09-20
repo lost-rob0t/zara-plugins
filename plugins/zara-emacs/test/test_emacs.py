@@ -34,6 +34,40 @@ class EmacsClientTest(unittest.TestCase):
         client = EmacsClient(EmacsConfig(projects={"zara": "/work/zara"}, **config), runner=runner)
         return client, runner
 
+    def test_command_catalog_is_configuration_owned(self):
+        client, runner = self.client(
+            [],
+            commands={
+                "window.split-right": "split-window-right",
+                "window.other": "other-window",
+            },
+        )
+        result = client.command_catalog()
+        self.assertEqual(result["count"], 2)
+        self.assertEqual(result["commands"][0]["action_id"], "window.other")
+        self.assertEqual(runner.calls, [])
+
+    def test_invoke_command_resolves_alias_before_fixed_elisp_template(self):
+        client, runner = self.client(
+            [Result(stdout='"split-window-right"\n')],
+            commands={"window.split-right": "split-window-right"},
+        )
+        result = client.invoke_command("window.split-right")
+        self.assertTrue(result["acknowledged"])
+        expression = runner.calls[0][0][-1]
+        self.assertIn('(intern "split-window-right")', expression)
+        self.assertIn("call-interactively command", expression)
+        self.assertNotIn("window.split-right", expression)
+
+    def test_invoke_command_rejects_unknown_alias_without_touching_emacs(self):
+        client, runner = self.client(
+            [],
+            commands={"window.split-right": "split-window-right"},
+        )
+        with self.assertRaisesRegex(EmacsError, "unknown Emacs action"):
+            client.invoke_command('evil\") (shell-command \"touch /tmp/pwned\")')
+        self.assertEqual(runner.calls, [])
+
     def test_open_file_uses_argv_not_shell_and_returns_ack(self):
         client, runner = self.client([Result(stdout="")])
         result = client.open_file("/tmp/note.org")
