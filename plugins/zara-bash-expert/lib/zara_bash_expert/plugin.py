@@ -332,18 +332,10 @@ class ZaraBashExpertPlugin(ServicePlugin):
         return encoded
 
     def tools(self):
-        return (
-            StructuredTool.from_function(
-                func=self.descriptor,
-                name="bash.expert.descriptor",
-                description="Return the bounded ZARA-EXPERT/1 BashExpert descriptor without activating or executing it.",
-            ),
-            StructuredTool.from_function(
-                func=self.invoke,
-                name="bash.expert.invoke",
-                description="Invoke one allowlisted read-only BashExpert symbolic operation through the canonical expert host with max_model_calls=0.",
-            ),
-        )
+        # Core ZARA-EXPERT/1 owns descriptor publication and invocation. Keep the
+        # lower-level class inert too: direct module imports must not resurrect a
+        # parallel tool namespace that bypasses activation/generation/budget fences.
+        return ()
 
 
 def create_plugin():
