@@ -1,12 +1,3 @@
-:- module(emacs_expert, [
-    emacs_command/1,
-    emacs_function/1,
-    emacs_variable/1,
-    emacs_documentation/3,
-    emacs_keys/2,
-    emacs_search/3
-]).
-
 emacs_command(Symbol) :-
     emacs_symbol_kind(Symbol, command).
 
