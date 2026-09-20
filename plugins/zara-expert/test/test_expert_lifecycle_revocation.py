@@ -1,6 +1,7 @@
 import json
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -22,6 +23,24 @@ class RecordingBackend:
             "ok": True,
             "results": ["evidence:compiler"],
             "trace": ["source:canonical"],
+        }
+
+
+class BlockingBackend:
+    def __init__(self):
+        self.calls = []
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def run(self, request):
+        self.calls.append(dict(request))
+        self.started.set()
+        if not self.release.wait(timeout=5):
+            raise AssertionError("test backend was not released")
+        return {
+            "ok": True,
+            "results": ["evidence:late"],
+            "trace": ["source:late"],
         }
 
 
@@ -87,6 +106,44 @@ class ExpertLifecycleRevocationTests(unittest.TestCase):
 
         _, persistent_path = host.state_files("python-expert")
         self.assertIn("remembered(value).", persistent_path.read_text(encoding="utf-8"))
+        self.assertEqual(host.clear_registrations(), ())
+
+    def test_host_rejects_backend_result_revoked_while_dispatch_is_in_flight(self):
+        source = self._brain("python-inflight-revocation")
+        backend = BlockingBackend()
+        host = ExpertHost(backend, state_root=self.root / "inflight-state")
+        host.register(
+            "python-expert",
+            [source],
+            predicates={"language_evidence": 3},
+        )
+        outcome = {}
+
+        def invoke():
+            try:
+                outcome["result"] = host.query(
+                    "python-expert",
+                    "language_evidence",
+                    ["print('late')", "generation-before-stop", {"var": "Evidence"}],
+                )
+            except BaseException as exc:  # noqa: BLE001 - captured for thread assertion
+                outcome["error"] = exc
+
+        worker = threading.Thread(target=invoke)
+        worker.start()
+        self.assertTrue(backend.started.wait(timeout=2), "backend never dispatched")
+        self.assertEqual(host.clear_registrations(), ("python-expert",))
+        backend.release.set()
+        worker.join(timeout=5)
+
+        self.assertFalse(worker.is_alive(), "backend invocation did not finish")
+        self.assertNotIn("result", outcome)
+        self.assertIsInstance(outcome.get("error"), ExpertError)
+        self.assertRegex(
+            str(outcome["error"]),
+            "authority changed during backend execution",
+        )
+        self.assertEqual(len(backend.calls), 1)
         self.assertEqual(host.clear_registrations(), ())
 
     def test_plugin_stop_fences_captured_handler_and_allows_clean_restart(self):
