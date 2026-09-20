@@ -38,7 +38,7 @@ class KnowledgeConfigTypeTests(unittest.TestCase):
                     self.load({"timeout_seconds": value})
 
     def test_rejects_non_integer_limits(self) -> None:
-        for key in ("max_response_bytes", "max_results"):
+        for key in ("max_response_bytes", "max_results", "wiki_max_gates"):
             for value in (True, False, 2.5, "2", None):
                 with self.subTest(key=key, value=value):
                     with self.assertRaises(KnowledgeConfigError):
@@ -58,6 +58,39 @@ class KnowledgeConfigTypeTests(unittest.TestCase):
         self.assertEqual(0.25, config.timeout_seconds)
         self.assertEqual(2048, config.max_response_bytes)
         self.assertEqual(2, config.max_results)
+
+    def test_accepts_wiki_gate_and_store_configuration(self) -> None:
+        config = self.load(
+            {
+                "wiki_store_path": "~/wiki-cache.sqlite3",
+                "wiki_max_gates": 6,
+                "wiki_default_gates": ["wikipedia:en", "wikidata"],
+                "wiki_gates": {
+                    "internal": {
+                        "base_url": "http://127.0.0.1:8080",
+                        "engine": "mediawiki",
+                    }
+                },
+            }
+        )
+        self.assertTrue(str(config.wiki_store_path).endswith("wiki-cache.sqlite3"))
+        self.assertEqual(6, config.wiki_max_gates)
+        self.assertEqual(("wikipedia:en", "wikidata"), config.wiki_default_gates)
+        self.assertEqual("mediawiki", config.wiki_gates["internal"]["engine"])
+
+    def test_rejects_malformed_wiki_configuration(self) -> None:
+        bad_values = (
+            {"wiki_store_path": True},
+            {"wiki_default_gates": 42},
+            {"wiki_gates": []},
+            {"wiki_gates": {"bad": "not-a-mapping"}},
+            {"wiki_max_gates": 0},
+            {"wiki_max_gates": 17},
+        )
+        for value in bad_values:
+            with self.subTest(value=value):
+                with self.assertRaises(KnowledgeConfigError):
+                    self.load(value)
 
 
 if __name__ == "__main__":
