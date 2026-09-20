@@ -13,6 +13,7 @@ SYMBOL_KIND = "expert"
 SOURCE_OWNER = "lost-rob0t/dotfiles#292"
 MAX_MODEL_CALLS = 0
 RESERVED_HOST_INPUT_FIELDS = frozenset({"expert_operation"})
+_BASE_DESCRIPTOR_KEYS = frozenset({"prolog", "python", "nim"})
 
 
 @dataclass(frozen=True)
@@ -407,7 +408,15 @@ def descriptor(spec: LanguageExpertSpec, *, available: bool) -> dict[str, Any]:
 
 def descriptors(registered: Iterable[str] = ()) -> tuple[dict[str, Any], ...]:
     available = frozenset(registered)
-    return tuple(descriptor(spec, available=spec.key in available) for spec in _SPECS)
+    # Keep the long-standing core language descriptors visible as absent while
+    # optional packaged brains (currently Nix/Bash) enter the canonical registry
+    # only when their exact source is configured and preflighted. This prevents
+    # discovery from advertising a package whose pinned brain is not installed.
+    return tuple(
+        descriptor(spec, available=spec.key in available)
+        for spec in _SPECS
+        if spec.key in _BASE_DESCRIPTOR_KEYS or spec.key in available
+    )
 
 
 def register_descriptor_symbols(
