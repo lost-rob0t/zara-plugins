@@ -29,14 +29,14 @@ Mutations preserve before/action/after evidence. A backend accepting a request i
 
 ## Expert-system rules
 
-`rules/sysadmin.pl` records the portable Prolog symptom→hypothesis→diagnostic→verification rules. The Python domain mirrors these four initial chains so deterministic tests require no SWI-Prolog process:
+The canonical symbolic SysadminExpert rules are project-owned under
+`lost-rob0t/dotfiles/.zara/experts/sysadmin/` (introduced by dotfiles#291).
+This plugin keeps the typed system observation/remediation adapter surface; it must
+not carry a second canonical Prolog rule corpus.
 
-- inactive/failed service → inspect recent journal → re-check service state
-- active service + missing listener → inspect socket/service configuration → re-check listener and service
-- resolver configured + default route + unreachable DNS upstream → inspect resolver/upstream → repeat DNS and route observation
-- Nix switch without generation advance → inspect build/activation evidence → verify generation/activation state
-
-The rules can later be consumed by the canonical Zara expert-system integration without changing the public tool contract.
+The current Python diagnosis path preserves the existing four deterministic chains
+for compatibility until the canonical ZARA-EXPERT/1 composition adapter consumes
+the dotfiles-owned expert. New symbolic rules belong in dotfiles, not here.
 
 ## Security boundary
 
