@@ -101,7 +101,9 @@ class LanguageFamilyAdapterTests(unittest.TestCase):
 
     def test_descriptors_match_canonical_zara_expert_shape(self):
         items = descriptors()
-        specs = language_family_specs()
+        specs = tuple(
+            spec for spec in language_family_specs() if spec.key not in {"nix", "bash"}
+        )
         self.assertEqual(
             [item["expert_id"] for item in items],
             [spec.expert_id for spec in specs],
@@ -339,7 +341,9 @@ class LanguageFamilyAdapterTests(unittest.TestCase):
 
     def test_descriptor_symbols_use_canonical_runtime_registry(self):
         runtime = RecordingRuntime()
-        specs = language_family_specs()
+        specs = tuple(
+            spec for spec in language_family_specs() if spec.key not in {"nix", "bash"}
+        )
         ids = register_descriptor_symbols(runtime, {"prolog", "nim"})
         self.assertEqual(ids, tuple(range(1, len(specs) + 1)))
         self.assertEqual(
@@ -357,6 +361,8 @@ class LanguageFamilyAdapterTests(unittest.TestCase):
         self.assertEqual(availability["zara:expert/typescript"], "absent")
         self.assertEqual(availability["zara:expert/java"], "absent")
         self.assertEqual(availability["zara:expert/kotlin"], "absent")
+        self.assertNotIn("zara:expert/nix", availability)
+        self.assertNotIn("zara:expert/bash", availability)
         for _, kind, value, metadata in runtime.registrations:
             self.assertEqual(kind, "expert")
             self.assertEqual(value["resource_limits"]["max_model_calls"], 0)
@@ -384,12 +390,14 @@ class LanguageFamilyAdapterTests(unittest.TestCase):
         }
         self.assertEqual(availability["zara:expert/python"], "available")
         self.assertEqual(availability["zara:expert/prolog"], "absent")
+        self.assertNotIn("zara:expert/nix", availability)
+        self.assertNotIn("zara:expert/bash", availability)
         status = json.loads(plugin.status())
         self.assertEqual(status["model_calls"], 0)
         self.assertEqual(status["language_family"], ["python"])
         self.assertEqual(
             len(runtime.registrations),
-            len(language_family_specs()) + len(lisp_family_specs()),
+            len(descriptors({"python"})) + len(lisp_family_specs()),
         )
 
     def test_language_family_exports_no_parallel_descriptor_or_invoke_tools(self):

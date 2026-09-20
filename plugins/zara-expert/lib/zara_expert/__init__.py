@@ -17,6 +17,7 @@ from .composition import (
     resolve_style,
 )
 from .domain import ExpertError, ExpertHost
+from .language_composition import LanguageFamilyCompositionInvoker
 from .lisp_composition import LispFamilyCompositionInvoker
 
 __all__ = [
@@ -31,6 +32,7 @@ __all__ = [
     "HostExpertInvoker",
     "InvocationFence",
     "InvocationResult",
+    "LanguageFamilyCompositionInvoker",
     "LispFamilyCompositionInvoker",
     "MetaExpertComposer",
     "ProjectExpertResource",
