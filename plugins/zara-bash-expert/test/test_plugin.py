@@ -13,7 +13,7 @@ from zara_bash_expert.plugin import BashExpertAdapterError, ZaraBashExpertPlugin
 
 
 EXPECTED_MANIFEST_DIGEST = (
-    "sha256:a09f376755aa3c83c1fc30133d08d3ac4cad7638e26fb5e7f95713beca597f3e"
+    "sha256:7aaa1208e53a6a863482f4735273928ee295fe0b4581a5e359c3bf8647cdc13a"
 )
 ACTIVATION_ID = "act:" + ("b" * 32)
 
@@ -234,7 +234,7 @@ class BashExpertPluginTests(unittest.TestCase):
         class StaleRuntime(FakeRuntime):
             def invoke_capability(self, handle, request):
                 result = super().invoke_capability(handle, request)
-                result["resolved_registry_generation"] = request["expected_registry_generation"] + 1
+                result["resolved_runtime_generation"] = request["expected_runtime_generation"] + 1
                 return result
 
         class ForgedRuntime(FakeRuntime):
