@@ -157,22 +157,12 @@ class WorkflowEmacsClient(EmacsClient):
         self.workflows = dict(workflows)
 
     def open_dashboard(self) -> dict:
-        expression = (
-            "(progn (require 'ai-dashboard nil t) "
-            "(unless (fboundp 'ai/dashboard) (error \"ai-dashboard unavailable\")) "
-            "(ai/dashboard) t)"
-        )
-        self._eval(expression)
-        return {"operation": "open_dashboard", "acknowledged": True}
+        result = self._bridge("ui.ai_dashboard")
+        return {"operation": "open_dashboard", **result, "acknowledged": True}
 
     def open_zara_chat(self) -> dict:
-        expression = (
-            "(progn (require 'zara nil t) "
-            "(unless (fboundp 'zara-chat) (error \"zara Emacs client unavailable\")) "
-            "(zara-chat) t)"
-        )
-        self._eval(expression)
-        return {"operation": "open_zara_chat", "acknowledged": True}
+        result = self._bridge("ui.zara_chat")
+        return {"operation": "open_zara_chat", **result, "acknowledged": True}
 
     def _run_workflow_step(self, step: EmacsWorkflowStep) -> dict:
         argument = step.argument

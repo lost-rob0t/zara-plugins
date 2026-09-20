@@ -1,3 +1,5 @@
+import base64
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -32,6 +34,25 @@ class Runner:
         return self.results.pop(0)
 
 
+def bridge_result(operation, result=None):
+    payload = {
+        "bridge": "ZARA-EMACS/1",
+        "session_id": "test-session",
+        "operation": operation,
+        "ok": True,
+        "result": result or {},
+    }
+    return Result(stdout=json.dumps(json.dumps(payload)) + "\n")
+
+
+def bridge_payload(runner, index):
+    expression = runner.calls[index][0][-1]
+    prefix = "(progn (require 'zara) (zara-bridge-call \""
+    suffix = "\"))"
+    encoded = expression[len(prefix):-len(suffix)]
+    return json.loads(base64.b64decode(encoded).decode("utf-8"))
+
+
 class EmacsWorkflowTest(unittest.TestCase):
     def config(self):
         return EmacsConfig(projects={"zara": "/work/zara"})
@@ -42,15 +63,20 @@ class EmacsWorkflowTest(unittest.TestCase):
         runner = Runner(results)
         return WorkflowEmacsClient(config, workflows=workflows, runner=runner), runner
 
-    def test_dashboard_and_zara_chat_use_fixed_templates(self):
-        client, runner = self.client({}, [Result(), Result()])
+    def test_dashboard_and_zara_chat_use_native_bridge(self):
+        client, runner = self.client(
+            {},
+            [
+                bridge_result("ui.ai_dashboard", {"opened": True}),
+                bridge_result("ui.zara_chat", {"opened": True}),
+            ],
+        )
         self.assertTrue(client.open_dashboard()["acknowledged"])
         self.assertTrue(client.open_zara_chat()["acknowledged"])
-        dashboard = runner.calls[0][0][-1]
-        zara_chat = runner.calls[1][0][-1]
-        self.assertIn("(ai/dashboard)", dashboard)
-        self.assertIn("(zara-chat)", zara_chat)
-        self.assertNotIn("shell-command", dashboard + zara_chat)
+        self.assertEqual(bridge_payload(runner, 0)["operation"], "ui.ai_dashboard")
+        self.assertEqual(bridge_payload(runner, 1)["operation"], "ui.zara_chat")
+        self.assertNotIn("(ai/dashboard)", runner.calls[0][0][-1])
+        self.assertNotIn("(zara-chat)", runner.calls[1][0][-1])
 
     def test_named_workflow_runs_only_configured_steps(self):
         mapping = {
@@ -62,7 +88,14 @@ class EmacsWorkflowTest(unittest.TestCase):
                 ]
             }
         }
-        client, runner = self.client(mapping, [Result(), Result(), Result()])
+        client, runner = self.client(
+            mapping,
+            [
+                bridge_result("ui.ai_dashboard", {"opened": True}),
+                bridge_result("magit.open_project", {"path": "/work/zara", "opened": True}),
+                bridge_result("ui.zara_chat", {"opened": True}),
+            ],
+        )
         result = client.run_workflow("coding")
         self.assertEqual(result["workflow_id"], "coding")
         self.assertEqual(
@@ -116,7 +149,10 @@ class EmacsWorkflowTest(unittest.TestCase):
         }
         client, runner = self.client(
             mapping,
-            [Result(), Result(returncode=1, stderr="magit unavailable")],
+            [
+                bridge_result("ui.ai_dashboard", {"opened": True}),
+                Result(returncode=1, stderr="magit unavailable"),
+            ],
         )
         with self.assertRaisesRegex(
             EmacsError,
