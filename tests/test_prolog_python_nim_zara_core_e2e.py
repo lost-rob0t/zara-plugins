@@ -22,6 +22,7 @@ sys.path.insert(0, str(ZARA_EXPERT_LIB))
 
 from zara_expert.backend import SwiplBackend
 from zara_expert.composition import (
+    CompositionError,
     DelegationRequest,
     InvocationFence,
     MetaExpertComposer,
@@ -278,6 +279,129 @@ class PrologPythonNimZaraCoreE2ETests(unittest.TestCase):
         self.assertEqual(budget.evidence_used, evidence_count)
         self.assertEqual(budget.max_model_calls, 0)
         self.assertEqual(budget.model_calls_used, 0)
+
+    def test_nested_late_nim_output_is_fenced_before_evidence_tree_commit(self) -> None:
+        sources = {
+            "zara:expert/prolog": {
+                "source": "fact(a).",
+                "source_generation": "generation-prolog",
+            },
+            "zara:expert/python": {
+                "source": "def answer():\n    return 42\n",
+                "source_generation": "generation-python",
+            },
+            "zara:expert/nim": {
+                "source": "proc answer(): int = 42\n",
+                "source_generation": "generation-nim",
+            },
+        }
+
+        for invalidation in ("cancelled", "stale"):
+            with self.subTest(invalidation=invalidation):
+                registry, core_invoker = self._core_composer()
+                state = {"cancelled": False, "current": True}
+                observed: list[tuple[str, tuple[str, ...]]] = []
+                fence = InvocationFence(
+                    workspace_id="workspace:prolog-python-nim-e2e",
+                    workspace_generation=11,
+                    is_cancelled=lambda: state["cancelled"],
+                    is_current_generation=lambda workspace, generation: (
+                        state["current"]
+                        and workspace == "workspace:prolog-python-nim-e2e"
+                        and generation == 11
+                    ),
+                )
+
+                def chained_invoker(
+                    expert_id: str,
+                    operation: str,
+                    input_data: dict[str, Any],
+                    *,
+                    budget: SharedSymbolicBudget,
+                    fence: InvocationFence,
+                    parent_path: tuple[str, ...],
+                ):
+                    result = core_invoker(
+                        expert_id,
+                        operation,
+                        input_data,
+                        budget=budget,
+                        fence=fence,
+                        parent_path=parent_path,
+                    )
+                    observed.append((expert_id, tuple(result.evidence)))
+                    if expert_id == "zara:expert/nim":
+                        if invalidation == "cancelled":
+                            state["cancelled"] = True
+                        else:
+                            state["current"] = False
+                        return result
+                    if expert_id == "zara:expert/prolog":
+                        return replace(
+                            result,
+                            delegations=(
+                                DelegationRequest(
+                                    expert_id="zara:expert/python",
+                                    operation="inspect",
+                                    input=sources["zara:expert/python"],
+                                    reason="trusted fixture delegates Prolog evidence to Python",
+                                ),
+                            ),
+                        )
+                    return replace(
+                        result,
+                        delegations=(
+                            DelegationRequest(
+                                expert_id="zara:expert/nim",
+                                operation="inspect",
+                                input=sources["zara:expert/nim"],
+                                reason="trusted fixture delegates Python evidence to Nim",
+                            ),
+                        ),
+                    )
+
+                composer = MetaExpertComposer(chained_invoker)
+                budget = SharedSymbolicBudget(
+                    max_invocations=3,
+                    max_depth=2,
+                    max_evidence=64,
+                    max_model_calls=0,
+                )
+                expected_error = (
+                    "expert invocation cancelled"
+                    if invalidation == "cancelled"
+                    else "stale workspace generation"
+                )
+                with self.assertRaisesRegex(CompositionError, expected_error):
+                    composer.invoke(
+                        "zara:expert/prolog",
+                        "inspect",
+                        sources["zara:expert/prolog"],
+                        budget=budget,
+                        fence=fence,
+                    )
+
+                self.assertEqual(
+                    [expert_id for expert_id, _evidence in observed],
+                    [
+                        "zara:expert/prolog",
+                        "zara:expert/python",
+                        "zara:expert/nim",
+                    ],
+                )
+                self.assertTrue(all(evidence for _expert_id, evidence in observed))
+                self.assertEqual(len(registry.snapshot().invocation_ids), 3)
+                self.assertEqual(budget.invocations_used, 3)
+                committed_parent_evidence = sum(
+                    len(evidence) for _expert_id, evidence in observed[:-1]
+                )
+                all_dispatched_evidence = sum(
+                    len(evidence) for _expert_id, evidence in observed
+                )
+                self.assertEqual(budget.evidence_used, committed_parent_evidence)
+                self.assertLess(budget.evidence_used, all_dispatched_evidence)
+                self.assertEqual(budget.max_model_calls, 0)
+                self.assertEqual(budget.model_calls_used, 0)
 
     def test_repair_apply_is_blocked_without_effect_success(self) -> None:
         _registry, invoker = self._core_composer()
