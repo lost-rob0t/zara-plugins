@@ -25,8 +25,9 @@ MAX_OBJECT_PROPERTIES = 128
 MAX_ARRAY_ITEMS = 256
 MAX_KEY_LENGTH = 128
 MAX_STRING_LENGTH = 4096
-MAX_GENERATION = 9007199254740991
-REFERENCE_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
+MAX_GENERATION = 2147483647
+REQUEST_ID_RE = re.compile(r"^[!-~]{1,128}$")
+ACTIVATION_ID_RE = re.compile(r"^act:[a-f0-9]{32}$")
 ALLOWED_OPERATIONS = frozenset(
     {
         "parse",
@@ -37,29 +38,33 @@ ALLOWED_OPERATIONS = frozenset(
         "check_plan",
     }
 )
-OPERATION_SCHEMAS = {
-    "parse": ("schema:nix-expert-parse-input-v1", "schema:nix-expert-result-v1"),
+OPERATION_FIELDS: dict[str, tuple[dict[str, object], ...]] = {
+    "parse": (
+        {"name": "source", "type": "string", "required": True},
+        {"name": "path", "type": "string", "required": False},
+    ),
     "inspect_flake": (
-        "schema:nix-expert-inspect-flake-input-v1",
-        "schema:nix-expert-result-v1",
+        {"name": "path", "type": "string", "required": True},
     ),
     "inspect_module": (
-        "schema:nix-expert-inspect-module-input-v1",
-        "schema:nix-expert-result-v1",
+        {"name": "path", "type": "string", "required": True},
+        {"name": "option", "type": "string", "required": False},
     ),
     "inspect_home_manager": (
-        "schema:nix-expert-inspect-home-manager-input-v1",
-        "schema:nix-expert-result-v1",
+        {"name": "path", "type": "string", "required": True},
+        {"name": "option", "type": "string", "required": False},
     ),
     "style_check": (
-        "schema:nix-expert-style-check-input-v1",
-        "schema:nix-expert-result-v1",
+        {"name": "source", "type": "string", "required": True},
+        {"name": "path", "type": "string", "required": False},
     ),
     "check_plan": (
-        "schema:nix-expert-check-plan-input-v1",
-        "schema:nix-expert-result-v1",
+        {"name": "path", "type": "string", "required": True},
     ),
 }
+RESULT_VERDICTS = frozenset(
+    {"succeeded", "failed", "unknown", "blocked", "unsupported", "cancelled", "error"}
+)
 
 
 class NixExpertAdapterError(RuntimeError):
@@ -98,9 +103,14 @@ def _validate_json_tree(value: object) -> None:
             raise NixExpertAdapterError("invalid-input-value")
 
 
-def _validate_reference(value: str, field: str) -> None:
-    if not isinstance(value, str) or REFERENCE_RE.fullmatch(value) is None:
-        raise NixExpertAdapterError(f"invalid-{field}")
+def _validate_request_id(value: str) -> None:
+    if not isinstance(value, str) or REQUEST_ID_RE.fullmatch(value) is None:
+        raise NixExpertAdapterError("invalid-request-id")
+
+
+def _validate_activation_id(value: str) -> None:
+    if not isinstance(value, str) or ACTIVATION_ID_RE.fullmatch(value) is None:
+        raise NixExpertAdapterError("invalid-activation-id")
 
 
 def _json_integer(value: int | float, field: str, minimum: int, maximum: int) -> int:
@@ -115,7 +125,7 @@ def _json_integer(value: int | float, field: str, minimum: int, maximum: int) ->
 
 
 def _validate_generation(value: int | float, field: str) -> int:
-    return _json_integer(value, field, 1, MAX_GENERATION)
+    return _json_integer(value, field, 0, MAX_GENERATION)
 
 
 def _validate_limit(value: int | float, field: str, maximum: int) -> int:
@@ -123,14 +133,49 @@ def _validate_limit(value: int | float, field: str, maximum: int) -> int:
 
 
 def _operation_descriptor(operation: str) -> dict[str, object]:
-    input_schema, output_schema = OPERATION_SCHEMAS[operation]
     return {
-        "id": operation,
-        "input_schema": input_schema,
-        "output_schema": output_schema,
-        "effects": [],
-        "required_capabilities": [HOST_CAPABILITY],
+        "operation_id": operation,
+        "input_schema": {"fields": [dict(field) for field in OPERATION_FIELDS[operation]]},
+        "output_schema": {"fields": []},
     }
+
+
+def _validate_result(
+    result: Mapping[str, object],
+    *,
+    request_id: str,
+    activation_id: str,
+    expert_operation: str,
+    registry_generation: int,
+    runtime_generation: int,
+) -> None:
+    expected_identity = {
+        "protocol": PROTOCOL,
+        "request_id": request_id,
+        "activation_id": activation_id,
+        "expert_id": EXPERT_ID,
+        "expert_version": PLUGIN_VERSION,
+        "manifest_digest": MANIFEST_DIGEST,
+        "expert_operation": expert_operation,
+    }
+    for field, expected in expected_identity.items():
+        if result.get(field) != expected:
+            raise NixExpertAdapterError("expert-result-identity-mismatch")
+    if result.get("resolved_registry_generation") != registry_generation:
+        raise NixExpertAdapterError("stale-expert-result")
+    if result.get("resolved_runtime_generation") != runtime_generation:
+        raise NixExpertAdapterError("stale-expert-result")
+    if result.get("verdict") not in RESULT_VERDICTS:
+        raise NixExpertAdapterError("invalid-expert-verdict")
+    usage = result.get("usage")
+    model_calls = usage.get("model_calls") if isinstance(usage, Mapping) else None
+    if type(model_calls) is not int or model_calls != 0:
+        raise NixExpertAdapterError("zero-model-proof-missing")
+    receipts = result.get("effect_receipts")
+    if not isinstance(receipts, (list, tuple)):
+        raise NixExpertAdapterError("read-only-effect-proof-missing")
+    if receipts:
+        raise NixExpertAdapterError("read-only-effect-leak")
 
 
 class ZaraNixExpertPlugin(ServicePlugin):
@@ -188,23 +233,15 @@ class ZaraNixExpertPlugin(ServicePlugin):
                     _operation_descriptor(operation)
                     for operation in sorted(ALLOWED_OPERATIONS)
                 ],
-                "applicability_schema": "schema:nix-expert-applicability-v1",
-                "required_observations": [],
-                "required_capabilities": [HOST_CAPABILITY],
-                "possible_effects": [
-                    "nix.eval",
-                    "nix.check",
-                    "nix.build",
-                    "home-manager.switch",
-                ],
-                "supported_engines": ["swi-prolog"],
-                "supported_platforms": ["desktop", "server"],
-                "placement": {
-                    "node_id": "local",
-                    "runtime_id": "zara-python",
+                "applicability": {
+                    "keywords": ["flake", "home-manager", "nix", "nixos"]
                 },
-                "fallback_policy": "none",
-                "delegation_policy": "none",
+                "required_capabilities": [HOST_CAPABILITY],
+                "possible_effects": ["none"],
+                "supported_engines": ["swipl"],
+                "supported_platforms": ["desktop", "server"],
+                "fallback_policy": "fail_closed",
+                "delegation_policy": "never",
                 "resource_limits": {
                     "timeout_ms": MAX_TIMEOUT_MS,
                     "max_results": MAX_RESULTS,
@@ -231,8 +268,8 @@ class ZaraNixExpertPlugin(ServicePlugin):
     ) -> str:
         if expert_operation not in ALLOWED_OPERATIONS:
             raise NixExpertAdapterError("unsupported-expert-operation")
-        _validate_reference(request_id, "request-id")
-        _validate_reference(activation_id, "activation-id")
+        _validate_request_id(request_id)
+        _validate_activation_id(activation_id)
         registry_generation = _validate_generation(
             expected_registry_generation, "registry-generation"
         )
@@ -281,13 +318,14 @@ class ZaraNixExpertPlugin(ServicePlugin):
 
         if not isinstance(result, Mapping):
             raise NixExpertAdapterError("invalid-expert-result")
-        usage = result.get("usage")
-        model_calls = usage.get("model_calls") if isinstance(usage, Mapping) else None
-        if type(model_calls) is not int or model_calls != 0:
-            raise NixExpertAdapterError("zero-model-proof-missing")
-        receipts = result.get("side_effect_receipts")
-        if not isinstance(receipts, list) or receipts:
-            raise NixExpertAdapterError("read-only-effect-leak")
+        _validate_result(
+            result,
+            request_id=request_id,
+            activation_id=activation_id,
+            expert_operation=expert_operation,
+            registry_generation=registry_generation,
+            runtime_generation=runtime_generation,
+        )
 
         encoded = self._json(dict(result))
         if len(encoded.encode("utf-8")) > output_limit:
