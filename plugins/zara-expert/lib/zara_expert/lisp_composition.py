@@ -48,6 +48,13 @@ class LispFamilyCompositionInvoker:
         budget.assert_zero_model_usage()
         fence.check()
 
+        # repair.apply has a different public schema from predicate-backed
+        # operations. Preserve that canonical schema and fail at the existing
+        # Zara typed-effect boundary before any expert backend can run.
+        if operation == "repair.apply":
+            invoke_lisp_operation(self._host, expert_id, operation, ())
+            raise AssertionError("repair.apply must fail closed before backend dispatch")
+
         unknown = set(input_data) - _ALLOWED_INPUT_KEYS
         if unknown:
             raise CompositionError(
