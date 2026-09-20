@@ -252,11 +252,16 @@ class CompositionTests(unittest.TestCase):
             )
 
         budget = SharedSymbolicBudget()
-        with self.assertRaisesRegex(CompositionError, "ledger is nonzero"):
+        with self.assertRaisesRegex(
+            CompositionError,
+            "mutated shared symbolic budget: model_calls_used",
+        ):
             MetaExpertComposer(invoke).invoke(
                 "parent", "query", {}, budget=budget, fence=MutableFence().fence()
             )
         self.assertEqual(calls, ["parent"])
+        self.assertEqual(budget.max_model_calls, 0)
+        self.assertEqual(budget.model_calls_used, 0)
 
     def test_non_inert_input_fails_before_invoker(self):
         calls = []
