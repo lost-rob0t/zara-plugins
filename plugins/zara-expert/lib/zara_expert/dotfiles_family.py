@@ -63,7 +63,7 @@ def _operation_schema(operation: str) -> dict[str, Any]:
             "operation_id": operation,
             "input_schema": _fields(
                 ("path", "string", True),
-                ("decision", "enum", True),
+                ("decision", "string", True),
             ),
             "output_schema": _fields(
                 ("result", "object", True),
