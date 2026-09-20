@@ -297,6 +297,20 @@ class LanguageFamilyAdapterTests(unittest.TestCase):
         self.assertEqual(status["language_family"], ["python"])
         self.assertEqual(len(runtime.registrations), 6)
 
+    def test_language_family_exports_no_parallel_descriptor_or_invoke_tools(self):
+        plugin = ZaraExpertPlugin(
+            backend=self.backend,
+            state_root=self.root / "plugin-state",
+        )
+        names = {tool.name for tool in plugin.tools()}
+        self.assertNotIn("expert.language_invoke", names)
+        self.assertNotIn("expert.language_descriptors", names)
+        self.assertNotIn("expert.language_schemas", names)
+        self.assertNotIn("expert.lisp_invoke", names)
+        self.assertNotIn("expert.lisp_descriptors", names)
+        self.assertIn("expert.query", names)
+        self.assertIn("expert.explain", names)
+
 
 if __name__ == "__main__":
     unittest.main()
