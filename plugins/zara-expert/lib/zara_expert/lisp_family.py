@@ -154,6 +154,12 @@ def invoke_lisp_operation(
             "repair.apply requires Zara's canonical typed edit/effect path; "
             "expert registration grants no write authority"
         )
+    if operation == "repair.preview" and spec.key != "lisp":
+        raise ExpertError(
+            f"repair.preview for {spec.expert_id} requires canonical ZARA-EXPERT/1 "
+            "delegation to zara:expert/lisp with the caller's remaining shared budget; "
+            "direct dialect-host dispatch is forbidden"
+        )
     binding = _OPERATION_BINDINGS.get(operation)
     if binding is None:
         raise ExpertError(f"unsupported Lisp expert operation: {operation!r}")
@@ -207,6 +213,7 @@ def _manifest_digest(spec: LispExpertSpec) -> str:
             spec.upstream_issue,
             SOURCE_OWNER,
             bindings,
+            "dialect-repair-preview:delegate-to-zara:expert/lisp",
             "repair.apply:canonical-zara-effect-path",
             f"max_model_calls={MAX_MODEL_CALLS}",
         )
