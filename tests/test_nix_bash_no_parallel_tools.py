@@ -1,26 +1,48 @@
 from __future__ import annotations
 
-import sys
+import ast
 import unittest
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT / "plugins" / "zara-nix-expert" / "lib"))
-sys.path.insert(0, str(REPO_ROOT / "plugins" / "zara-bash-expert" / "lib"))
-
-from zara_bash_expert.plugin import ZaraBashExpertPlugin
-from zara_nix_expert.plugin import ZaraNixExpertPlugin
+ADAPTERS = (
+    (
+        REPO_ROOT / "plugins" / "zara-nix-expert" / "lib" / "zara_nix_expert" / "plugin.py",
+        "ZaraNixExpertPlugin",
+    ),
+    (
+        REPO_ROOT / "plugins" / "zara-bash-expert" / "lib" / "zara_bash_expert" / "plugin.py",
+        "ZaraBashExpertPlugin",
+    ),
+)
 
 
 class NixBashNoParallelToolSurfaceTests(unittest.TestCase):
     def test_raw_adapter_classes_expose_no_parallel_expert_tools(self) -> None:
-        # The package-root factories already use typed boundary wrappers, but the
-        # lower-level modules are importable Python. They must not accidentally
-        # publish a second descriptor/invoke namespace that bypasses Core-owned
-        # activation, cancellation, generation and shared-budget fencing.
-        self.assertEqual(ZaraNixExpertPlugin().tools(), ())
-        self.assertEqual(ZaraBashExpertPlugin().tools(), ())
+        # Keep this gate dependency-free so it runs before Zara/plugin packages
+        # are installed. The lower-level modules are importable Python and must
+        # never grow a second descriptor/invoke tool namespace around Core.
+        for path, class_name in ADAPTERS:
+            with self.subTest(adapter=class_name):
+                source = path.read_text(encoding="utf-8")
+                self.assertNotIn("StructuredTool.from_function", source)
+                module = ast.parse(source, filename=str(path))
+                class_node = next(
+                    node
+                    for node in module.body
+                    if isinstance(node, ast.ClassDef) and node.name == class_name
+                )
+                tools = next(
+                    node
+                    for node in class_node.body
+                    if isinstance(node, ast.FunctionDef) and node.name == "tools"
+                )
+                returns = [node for node in tools.body if isinstance(node, ast.Return)]
+                self.assertEqual(len(returns), 1)
+                value = returns[0].value
+                self.assertIsInstance(value, ast.Tuple)
+                self.assertEqual(value.elts, [])
 
 
 if __name__ == "__main__":
