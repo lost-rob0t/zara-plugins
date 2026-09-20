@@ -232,7 +232,13 @@ def make_lisp_expert_handler(host: ExpertHost, expert_id: str):
             expert_operation,
             arguments,
         )
-        verdict = "succeeded" if result.get("ok") is True else "unknown"
+        ok = result.get("ok")
+        if ok is True:
+            verdict = "succeeded"
+        elif ok is False:
+            verdict = "failed"
+        else:
+            verdict = "unknown"
         return {
             "verdict": verdict,
             "data": {"result": result},
