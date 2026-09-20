@@ -34,9 +34,9 @@ from zara_expert.language_source_contract import validate_language_source_contra
 if ZARA_CORE_ROOT:
     from zara.experts import (
         ExpertDescriptor,
+        ExpertErrorCode,
         ExpertLimits,
         ExpertRegistry,
-        ExpertStaleGenerationError,
         ExpertVerdict,
     )
 
@@ -325,8 +325,16 @@ class JsTsJavaKotlinInflightRecreationE2ETests(unittest.TestCase):
         worker.join(timeout=5.0)
 
         self.assertFalse(worker.is_alive(), "late nested invocation did not terminate")
-        self.assertNotIn("result", outcome)
-        self.assertIsInstance(outcome.get("error"), ExpertStaleGenerationError)
+        self.assertNotIn("error", outcome)
+        failed = outcome["result"]
+        self.assertIs(failed.verdict, ExpertVerdict.UNKNOWN)
+        self.assertIs(failed.error_code, ExpertErrorCode.UNKNOWN_EXTERNAL_OUTCOME)
+        self.assertIn("ExpertStaleGenerationError", failed.error_message or "")
+        self.assertEqual(failed.data, {})
+        self.assertEqual(failed.evidence_refs, ())
+        self.assertIs(type(failed.usage["model_calls"]), int)
+        self.assertEqual(failed.usage["model_calls"], 0)
+        self.assertEqual(failed.effect_receipts, ())
 
         fresh_handle = self._activate(registry, "zara:expert/kotlin")
         fresh = registry.invoke(
