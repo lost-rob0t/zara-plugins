@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "expert_id": "zara:expert/javascript",
+  "adapter_version": "0.1.0",
+  "canonical_source": {
+    "repository": "lost-rob0t/dotfiles",
+    "path": ".zara/experts/javascript",
+    "issue": 292
+  },
+  "runtime_contract": {
+    "repository": "lost-rob0t/prolog-rlm",
+    "issue": 500
+  },
+  "zara_contract": {
+    "repository": "lost-rob0t/zara",
+    "issue": 1233,
+    "schema_pr": 1257
+  }
+}
