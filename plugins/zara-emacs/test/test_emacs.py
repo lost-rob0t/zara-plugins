@@ -316,6 +316,26 @@ class EmacsClientTest(unittest.TestCase):
         self.assertEqual(payload["args"]["replacement"], "λ")
         self.assertNotIn("λ", runner.calls[1][0][-1])
 
+    def test_bridge_read_preserves_full_bounded_payload(self):
+        text = "x" * 32768
+        client, _ = self.client(
+            [
+                bridge_result(
+                    "buffer.read",
+                    {
+                        "buffer_id": "b-1",
+                        "start": 1,
+                        "end": 32769,
+                        "modified_tick": 4,
+                        "text": text,
+                    },
+                )
+            ]
+        )
+        result = client.read_buffer("b-1", 1, 32769)
+        self.assertEqual(len(result["text"]), 32768)
+        self.assertEqual(result["text"], text)
+
     def test_bridge_error_is_explicit(self):
         client, _ = self.client(
             [
