@@ -31,10 +31,35 @@ def _validated_core_result(
     if not isinstance(effect_receipts, (list, tuple)) or effect_receipts:
         raise CompositionError("Core DotfilesExpert returned unexpected effect receipts")
 
+    verdict = getattr(outcome, "verdict", None)
+    status = getattr(verdict, "value", verdict)
+    if not isinstance(status, str):
+        raise CompositionError("Core DotfilesExpert result is missing verdict")
+
+    evidence_refs = getattr(outcome, "evidence_refs", None)
+    if isinstance(evidence_refs, (str, bytes)) or not isinstance(
+        evidence_refs, (list, tuple)
+    ):
+        raise CompositionError("Core DotfilesExpert evidence_refs must be a sequence")
+    evidence = tuple(str(item) for item in evidence_refs)
+
     data = getattr(outcome, "data", None)
     if not isinstance(data, Mapping):
         raise CompositionError("Core DotfilesExpert result data must be an object")
     nested = data.get("result")
+    if nested is None:
+        if operation != "repair.apply" or status != "blocked":
+            raise CompositionError("Core DotfilesExpert nested result must be an object")
+        return InvocationResult(
+            status=status,
+            data=dict(data),
+            evidence=evidence,
+            explanation=(
+                "DotfilesExpert blocked repair.apply until Zara's canonical typed "
+                "capability/approval/effect path can provide a fresh postcondition"
+            ),
+            model_calls=0,
+        )
     if not isinstance(nested, Mapping):
         raise CompositionError("Core DotfilesExpert nested result must be an object")
     nested_model_calls = nested.get("model_calls")
@@ -47,13 +72,6 @@ def _validated_core_result(
     if not isinstance(nested_data, Mapping):
         raise CompositionError("Core DotfilesExpert nested data must be an object")
 
-    evidence_refs = getattr(outcome, "evidence_refs", None)
-    if isinstance(evidence_refs, (str, bytes)) or not isinstance(
-        evidence_refs, (list, tuple)
-    ):
-        raise CompositionError("Core DotfilesExpert evidence_refs must be a sequence")
-    evidence = tuple(str(item) for item in evidence_refs)
-
     raw_explanation = nested.get("explanation", ())
     if isinstance(raw_explanation, (str, bytes)) or not isinstance(
         raw_explanation, (list, tuple)
@@ -62,11 +80,6 @@ def _validated_core_result(
     explanation = " | ".join(str(item) for item in raw_explanation)
     if not explanation:
         explanation = f"{EXPERT_ID} handled {operation} through Zara Core ZARA-EXPERT/1"
-
-    verdict = getattr(outcome, "verdict", None)
-    status = getattr(verdict, "value", verdict)
-    if not isinstance(status, str):
-        raise CompositionError("Core DotfilesExpert result is missing verdict")
 
     delegations: tuple[DelegationRequest, ...] = ()
     if operation == "inspect" and status == "succeeded":
