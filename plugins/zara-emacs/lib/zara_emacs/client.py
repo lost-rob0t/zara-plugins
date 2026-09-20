@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import math
 import subprocess
@@ -10,6 +11,9 @@ from pathlib import Path
 from typing import Callable
 
 from .config import EmacsConfig
+
+
+BRIDGE_VERSION = "ZARA-EMACS/1"
 
 
 class EmacsError(RuntimeError):
@@ -61,6 +65,47 @@ class EmacsClient:
         except (TypeError, json.JSONDecodeError) as error:
             raise EmacsError("Emacs returned malformed JSON") from error
 
+    def _bridge(self, operation: str, arguments: dict | None = None) -> dict:
+        if not isinstance(operation, str) or not operation or len(operation) > 128:
+            raise EmacsError("bridge operation is invalid")
+        payload = json.dumps(
+            {
+                "bridge": BRIDGE_VERSION,
+                "operation": operation,
+                "args": dict(arguments or {}),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        encoded = base64.b64encode(payload).decode("ascii")
+        raw = self._eval(
+            f"(progn (require 'zara) (zara-bridge-call \"{encoded}\"))"
+        )
+        try:
+            response = json.loads(raw)
+            if isinstance(response, str):
+                response = json.loads(response)
+        except (TypeError, json.JSONDecodeError) as error:
+            raise EmacsError("Emacs returned malformed bridge JSON") from error
+        if not isinstance(response, dict):
+            raise EmacsError("Emacs returned malformed bridge response")
+        if response.get("bridge") != BRIDGE_VERSION:
+            raise EmacsError("Emacs bridge version mismatch")
+        if response.get("operation") != operation:
+            raise EmacsError("Emacs bridge operation mismatch")
+        if response.get("ok") is not True:
+            failure = response.get("error")
+            if isinstance(failure, dict):
+                message = str(failure.get("message") or "Emacs bridge operation failed")
+            else:
+                message = "Emacs bridge operation failed"
+            raise EmacsError(message[:512])
+        result = response.get("result")
+        if not isinstance(result, dict):
+            raise EmacsError("Emacs bridge returned malformed result")
+        return result
+
     @staticmethod
     def _single_line(name: str, value: str, *, maximum: int) -> str:
         if not isinstance(value, str) or not value.strip() or len(value) > maximum:
@@ -73,29 +118,18 @@ class EmacsClient:
         resolved = Path(str(path)).expanduser()
         if not resolved.is_absolute() or "\x00" in str(resolved):
             raise EmacsError("file path must be an absolute path")
-        self._run(
-            [
-                self.config.emacsclient,
-                "--socket-name",
-                self.config.server_name,
-                "--alternate-editor=false",
-                "--no-wait",
-                "--",
-                str(resolved),
-            ]
-        )
-        return {"operation": "open_file", "path": str(resolved), "acknowledged": True}
+        result = self._bridge("buffer.open", {"path": str(resolved)})
+        return {"operation": "open_file", **result, "acknowledged": True}
 
     def open_scratch(self) -> dict:
-        self._eval('(progn (switch-to-buffer "*scratch*") (buffer-name))')
-        return {"operation": "open_scratch", "buffer": "*scratch*", "acknowledged": True}
+        result = self._bridge("ui.scratch")
+        return {"operation": "open_scratch", **result, "acknowledged": True}
 
     def open_buffer(self, name: str) -> dict:
         if not isinstance(name, str) or not name or len(name) > 256 or "\x00" in name:
             raise EmacsError("buffer name is invalid")
-        expression = f"(progn (switch-to-buffer {json.dumps(name)}) (buffer-name))"
-        self._eval(expression)
-        return {"operation": "open_buffer", "buffer": name, "acknowledged": True}
+        result = self._bridge("ui.buffer_by_name", {"name": name})
+        return {"operation": "open_buffer", **result, "acknowledged": True}
 
     def open_daily(self, day: str = "today") -> dict:
         value = date.today().isoformat() if day == "today" else str(day)
@@ -103,20 +137,8 @@ class EmacsClient:
             date.fromisoformat(value)
         except ValueError as error:
             raise EmacsError("daily date must be ISO YYYY-MM-DD or today") from error
-        encoded = json.dumps(value)
-        expression = (
-            "(progn (require 'org-roam-dailies) "
-            f"(org-roam-dailies--capture (org-read-date nil t {encoded}) t nil) "
-            "(or (buffer-file-name) (buffer-name)))"
-        )
-        observed = self._eval(expression)
-        return {
-            "operation": "open_daily",
-            "date": value,
-            "observed": observed,
-            "acknowledged": True,
-            "post_open": {"request": "dictation", "started": False},
-        }
+        result = self._bridge("org_roam.open_daily", {"date": value})
+        return {"operation": "open_daily", **result, "acknowledged": True}
 
     def _notes_root(self) -> str:
         return str(Path(self.config.notes_root).expanduser())
@@ -436,27 +458,104 @@ class EmacsClient:
         result = self._eval_json(expression)
         return {"operation": "append_shared_memory", **result, "acknowledged": True}
 
+    def describe_session(self) -> dict:
+        return self._bridge("session.describe")
+
+    def buffers(self, limit: int = 100) -> dict:
+        return self._bridge("buffer.list", {"limit": limit})
+
+    def buffer_context(self, buffer_id: str = "") -> dict:
+        arguments = {"buffer_id": buffer_id} if buffer_id else {}
+        return self._bridge("buffer.context", arguments)
+
+    def read_buffer(
+        self,
+        buffer_id: str,
+        start: int | None = None,
+        end: int | None = None,
+    ) -> dict:
+        arguments: dict[str, object] = {"buffer_id": buffer_id}
+        if start is not None:
+            arguments["start"] = start
+        if end is not None:
+            arguments["end"] = end
+        return self._bridge("buffer.read", arguments)
+
+    def preview_edit(
+        self,
+        buffer_id: str,
+        start: int,
+        end: int,
+        expected_tick: int,
+        replacement: str,
+    ) -> dict:
+        return self._bridge(
+            "edit.preview",
+            {
+                "buffer_id": buffer_id,
+                "start": start,
+                "end": end,
+                "expected_tick": expected_tick,
+                "replacement": replacement,
+            },
+        )
+
+    def apply_edit(self, edit_id: str) -> dict:
+        return self._bridge("edit.apply", {"edit_id": edit_id})
+
+    def cancel_edit(self, edit_id: str) -> dict:
+        return self._bridge("edit.cancel", {"edit_id": edit_id})
+
+    def edit_status(self, edit_id: str) -> dict:
+        return self._bridge("edit.status", {"edit_id": edit_id})
+
+    def save_buffer(self, buffer_id: str) -> dict:
+        return self._bridge("buffer.save", {"buffer_id": buffer_id})
+
+    def windows(self) -> dict:
+        return self._bridge("window.list")
+
+    def select_window(self, window_id: str) -> dict:
+        return self._bridge("window.select", {"window_id": window_id})
+
+    def split_window(
+        self,
+        window_id: str,
+        side: str = "below",
+        size: int | None = None,
+    ) -> dict:
+        arguments: dict[str, object] = {"window_id": window_id, "side": side}
+        if size is not None:
+            arguments["size"] = size
+        return self._bridge("window.split", arguments)
+
+    def delete_window(self, window_id: str) -> dict:
+        return self._bridge("window.delete", {"window_id": window_id})
+
+    def commands(self, query: str = "", limit: int = 100) -> dict:
+        return self._bridge("command.list", {"query": query, "limit": limit})
+
+    def describe_command(self, command: str) -> dict:
+        return self._bridge("command.describe", {"command": command})
+
+    def where_is(self, command: str) -> dict:
+        return self._bridge("command.where_is", {"command": command})
+
+    def key_lookup(self, key: str) -> dict:
+        return self._bridge("command.key_lookup", {"key": key})
+
     def open_magit(self, project_id: str) -> dict:
         if project_id not in self.config.projects:
             raise EmacsError(f"unknown project alias: {project_id}")
         path = str(Path(self.config.projects[project_id]).expanduser())
-        expression = (
-            "(progn (require 'magit) "
-            f"(magit-status {json.dumps(path)}) t)"
-        )
-        self._eval(expression)
+        result = self._bridge("magit.open_project", {"path": path})
         return {
             "operation": "open_magit",
             "project_id": project_id,
+            **result,
             "acknowledged": True,
         }
 
     def context(self) -> dict:
-        expression = (
-            "(let ((file (buffer-file-name)) (buffer (buffer-name)) "
-            "(project (when (fboundp 'project-current) (project-current nil)))) "
-            "(prin1-to-string (list :buffer buffer :file file :project "
-            "(when project (car (project-roots project))))))"
-        )
-        observed = self._eval(expression)
-        return {"operation": "context", "observed": observed, "acknowledged": True}
+        result = self._bridge("buffer.context")
+        return {"operation": "context", **result, "acknowledged": True}
