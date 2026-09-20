@@ -5,6 +5,7 @@ Structured Emacs integration for Zara using `emacsclient` and fixed operation te
 ## Operations
 
 - `emacs.command_catalog` — lists configuration-owned stable action IDs and their exact interactive command symbols.
+- `emacs.resolve_voice(utterance)` — normalizes and resolves a configured deterministic speech phrase to an action ID without executing it.
 - `emacs.invoke_command(action_id)` — invokes only a configured action ID through `call-interactively`; callers cannot submit raw Elisp or raw command symbols.
 - `emacs.open_scratch`
 - `emacs.open_file(path)` — absolute paths only, passed as an argv element.
