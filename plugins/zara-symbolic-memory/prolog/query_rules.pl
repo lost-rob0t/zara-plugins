@@ -14,6 +14,7 @@
 :- dynamic query_limit/1.
 :- dynamic query_now/1.
 :- dynamic query_vector/1.
+:- dynamic query_model/1.
 
 query_rule(symbolic_weight, 0.50).
 query_rule(embedding_weight, 0.30).
@@ -43,12 +44,14 @@ token_hit(Text, Token) :- sub_string(Text, _, _, _, Token).
 embedding_score(_, _, 0.0) :- query_vector([]), !.
 embedding_score(memory(Id, Version), _, Score) :-
     query_vector(Query),
-    memory_embedding(Id, Version, _, _, _, Vector),
+    query_model(Model),
+    memory_embedding(Id, Version, Model, _, _, Vector),
     !,
     cosine_similarity(Query, Vector, Score).
 embedding_score(kb(Id), _, Score) :-
     query_vector(Query),
-    kb_embedding(Id, _, _, _, Vector),
+    query_model(Model),
+    kb_embedding(Id, Model, _, _, Vector),
     !,
     cosine_similarity(Query, Vector, Score).
 embedding_score(_, _, 0.0).
