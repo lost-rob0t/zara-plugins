@@ -21,7 +21,7 @@ if ZARA_CORE_ROOT:
 sys.path.insert(0, str(ZARA_EXPERT_LIB))
 
 from zara_expert.backend import SwiplBackend
-from zara_expert.domain import ExpertError, ExpertHost
+from zara_expert.domain import ExpertHost
 from zara_expert.language_family import descriptors, register_language_family
 from zara_expert.language_handler import make_language_expert_handler
 from zara_expert.language_source_contract import validate_language_source_contracts
@@ -144,6 +144,20 @@ class PrologPythonNimInflightRecreationE2ETests(unittest.TestCase):
             raise AssertionError(f"failed to activate {expert_id}: {receipt!r}")
         return handle
 
+    @staticmethod
+    def _required_child_result(parent_result: dict[str, Any], child_result: Any) -> dict[str, Any]:
+        """A required delegated child may never be ignored when it fails closed."""
+
+        if child_result.verdict is ExpertVerdict.SUCCEEDED:
+            return parent_result
+        return {
+            "verdict": child_result.verdict.value,
+            "data": {},
+            "evidence_refs": list(child_result.evidence_refs),
+            "usage": {"model_calls": child_result.usage.get("model_calls", 0)},
+            "effect_receipts": [],
+        }
+
     def _install_chain(self, registry, published, handlers):
         child_handles: dict[str, Any] = {}
         prolog_handler = handlers["zara:expert/prolog"]
@@ -155,7 +169,7 @@ class PrologPythonNimInflightRecreationE2ETests(unittest.TestCase):
                 expert_operation=expert_operation,
                 **payload,
             )
-            registry.invoke(
+            child_result = registry.invoke(
                 child_handles["zara:expert/nim"],
                 "inspect",
                 {
@@ -164,14 +178,14 @@ class PrologPythonNimInflightRecreationE2ETests(unittest.TestCase):
                 },
                 limits=ExpertLimits(max_model_calls=64),
             )
-            return parent_result
+            return self._required_child_result(parent_result, child_result)
 
         def delegating_prolog(*, expert_operation: str, **payload: Any) -> dict[str, Any]:
             parent_result = prolog_handler(
                 expert_operation=expert_operation,
                 **payload,
             )
-            registry.invoke(
+            child_result = registry.invoke(
                 child_handles["zara:expert/python"],
                 "inspect",
                 {
@@ -180,7 +194,7 @@ class PrologPythonNimInflightRecreationE2ETests(unittest.TestCase):
                 },
                 limits=ExpertLimits(max_model_calls=64),
             )
-            return parent_result
+            return self._required_child_result(parent_result, child_result)
 
         registry.register(
             ExpertDescriptor.from_wire(published["zara:expert/prolog"]),
@@ -337,23 +351,28 @@ class PrologPythonNimInflightRecreationE2ETests(unittest.TestCase):
         backend.release.set()
         worker.join(timeout=5.0)
         self.assertFalse(worker.is_alive(), "revoked nested invocation did not terminate")
-        self.assertNotIn("result", outcome)
-        self.assertIsInstance(outcome.get("error"), ExpertError)
-        self.assertRegex(
-            str(outcome["error"]),
-            "registered predicate authority changed during backend execution",
-        )
+        self.assertNotIn("error", outcome)
+        failed = outcome["result"]
+        self.assertEqual(failed.verdict.value, "error")
+        self.assertEqual(failed.data, {})
+        self.assertEqual(failed.evidence_refs, ())
+        self.assertIs(type(failed.usage["model_calls"]), int)
+        self.assertEqual(failed.usage["model_calls"], 0)
+        self.assertEqual(failed.effect_receipts, ())
 
-        with self.assertRaisesRegex(ExpertError, "is not registered"):
-            first_registry.invoke(
-                child_handles["zara:expert/nim"],
-                "inspect",
-                {
-                    "source": "proc staleProcess(): int = 45\n",
-                    "source_generation": "generation-nim-stale-process",
-                },
-                limits=ExpertLimits(max_model_calls=0),
-            )
+        stale = first_registry.invoke(
+            child_handles["zara:expert/nim"],
+            "inspect",
+            {
+                "source": "proc staleProcess(): int = 45\n",
+                "source_generation": "generation-nim-stale-process",
+            },
+            limits=ExpertLimits(max_model_calls=0),
+        )
+        self.assertEqual(stale.verdict.value, "error")
+        self.assertEqual(stale.evidence_refs, ())
+        self.assertIs(type(stale.usage["model_calls"]), int)
+        self.assertEqual(stale.usage["model_calls"], 0)
 
         _session_path, persistent_path = second_host.state_files("nim-expert")
         self.assertIn(
