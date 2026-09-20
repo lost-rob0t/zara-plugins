@@ -9,8 +9,12 @@ from .composition import (
     InvocationResult,
     SharedSymbolicBudget,
 )
-from .domain import ExpertHost
-from .lisp_family import invoke_lisp_operation
+from .domain import ExpertError, ExpertHost
+from .lisp_family import (
+    _core_operation_arguments,
+    invoke_lisp_operation,
+    make_lisp_expert_handler,
+)
 
 
 _DIALECT_REPAIR_EXPERTS = frozenset(
@@ -20,6 +24,70 @@ _DIALECT_REPAIR_EXPERTS = frozenset(
     }
 )
 _ALLOWED_INPUT_KEYS = frozenset({"arguments"})
+
+
+def _handler_outcome_to_invocation_result(
+    expert_id: str,
+    operation: str,
+    outcome: Any,
+) -> InvocationResult:
+    if not isinstance(outcome, Mapping):
+        raise CompositionError("Lisp expert handler returned non-object result")
+
+    usage = outcome.get("usage")
+    if not isinstance(usage, Mapping):
+        raise CompositionError("Lisp expert result is missing usage ledger")
+    model_calls = usage.get("model_calls")
+    if type(model_calls) is not int or model_calls != 0:
+        raise CompositionError("Lisp expert attempted model use")
+
+    effect_receipts = outcome.get("effect_receipts")
+    if not isinstance(effect_receipts, (list, tuple)) or effect_receipts:
+        raise CompositionError("Lisp expert returned unexpected effect receipts")
+
+    data = outcome.get("data")
+    if not isinstance(data, Mapping):
+        raise CompositionError("Lisp expert result data must be an object")
+    nested = data.get("result")
+    if not isinstance(nested, Mapping):
+        raise CompositionError("Lisp expert nested result must be an object")
+
+    nested_model_calls = nested.get("model_calls")
+    if nested_model_calls is not None and (
+        type(nested_model_calls) is not int or nested_model_calls != 0
+    ):
+        raise CompositionError("Lisp expert nested result attempted model use")
+    nested_receipts = nested.get("effect_receipts")
+    if nested_receipts is not None and (
+        not isinstance(nested_receipts, (list, tuple)) or nested_receipts
+    ):
+        raise CompositionError("Lisp expert nested result returned effect receipts")
+
+    evidence_refs = outcome.get("evidence_refs", ())
+    if isinstance(evidence_refs, (str, bytes)) or not isinstance(
+        evidence_refs, (list, tuple)
+    ):
+        raise CompositionError("Lisp expert evidence_refs must be a sequence")
+    evidence = tuple(str(item) for item in evidence_refs)
+    if not evidence:
+        trace = nested.get("trace", ())
+        if isinstance(trace, (str, bytes)) or not isinstance(trace, (list, tuple)):
+            raise CompositionError("Lisp expert host trace must be a sequence")
+        evidence = tuple(str(item) for item in trace)
+
+    status = outcome.get("verdict")
+    if not isinstance(status, str):
+        raise CompositionError("Lisp expert result is missing verdict")
+
+    return InvocationResult(
+        status=status,
+        data=dict(data),
+        evidence=evidence,
+        explanation=(
+            f"{expert_id} handled {operation} through the registered Lisp expert host"
+        ),
+        model_calls=0,
+    )
 
 
 class LispFamilyCompositionInvoker:
@@ -60,12 +128,20 @@ class LispFamilyCompositionInvoker:
             raise CompositionError(
                 f"Lisp expert input contains unsupported fields: {sorted(unknown)!r}"
             )
-        arguments = input_data.get("arguments", ())
-        if isinstance(arguments, (str, bytes)) or not isinstance(arguments, (list, tuple)):
+        arguments = input_data.get("arguments", [])
+        if not isinstance(arguments, list):
             raise CompositionError("Lisp expert arguments must be a list")
         arguments = list(arguments)
 
         if expert_id in _DIALECT_REPAIR_EXPERTS and operation == "repair.preview":
+            try:
+                # Validate the public payload with the exact same ABI helper used
+                # by the Core-facing handler. The returned private Result variable
+                # is intentionally discarded here; the delegated Lisp child owns
+                # and injects its own result variable at dispatch time.
+                _core_operation_arguments(operation, arguments)
+            except ExpertError as exc:
+                raise CompositionError(str(exc)) from exc
             fence.check()
             budget.assert_zero_model_usage()
             return InvocationResult(
@@ -95,30 +171,17 @@ class LispFamilyCompositionInvoker:
                 model_calls=0,
             )
 
-        raw = invoke_lisp_operation(self._host, expert_id, operation, arguments)
+        handler = make_lisp_expert_handler(self._host, expert_id)
+        try:
+            outcome = handler(
+                expert_operation=operation,
+                arguments=arguments,
+            )
+        except ExpertError as exc:
+            raise CompositionError(str(exc)) from exc
         fence.check()
         budget.assert_zero_model_usage()
-        if not isinstance(raw, Mapping):
-            raise CompositionError("zara-expert Lisp host returned non-object result")
-
-        trace = raw.get("trace", ())
-        if isinstance(trace, (str, bytes)):
-            raise CompositionError("zara-expert Lisp host trace must be a sequence")
-        evidence = tuple(str(item) for item in trace)
-        ok = raw.get("ok")
-        if ok is True:
-            status = "succeeded"
-        elif ok is False:
-            status = "failed"
-        else:
-            status = "unknown"
-        return InvocationResult(
-            status=status,
-            data={"results": raw.get("results", ())},
-            evidence=evidence,
-            explanation=f"{expert_id} handled {operation} through the registered Lisp expert host",
-            model_calls=0,
-        )
+        return _handler_outcome_to_invocation_result(expert_id, operation, outcome)
 
 
 __all__ = ["LispFamilyCompositionInvoker"]

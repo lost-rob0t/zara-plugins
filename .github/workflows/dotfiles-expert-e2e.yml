@@ -1,49 +1,48 @@
-name: Prolog Python Nim Expert E2E
+name: Dotfiles Expert E2E
 
 on:
   pull_request:
     paths:
-      - 'plugins/zara-prolog-expert/**'
-      - 'plugins/zara-python-expert/**'
-      - 'plugins/zara-nim-expert/**'
       - 'plugins/zara-expert/**'
-      - 'tests/test_prolog_python_nim_zara_core_e2e.py'
-      - '.github/workflows/prolog-python-nim-expert-e2e.yml'
+      - 'tests/test_dotfiles_zara_core_e2e.py'
+      - '.github/workflows/dotfiles-expert-e2e.yml'
 
 permissions:
   contents: read
 
 concurrency:
-  group: prolog-python-nim-expert-${{ github.ref }}
+  group: dotfiles-expert-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  canonical-core:
+  canonical-dotfiles-expert:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Fetch exact canonical Dotfiles brains
+      - name: Fetch exact canonical DotfilesExpert producer
         shell: bash
         run: |
           set -euo pipefail
-          revision=1b93e01f3482e49a853f651eb28c21eb1d9cad0e
-          rm -rf .ci/dotfiles-prolog-python-nim
-          git init .ci/dotfiles-prolog-python-nim
-          git -C .ci/dotfiles-prolog-python-nim remote add origin https://github.com/lost-rob0t/dotfiles.git
-          git -C .ci/dotfiles-prolog-python-nim config core.sparseCheckout true
-          mkdir -p .ci/dotfiles-prolog-python-nim/.git/info
+          revision=1c825e84a4ca2eaee6fa9a7db8c251b256d991c9
+          rm -rf .ci/dotfiles-expert
+          git init .ci/dotfiles-expert
+          git -C .ci/dotfiles-expert remote add origin https://github.com/lost-rob0t/dotfiles.git
+          git -C .ci/dotfiles-expert config core.sparseCheckout true
+          mkdir -p .ci/dotfiles-expert/.git/info
           printf '%s\n' \
-            '/.zara/experts/prolog/' \
-            '/.zara/experts/python/' \
-            '/.zara/experts/nim/' \
+            '/.zara/experts/dotfiles/' \
+            '/.zara/experts/nix/' \
+            '/.zara/experts/bash/' \
             '/.zara/experts/language/' \
-            > .ci/dotfiles-prolog-python-nim/.git/info/sparse-checkout
-          git -C .ci/dotfiles-prolog-python-nim fetch --depth=1 origin "$revision"
-          git -C .ci/dotfiles-prolog-python-nim checkout --detach FETCH_HEAD
-          test "$(git -C .ci/dotfiles-prolog-python-nim rev-parse HEAD)" = "$revision"
+            '/.zara/style/' \
+            '/.prolog/kb/' \
+            > .ci/dotfiles-expert/.git/info/sparse-checkout
+          git -C .ci/dotfiles-expert fetch --depth=1 origin "$revision"
+          git -C .ci/dotfiles-expert checkout --detach FETCH_HEAD
+          test "$(git -C .ci/dotfiles-expert rev-parse HEAD)" = "$revision"
 
       - name: Fetch exact canonical Zara Core
         shell: bash
@@ -60,21 +59,28 @@ jobs:
           git -C .ci/zara-core checkout --detach FETCH_HEAD
           test "$(git -C .ci/zara-core rev-parse HEAD)" = "$revision"
 
-      - name: Install symbolic runtime and network audit tool
+      - name: Install symbolic runtime and audit tools
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends swi-prolog-nox strace
 
-      - name: Prove real Prolog Python Nim composition through Zara Core
+      - name: Prove Dotfiles adapter unit contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 plugins/zara-expert/test/test_dotfiles_family.py
+          python3 plugins/zara-expert/test/test_dotfiles_style.py
+
+      - name: Prove real Dotfiles root and child delegation through canonical Core
         env:
-          ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles-prolog-python-nim
+          ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles-expert
           ZARA_CORE_ROOT: ${{ github.workspace }}/.ci/zara-core
         shell: bash
         run: |
           set -euo pipefail
-          trace="$RUNNER_TEMP/prolog-python-nim-core-network.trace"
+          trace="$RUNNER_TEMP/dotfiles-core-network.trace"
           env \
             -u OPENAI_API_KEY \
             -u ANTHROPIC_API_KEY \
@@ -84,9 +90,9 @@ jobs:
             -u GROQ_API_KEY \
             -u ZAI_API_KEY \
             strace -f -e trace=network -o "$trace" \
-            python3 -m unittest discover -s tests -t . -p 'test_prolog_python_nim_zara_core_e2e.py'
+            python3 -m unittest discover -s tests -t . -p 'test_dotfiles_zara_core_e2e.py'
           if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
-            echo 'unexpected IPv4/IPv6 network syscall during Prolog/Python/Nim pure-symbolic Core E2E' >&2
+            echo 'unexpected IPv4/IPv6 network syscall during pure-symbolic DotfilesExpert E2E' >&2
             cat "$trace" >&2
             exit 1
           fi

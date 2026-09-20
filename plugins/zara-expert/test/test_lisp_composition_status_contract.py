@@ -1,13 +1,26 @@
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
 from zara_expert.composition import InvocationFence, SharedSymbolicBudget
 from zara_expert.lisp_composition import LispFamilyCompositionInvoker
+
+
+class ResultHost:
+    def __init__(self, ok):
+        self.ok = ok
+
+    def query(self, namespace, predicate, arguments):
+        return {
+            "ok": self.ok,
+            "results": [{"proved": True}],
+            "trace": [f"{namespace}:{predicate}"],
+        }
+
+    explain = query
 
 
 class LispCompositionStatusContractTests(unittest.TestCase):
@@ -24,23 +37,14 @@ class LispCompositionStatusContractTests(unittest.TestCase):
 
     def _invoke(self, ok):
         budget = SharedSymbolicBudget()
-        raw = {
-            "ok": ok,
-            "results": [{"proved": True}],
-            "trace": ["fact:lisp-status"],
-        }
-        with patch(
-            "zara_expert.lisp_composition.invoke_lisp_operation",
-            return_value=raw,
-        ):
-            result = LispFamilyCompositionInvoker(object())(
-                "zara:expert/lisp",
-                "inspect",
-                {"arguments": []},
-                budget=budget,
-                fence=self._fence(),
-                parent_path=(),
-            )
+        result = LispFamilyCompositionInvoker(ResultHost(ok))(
+            "zara:expert/lisp",
+            "structural.check",
+            {"arguments": ["(ok)"]},
+            budget=budget,
+            fence=self._fence(),
+            parent_path=(),
+        )
         self.assertEqual(budget.max_model_calls, 0)
         self.assertEqual(budget.model_calls_used, 0)
         return result
