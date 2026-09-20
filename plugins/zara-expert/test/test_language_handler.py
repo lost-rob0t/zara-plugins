@@ -26,6 +26,15 @@ class RecordingBackend:
         }
 
 
+class NoEvidenceBackend:
+    def __init__(self):
+        self.calls = []
+
+    def run(self, request):
+        self.calls.append(dict(request))
+        return {"ok": True, "results": [], "trace": []}
+
+
 class LanguageHandlerTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -70,6 +79,24 @@ class LanguageHandlerTests(unittest.TestCase):
             call["arguments"],
             ["print('ok')", "generation-1", {"var": "Result"}],
         )
+
+    def test_missing_symbolic_evidence_is_unknown_not_false_success(self):
+        backend = NoEvidenceBackend()
+        host = ExpertHost(backend, state_root=self.root / "no-evidence-state")
+        register_language_family(host, {"prolog": [self._brain("prolog-no-evidence")]})
+        handler = make_language_expert_handler(host, "zara:expert/prolog")
+
+        outcome = handler(
+            expert_operation="inspect",
+            source="fact(a).",
+            source_generation="generation-none",
+        )
+
+        self.assertEqual(outcome["verdict"], "unknown")
+        self.assertEqual(outcome["usage"], {"model_calls": 0})
+        self.assertEqual(outcome["effect_receipts"], [])
+        self.assertEqual(outcome["data"]["result"]["evidence"], [])
+        self.assertEqual(len(backend.calls), 1)
 
     def test_style_rules_preserve_project_style_and_private_result_variable(self):
         register_language_family(self.host, {"nim": [self._brain("nim-style")]})
