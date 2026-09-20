@@ -183,6 +183,39 @@ class CoreCatalogCompositionAdapterTests(unittest.TestCase):
             )
         self.assertFalse(called)
 
+    def test_delegated_child_registry_change_rejects_late_evidence(self):
+        registry = FakeRegistry()
+
+        def invoke(expert_id, operation, input_data, *, budget, fence, parent_path):
+            del expert_id, operation, input_data, budget, fence, parent_path
+            registry.generation += 1
+            return InvocationResult(
+                status="succeeded",
+                evidence=("ev:nix:late-child",),
+                explanation="late child result that must not commit",
+                model_calls=0,
+            )
+
+        child = CoreCatalogSelectedChildInvoker(
+            CoreExpertCatalogAdapter(registry, principal="user:catalog-child"),
+            invoke,
+            goal_for=lambda expert_id, operation, _input: f"{operation} nix",
+        )
+        budget = SharedSymbolicBudget(max_model_calls=0)
+        with self.assertRaisesRegex(
+            CompositionError,
+            "stale canonical delegated expert selection",
+        ):
+            child(
+                "zara:expert/nix",
+                "inspect",
+                {"source": "{ x = 1; }"},
+                budget=budget,
+                fence=live_fence(),
+                parent_path=("zara:expert/dotfiles.inspect",),
+            )
+        self.assertEqual(budget.model_calls_used, 0)
+
     def test_no_match_fails_before_composer_or_budget_use(self):
         registry = FakeRegistry()
         registry.match_result = None
