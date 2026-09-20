@@ -29,6 +29,15 @@ Each adapter publishes a canonical `ZARA-EXPERT/1` descriptor into Zara's progra
 
 All three descriptors are pure symbolic and pin `max_model_calls=0`; `model_inference` is not an admitted effect. Missing canonical source is represented as `availability=absent` with `unavailable_reason=source-unavailable`, never as a provider/model fallback. Common Lisp and Emacs Lisp declare child delegation so composition can flow through Zara's canonical expert contract/shared-budget owner rather than a plugin-local scheduler. The plugin deliberately exports no `expert.lisp_invoke` or `expert.lisp_descriptors` tool surface; discovery, activation, generation fencing, cancellation, budgets, and invocation remain owned by ZARA-EXPERT/1.
 
+### Core contract dependency
+
+These adapters deliberately do not duplicate Core's invocation or budget logic. Pure-symbolic acceptance therefore depends on the canonical Zara registry preserving two host-owned invariants at the boundary:
+
+- the reserved `expert_operation` discriminator must never be admitted as user-declared operation input; the host-selected operation is trusted metadata only;
+- caller limits may only narrow descriptor/host ceilings. In particular, an expert descriptor with `resource_limits.max_model_calls=0` must remain zero-model even when a caller presents a larger `max_model_calls` value.
+
+If either invariant is unavailable in the active Zara Core contract, the Lisp-family integration is not accepted as pure-symbolic and must stay fail-closed rather than adding a plugin-local dispatcher or accounting shim.
+
 Canonical source files are opt-in through trusted plugin configuration:
 
 ```yaml
