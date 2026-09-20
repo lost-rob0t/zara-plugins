@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "expert_id": "zara:expert/kotlin",
+  "adapter_version": "0.1.0",
+  "canonical_source": {
+    "repository": "lost-rob0t/dotfiles",
+    "path": ".zara/experts/kotlin",
+    "issue": 292,
+    "producer_pr": 299,
+    "commit": "423a00e4a93fbea8d191502b29b1d6ab0e1333fd"
+  },
+  "runtime_contract": {
+    "repository": "lost-rob0t/prolog-rlm",
+    "issue": 501
+  },
+  "zara_contract": {
+    "repository": "lost-rob0t/zara",
+    "issue": 1233,
+    "schema_pr": 1273
+  }
+}

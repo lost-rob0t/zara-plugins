@@ -15,6 +15,15 @@ from zara_expert.language_source_contract import validate_language_source_contra
 
 
 DOTFILES_ROOT = os.environ.get("ZARA_DOTFILES_ROOT")
+FAMILY_KEYS = (
+    "prolog",
+    "python",
+    "nim",
+    "javascript",
+    "typescript",
+    "java",
+    "kotlin",
+)
 
 
 @unittest.skipUnless(DOTFILES_ROOT, "canonical Dotfiles checkout not provided")
@@ -25,7 +34,7 @@ class DotfilesLanguageBrainIntegrationTests(unittest.TestCase):
         cls.expert_root = cls.dotfiles_root / ".zara" / "experts"
         cls.sources = {
             key: [cls.expert_root / key / "kb" / "expert.pl"]
-            for key in ("prolog", "python", "nim")
+            for key in FAMILY_KEYS
         }
         for key, paths in cls.sources.items():
             for path in paths:
@@ -43,7 +52,7 @@ class DotfilesLanguageBrainIntegrationTests(unittest.TestCase):
             query_timeout_seconds=5.0,
         )
         registered = register_language_family(self.host, self.sources)
-        self.assertEqual(registered, frozenset({"prolog", "python", "nim"}))
+        self.assertEqual(registered, frozenset(FAMILY_KEYS))
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -51,6 +60,22 @@ class DotfilesLanguageBrainIntegrationTests(unittest.TestCase):
     def _assert_zero_model(self, outcome):
         self.assertEqual(outcome["usage"], {"model_calls": 0})
         self.assertEqual(outcome["effect_receipts"], [])
+
+    def _handler(self, key):
+        return make_language_expert_handler(self.host, f"zara:expert/{key}")
+
+    def _assert_applicable(self, key, path, expected):
+        outcome = self._handler(key)(
+            expert_operation="match",
+            path=path,
+            source_generation=f"generation-{key}-routing",
+        )
+        self._assert_zero_model(outcome)
+        marker = f"applicable({'true' if expected else 'false'})"
+        self.assertTrue(
+            any(marker in item for item in outcome["data"]["result"]["evidence"]),
+            outcome,
+        )
 
     def _exercise_brain(self, key, path, source):
         expert_id = f"zara:expert/{key}"
@@ -158,10 +183,51 @@ class DotfilesLanguageBrainIntegrationTests(unittest.TestCase):
             ("prolog", "rules/main.pro", "fact(a)."),
             ("python", "src/main.pyi", "value: int"),
             ("nim", "pkg/tool.nimble", "discard"),
+            ("javascript", "web/app.jsx", "export const App = () => null;"),
+            ("typescript", "web/app.tsx", "export const value: number = 1;"),
+            ("java", "android/src/Main.java", "final class Main {}"),
+            ("kotlin", "android/src/Main.kt", "class Main"),
         )
         for key, path, source in cases:
             with self.subTest(expert=key):
                 self._exercise_brain(key, path, source)
+
+    def test_js_ts_and_java_kotlin_routing_stays_distinct(self):
+        for path in ("app.js", "view.jsx", "worker.mjs", "legacy.cjs"):
+            with self.subTest(expert="javascript", path=path):
+                self._assert_applicable("javascript", path, True)
+                self._assert_applicable("typescript", path, False)
+
+        for path in ("app.ts", "view.tsx", "worker.mts", "legacy.cts"):
+            with self.subTest(expert="typescript", path=path):
+                self._assert_applicable("typescript", path, True)
+                self._assert_applicable("javascript", path, False)
+
+        with self.subTest(expert="java"):
+            self._assert_applicable("java", "Main.java", True)
+            self._assert_applicable("kotlin", "Main.java", False)
+
+        for path in ("Main.kt", "build.gradle.kts"):
+            with self.subTest(expert="kotlin", path=path):
+                self._assert_applicable("kotlin", path, True)
+                self._assert_applicable("java", path, False)
+
+    def test_jvm_android_metadata_is_evidence_only(self):
+        for key, source in (
+            ("java", "final class Main {}"),
+            ("kotlin", "class Main"),
+        ):
+            with self.subTest(expert=key):
+                outcome = self._handler(key)(
+                    expert_operation="inspect",
+                    source=source,
+                    source_generation=f"generation-{key}-metadata",
+                )
+                self._assert_zero_model(outcome)
+                rendered = "\n".join(outcome["data"]["result"]["evidence"])
+                self.assertIn("jvm_metadata", rendered)
+                self.assertIn("android_metadata", rendered)
+                self.assertNotIn("effect_receipt", rendered)
 
 
 if __name__ == "__main__":
