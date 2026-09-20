@@ -7,8 +7,9 @@ from zara_nix_expert.plugin import NixExpertAdapterError, ZaraNixExpertPlugin
 
 
 class FakeRuntime:
-    def __init__(self, *, model_calls: int = 0) -> None:
+    def __init__(self, *, model_calls: int = 0, side_effect_receipts=None) -> None:
         self.model_calls = model_calls
+        self.side_effect_receipts = [] if side_effect_receipts is None else side_effect_receipts
         self.resolved = []
         self.requests = []
 
@@ -23,7 +24,7 @@ class FakeRuntime:
             "data": {"verdict": "clean"},
             "evidence": [{"kind": "source", "ref": "flake.nix"}],
             "usage": {"model_calls": self.model_calls},
-            "side_effect_receipts": [],
+            "side_effect_receipts": self.side_effect_receipts,
         }
 
 
@@ -78,30 +79,50 @@ class NixExpertPluginTests(unittest.TestCase):
         plugin.start(object())
 
         with self.assertRaisesRegex(NixExpertAdapterError, "expert-host-composition-unavailable"):
-            plugin.invoke("activation-1", "parse", '{}')
+            plugin.invoke("activation-1", "parse", "{}")
 
     def test_nonzero_or_missing_model_usage_is_rejected(self) -> None:
         plugin = ZaraNixExpertPlugin()
         plugin.start(FakeRuntime(model_calls=1))
         with self.assertRaisesRegex(NixExpertAdapterError, "zero-model-proof-missing"):
-            plugin.invoke("activation-1", "parse", '{}')
+            plugin.invoke("activation-1", "parse", "{}")
 
         class MissingUsageRuntime(FakeRuntime):
             def invoke_capability(self, handle, request):
                 self.requests.append(request)
-                return {"status": "succeeded", "data": {}}
+                return {
+                    "status": "succeeded",
+                    "data": {},
+                    "side_effect_receipts": [],
+                }
 
         plugin.start(MissingUsageRuntime())
         with self.assertRaisesRegex(NixExpertAdapterError, "zero-model-proof-missing"):
-            plugin.invoke("activation-1", "parse", '{}')
+            plugin.invoke("activation-1", "parse", "{}")
 
-    def test_invalid_input_never_reaches_host(self) -> None:
+    def test_read_only_result_with_effect_receipt_is_rejected(self) -> None:
+        plugin = ZaraNixExpertPlugin()
+        plugin.start(FakeRuntime(side_effect_receipts=[{"effect": "nix.eval"}]))
+
+        with self.assertRaisesRegex(NixExpertAdapterError, "read-only-effect-leak"):
+            plugin.invoke("activation-1", "parse", "{}")
+
+    def test_invalid_or_deep_input_never_reaches_host(self) -> None:
         runtime = FakeRuntime()
         plugin = ZaraNixExpertPlugin()
         plugin.start(runtime)
 
         with self.assertRaisesRegex(NixExpertAdapterError, "input-must-be-object"):
             plugin.invoke("activation-1", "parse", "[]")
+
+        deep = {}
+        cursor = deep
+        for _ in range(20):
+            child = {}
+            cursor["child"] = child
+            cursor = child
+        with self.assertRaisesRegex(NixExpertAdapterError, "input-structure-too-complex"):
+            plugin.invoke("activation-1", "parse", json.dumps(deep))
 
         self.assertEqual(runtime.requests, [])
 
