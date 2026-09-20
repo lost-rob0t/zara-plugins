@@ -13,7 +13,7 @@ from zara_bash_expert.plugin import BashExpertAdapterError, ZaraBashExpertPlugin
 
 
 EXPECTED_MANIFEST_DIGEST = (
-    "sha256:7aaa1208e53a6a863482f4735273928ee295fe0b4581a5e359c3bf8647cdc13a"
+    "sha256:ec1ff72739eeaa11b7fc0fef282378066fb30ecb4d58fd8ebc5d5852a9d1cef4"
 )
 ACTIVATION_ID = "act:" + ("b" * 32)
 
