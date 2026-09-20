@@ -40,16 +40,21 @@ jobs:
         run: python3 -m unittest discover -s tests -t .
 
       - name: Check out canonical Dotfiles Nix/Bash brains
-        uses: actions/checkout@v4
-        with:
-          repository: lost-rob0t/dotfiles
-          ref: 5c8d8670a18c97cebc33af8be85549a8fcb6bf02
-          path: .ci/dotfiles
-          persist-credentials: false
-          sparse-checkout: |
-            .zara/experts/nix
-            .zara/experts/bash
-          sparse-checkout-cone-mode: false
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=5c8d8670a18c97cebc33af8be85549a8fcb6bf02
+          rm -rf .ci/dotfiles
+          git init .ci/dotfiles
+          git -C .ci/dotfiles remote add origin https://github.com/lost-rob0t/dotfiles.git
+          git -C .ci/dotfiles config core.sparseCheckout true
+          mkdir -p .ci/dotfiles/.git/info
+          printf '%s\n' '/.zara/experts/nix/' '/.zara/experts/bash/' > .ci/dotfiles/.git/info/sparse-checkout
+          git -C .ci/dotfiles fetch --depth=1 origin "$revision"
+          git -C .ci/dotfiles checkout --detach FETCH_HEAD
+          test "$(git -C .ci/dotfiles rev-parse HEAD)" = "$revision"
+          test -f .ci/dotfiles/.zara/experts/nix/kb/expert.pl
+          test -f .ci/dotfiles/.zara/experts/bash/kb/expert.pl
 
       - name: Install SWI-Prolog for canonical brain E2E
         shell: bash
