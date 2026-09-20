@@ -103,14 +103,23 @@ def _validate_reference(value: str, field: str) -> None:
         raise NixExpertAdapterError(f"invalid-{field}")
 
 
-def _validate_generation(value: int, field: str) -> None:
-    if type(value) is not int or not 1 <= value <= MAX_GENERATION:
+def _json_integer(value: int | float, field: str, minimum: int, maximum: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise NixExpertAdapterError(f"invalid-{field}")
+    if isinstance(value, float) and (not math.isfinite(value) or not value.is_integer()):
+        raise NixExpertAdapterError(f"invalid-{field}")
+    normalized = int(value)
+    if not minimum <= normalized <= maximum:
+        raise NixExpertAdapterError(f"invalid-{field}")
+    return normalized
 
 
-def _validate_limit(value: int, field: str, maximum: int) -> None:
-    if type(value) is not int or not 1 <= value <= maximum:
-        raise NixExpertAdapterError(f"invalid-{field}")
+def _validate_generation(value: int | float, field: str) -> int:
+    return _json_integer(value, field, 1, MAX_GENERATION)
+
+
+def _validate_limit(value: int | float, field: str, maximum: int) -> int:
+    return _json_integer(value, field, 1, maximum)
 
 
 def _operation_descriptor(operation: str) -> dict[str, object]:
@@ -213,22 +222,28 @@ class ZaraNixExpertPlugin(ServicePlugin):
         request_id: str,
         activation_id: str,
         expert_operation: str,
-        expected_registry_generation: int,
-        expected_runtime_generation: int,
+        expected_registry_generation: int | float,
+        expected_runtime_generation: int | float,
         input_json: str = "{}",
-        timeout_ms: int = MAX_TIMEOUT_MS,
-        max_results: int = MAX_RESULTS,
-        max_output_bytes: int = MAX_OUTPUT_BYTES,
+        timeout_ms: int | float = MAX_TIMEOUT_MS,
+        max_results: int | float = MAX_RESULTS,
+        max_output_bytes: int | float = MAX_OUTPUT_BYTES,
     ) -> str:
         if expert_operation not in ALLOWED_OPERATIONS:
             raise NixExpertAdapterError("unsupported-expert-operation")
         _validate_reference(request_id, "request-id")
         _validate_reference(activation_id, "activation-id")
-        _validate_generation(expected_registry_generation, "registry-generation")
-        _validate_generation(expected_runtime_generation, "runtime-generation")
-        _validate_limit(timeout_ms, "timeout-ms", MAX_TIMEOUT_MS)
-        _validate_limit(max_results, "max-results", MAX_RESULTS)
-        _validate_limit(max_output_bytes, "max-output-bytes", MAX_OUTPUT_BYTES)
+        registry_generation = _validate_generation(
+            expected_registry_generation, "registry-generation"
+        )
+        runtime_generation = _validate_generation(
+            expected_runtime_generation, "runtime-generation"
+        )
+        timeout = _validate_limit(timeout_ms, "timeout-ms", MAX_TIMEOUT_MS)
+        results_limit = _validate_limit(max_results, "max-results", MAX_RESULTS)
+        output_limit = _validate_limit(
+            max_output_bytes, "max-output-bytes", MAX_OUTPUT_BYTES
+        )
 
         payload = self._decode_input(input_json)
         runtime = self._runtime
@@ -248,13 +263,13 @@ class ZaraNixExpertPlugin(ServicePlugin):
                     "activation_id": activation_id,
                     "expert_id": EXPERT_ID,
                     "expert_operation": expert_operation,
-                    "expected_registry_generation": expected_registry_generation,
-                    "expected_runtime_generation": expected_runtime_generation,
+                    "expected_registry_generation": registry_generation,
+                    "expected_runtime_generation": runtime_generation,
                     "input": payload,
                     "limits": {
-                        "timeout_ms": timeout_ms,
-                        "max_results": max_results,
-                        "max_output_bytes": max_output_bytes,
+                        "timeout_ms": timeout,
+                        "max_results": results_limit,
+                        "max_output_bytes": output_limit,
                         "max_model_calls": 0,
                     },
                 },
@@ -275,7 +290,7 @@ class ZaraNixExpertPlugin(ServicePlugin):
             raise NixExpertAdapterError("read-only-effect-leak")
 
         encoded = self._json(dict(result))
-        if len(encoded.encode("utf-8")) > max_output_bytes:
+        if len(encoded.encode("utf-8")) > output_limit:
             raise NixExpertAdapterError("expert-result-too-large")
         return encoded
 
