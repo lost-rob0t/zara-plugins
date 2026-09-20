@@ -8,6 +8,7 @@ sys.path.insert(0, str(ROOT / "lib"))
 from zara_expert.composition import (
     CompositionError,
     DelegationRequest,
+    DotfilesExpertSourceAdapter,
     ExpertCatalogAdapter,
     HostExpertInvoker,
     InvocationFence,
@@ -291,6 +292,61 @@ class CompositionTests(unittest.TestCase):
         self.assertEqual(host.calls, [("dotfiles", "valid(config)")])
         self.assertEqual(tree.evidence, ("fact:x",))
         self.assertEqual(budget.model_calls_used, 0)
+
+    def test_dotfiles_source_adapter_is_transport_neutral_and_fenced(self):
+        calls = []
+        adapter = DotfilesExpertSourceAdapter(
+            list_package_names=lambda workspace, generation: (
+                calls.append(("list", workspace, generation))
+                or ("sysadmin", "emacs", "git")
+            ),
+            read_package_text=lambda workspace, generation, package, path: (
+                calls.append(("read", workspace, generation, package, path))
+                or "can_handle(dotfiles)."
+            ),
+        )
+        fence = MutableFence().fence()
+        self.assertEqual(adapter.list_packages(fence=fence), ("emacs", "git", "sysadmin"))
+        resource = adapter.read_resource("git", "kb/expert.pl", fence=fence)
+        self.assertEqual(resource.source_reference, ".zara/experts/git/kb/expert.pl")
+        self.assertEqual(resource.workspace_id, "dotfiles")
+        self.assertEqual(resource.content, "can_handle(dotfiles).")
+        self.assertNotIn("/home/", resource.source_reference)
+        self.assertEqual(calls[0], ("list", "dotfiles", 7))
+
+    def test_dotfiles_source_adapter_rejects_traversal_before_reader(self):
+        calls = []
+        adapter = DotfilesExpertSourceAdapter(
+            list_package_names=lambda workspace, generation: (),
+            read_package_text=lambda *args: calls.append(args) or "bad",
+        )
+        for path in ("../secret.pl", "kb/../../secret.pl", "/etc/passwd"):
+            with self.subTest(path=path):
+                with self.assertRaisesRegex(CompositionError, "escapes package"):
+                    adapter.read_resource("git", path, fence=MutableFence().fence())
+        self.assertEqual(calls, [])
+
+    def test_dotfiles_source_adapter_rejects_case_collision(self):
+        adapter = DotfilesExpertSourceAdapter(
+            list_package_names=lambda workspace, generation: ("git", "Git"),
+            read_package_text=lambda *args: "",
+        )
+        with self.assertRaises(CompositionError):
+            adapter.list_packages(fence=MutableFence().fence())
+
+    def test_dotfiles_source_adapter_fences_stale_read_completion(self):
+        state = MutableFence()
+
+        def read(*args):
+            state.generation = 8
+            return "late"
+
+        adapter = DotfilesExpertSourceAdapter(
+            list_package_names=lambda workspace, generation: ("git",),
+            read_package_text=read,
+        )
+        with self.assertRaisesRegex(CompositionError, "stale workspace generation"):
+            adapter.read_resource("git", "kb/expert.pl", fence=state.fence())
 
 
 if __name__ == "__main__":
