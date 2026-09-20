@@ -5,7 +5,9 @@
   "canonical_source": {
     "repository": "lost-rob0t/dotfiles",
     "path": ".zara/experts/java",
-    "issue": 292
+    "issue": 292,
+    "producer_pr": 293,
+    "commit": "5977ca3c45d431c6f7f7589c962dcd714877ae18"
   },
   "runtime_contract": {
     "repository": "lost-rob0t/prolog-rlm",
