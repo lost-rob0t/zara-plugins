@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Move project-owned symbolic expert source to `lost-rob0t/dotfiles/.zara/experts/`; zara-plugins retains runtime and adapter ownership rather than duplicate expert KBs.
+
 ### zara-emacs 0.2.0
 - Use the full configured Org notes root as a bounded knowledge surface.
 - Add Org QL queries for active shared agent memory and inventory/food state.
