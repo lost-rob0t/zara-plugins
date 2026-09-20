@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DOTFILES_ROOT = os.environ.get("ZARA_DOTFILES_ROOT")
 ZARA_CORE_ROOT = os.environ.get("ZARA_CORE_ROOT")
 EXPECTED_DOTFILES_COMMIT = "fe8f7fa3c42803e0e505dcb6f7e4600d27649d9e"
-EXPECTED_ZARA_CORE_COMMIT = "3c2f6ffe892fb5e39e395fa94fe5329f195d5923"
+EXPECTED_ZARA_CORE_COMMIT = "36e6d48fa750f30b5493f0c2acc789f3e9300e97"
 ZARA_EXPERT_LIB = REPO_ROOT / "plugins" / "zara-expert" / "lib"
 
 if ZARA_CORE_ROOT:
@@ -20,7 +20,7 @@ if ZARA_CORE_ROOT:
 sys.path.insert(0, str(ZARA_EXPERT_LIB))
 
 from zara_expert.backend import SwiplBackend
-from zara_expert.domain import ExpertHost
+from zara_expert.domain import ExpertError, ExpertHost
 from zara_expert.language_family import descriptors, register_language_family
 from zara_expert.language_handler import make_language_expert_handler
 from zara_expert.language_source_contract import validate_language_source_contracts
@@ -31,6 +31,7 @@ if ZARA_CORE_ROOT:
         ExpertDescriptor,
         ExpertLimits,
         ExpertRegistry,
+        ExpertStaleGenerationError,
         ExpertVerdict,
     )
 
@@ -86,13 +87,15 @@ class PrologPythonNimCurrentCoreDelegationE2ETests(unittest.TestCase):
                 if not source.is_file():
                     raise AssertionError(f"missing canonical expert source: {source}")
 
-    def _language_runtime(self):
+    def _language_runtime(self, *, state_root: Path | None = None):
         validate_language_source_contracts(self.sources)
-        temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(temporary.cleanup)
+        if state_root is None:
+            temporary = tempfile.TemporaryDirectory()
+            self.addCleanup(temporary.cleanup)
+            state_root = Path(temporary.name) / "zara-expert-state"
         host = ExpertHost(
             SwiplBackend(),
-            state_root=Path(temporary.name) / "zara-expert-state",
+            state_root=state_root,
         )
         registered = register_language_family(host, self.sources)
         self.assertEqual(registered, frozenset({"prolog", "python", "nim"}))
@@ -105,7 +108,7 @@ class PrologPythonNimCurrentCoreDelegationE2ETests(unittest.TestCase):
                 "zara:expert/nim",
             )
         }
-        return published, handlers
+        return host, published, handlers
 
     @staticmethod
     def _activate(
@@ -128,7 +131,7 @@ class PrologPythonNimCurrentCoreDelegationE2ETests(unittest.TestCase):
     def test_real_language_parent_delegates_to_real_children_under_one_zero_model_budget(
         self,
     ) -> None:
-        published, handlers = self._language_runtime()
+        _host, published, handlers = self._language_runtime()
         registry = ExpertRegistry(engines=("swipl",))
         child_handles: dict[str, Any] = {}
         observed: list[tuple[str, str, int]] = []
@@ -176,7 +179,11 @@ class PrologPythonNimCurrentCoreDelegationE2ETests(unittest.TestCase):
             "zara:expert/nim",
         ):
             descriptor = ExpertDescriptor.from_wire(published[expert_id])
-            handler = delegating_prolog if expert_id == "zara:expert/prolog" else handlers[expert_id]
+            handler = (
+                delegating_prolog
+                if expert_id == "zara:expert/prolog"
+                else handlers[expert_id]
+            )
             registry.register(descriptor, handler)
 
         parent_handle = self._activate(registry, "zara:expert/prolog")
@@ -214,7 +221,7 @@ class PrologPythonNimCurrentCoreDelegationE2ETests(unittest.TestCase):
     def test_real_language_delegation_cannot_cross_workspace_or_reach_child_backend(
         self,
     ) -> None:
-        published, handlers = self._language_runtime()
+        _host, published, handlers = self._language_runtime()
         registry = ExpertRegistry(engines=("swipl",))
         child_handle_box: dict[str, Any] = {}
         python_calls = 0
@@ -280,6 +287,139 @@ class PrologPythonNimCurrentCoreDelegationE2ETests(unittest.TestCase):
         self.assertIs(type(result.usage["model_calls"]), int)
         self.assertEqual(result.usage["model_calls"], 0)
         self.assertEqual(len(registry.snapshot().invocation_ids), 1)
+
+    def test_process_recreation_fences_old_core_and_host_authority_and_reuses_state(
+        self,
+    ) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        state_root = Path(temporary.name) / "durable-language-state"
+
+        first_host, published, first_handlers = self._language_runtime(
+            state_root=state_root,
+        )
+        self.assertTrue(
+            first_host.assert_fact(
+                "python-expert",
+                "remembered(core_restart)",
+                persistent=True,
+            )
+        )
+        stale_host_handler = first_handlers["zara:expert/python"]
+
+        first_registry = ExpertRegistry(engines=("swipl",))
+        for expert_id in (
+            "zara:expert/prolog",
+            "zara:expert/python",
+            "zara:expert/nim",
+        ):
+            first_registry.register(
+                ExpertDescriptor.from_wire(published[expert_id]),
+                first_handlers[expert_id],
+            )
+        stale_core_handle = self._activate(
+            first_registry,
+            "zara:expert/python",
+        )
+        before_restart = first_registry.invoke(
+            stale_core_handle,
+            "inspect",
+            {
+                "source": "def before_restart():\n    return 1\n",
+                "source_generation": "generation-before-process-recreation",
+            },
+            limits=ExpertLimits(max_model_calls=0),
+        )
+        self.assertIs(before_restart.verdict, ExpertVerdict.SUCCEEDED)
+        self.assertEqual(before_restart.usage["model_calls"], 0)
+
+        prior_generation = first_registry.generation
+        first_registry.reload(
+            (
+                (
+                    ExpertDescriptor.from_wire(published[expert_id]),
+                    make_language_expert_handler(first_host, expert_id),
+                )
+                for expert_id in (
+                    "zara:expert/prolog",
+                    "zara:expert/python",
+                    "zara:expert/nim",
+                )
+            )
+        )
+        self.assertGreater(first_registry.generation, prior_generation)
+        with self.assertRaisesRegex(
+            ExpertStaleGenerationError,
+            "activation handle generation",
+        ):
+            first_registry.invoke(
+                stale_core_handle,
+                "inspect",
+                {
+                    "source": "def stale_core():\n    return 2\n",
+                    "source_generation": "generation-stale-core-handle",
+                },
+                limits=ExpertLimits(max_model_calls=0),
+            )
+
+        self.assertEqual(
+            first_host.clear_registrations(),
+            ("prolog-expert", "python-expert", "nim-expert"),
+        )
+        with self.assertRaisesRegex(ExpertError, "is not registered"):
+            stale_host_handler(
+                expert_operation="inspect",
+                source="def stale_host():\n    return 3\n",
+                source_generation="generation-stale-host-handler",
+            )
+
+        second_host, republished, second_handlers = self._language_runtime(
+            state_root=state_root,
+        )
+        _session_path, persistent_path = second_host.state_files("python-expert")
+        self.assertIn(
+            "remembered(core_restart).",
+            persistent_path.read_text(encoding="utf-8"),
+        )
+
+        second_registry = ExpertRegistry(engines=("swipl",))
+        for expert_id in (
+            "zara:expert/prolog",
+            "zara:expert/python",
+            "zara:expert/nim",
+        ):
+            second_registry.register(
+                ExpertDescriptor.from_wire(republished[expert_id]),
+                second_handlers[expert_id],
+            )
+        fresh_handle = self._activate(second_registry, "zara:expert/python")
+        fresh = second_registry.invoke(
+            fresh_handle,
+            "inspect",
+            {
+                "source": "def after_restart():\n    return 4\n",
+                "source_generation": "generation-after-process-recreation",
+            },
+            limits=ExpertLimits(max_model_calls=0),
+        )
+        self.assertIs(fresh.verdict, ExpertVerdict.SUCCEEDED)
+        self.assertIs(type(fresh.usage["model_calls"]), int)
+        self.assertEqual(fresh.usage["model_calls"], 0)
+        self.assertTrue(fresh.evidence_refs)
+
+        with self.assertRaisesRegex(
+            ExpertDeniedError,
+            "unknown or released activation",
+        ):
+            second_registry.invoke(
+                stale_core_handle,
+                "inspect",
+                {
+                    "source": "def old_process():\n    return 5\n",
+                    "source_generation": "generation-old-process-handle",
+                },
+                limits=ExpertLimits(max_model_calls=0),
+            )
 
 
 if __name__ == "__main__":
