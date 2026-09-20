@@ -1,3 +1,4 @@
+import inspect
 import json
 import sys
 import tempfile
@@ -11,8 +12,10 @@ from zara_expert.domain import ExpertError, ExpertHost
 from zara_expert.lisp_family import (
     MAX_MODEL_CALLS,
     PROTOCOL,
+    RESERVED_HOST_INPUT_FIELDS,
     descriptors,
     invoke_lisp_operation,
+    make_lisp_expert_handler,
     register_descriptor_symbols,
     register_lisp_family,
     registered_predicates,
@@ -123,6 +126,13 @@ class LispFamilyAdapterTests(unittest.TestCase):
                 self.assertEqual(set(operation["input_schema"]), {"fields"})
                 self.assertEqual(set(operation["output_schema"]), {"fields"})
 
+    def test_descriptor_inputs_never_claim_core_owned_host_metadata(self):
+        self.assertEqual(RESERVED_HOST_INPUT_FIELDS, frozenset({"expert_operation"}))
+        for item in descriptors():
+            for operation in item["operations"]:
+                names = {field["name"] for field in operation["input_schema"]["fields"]}
+                self.assertTrue(names.isdisjoint(RESERVED_HOST_INPUT_FIELDS))
+
     def test_dialect_specializations_declare_canonical_child_delegation(self):
         items = {item["expert_id"]: item for item in descriptors()}
         self.assertEqual(items["zara:expert/lisp"]["delegation_policy"], "never")
@@ -140,6 +150,43 @@ class LispFamilyAdapterTests(unittest.TestCase):
                 "repair.apply",
                 ["candidate", "expected-preimage"],
             )
+        self.assertEqual(self.backend.calls, [])
+
+    def test_core_handler_uses_host_owned_operation_and_exact_zero_model_ledger(self):
+        source = self._brain("lisp")
+        register_lisp_family(self.host, {"lisp": [source]})
+        handler = make_lisp_expert_handler(self.host, "zara:expert/lisp")
+
+        signature = inspect.signature(handler)
+        operation_parameter = signature.parameters["expert_operation"]
+        self.assertEqual(operation_parameter.kind, inspect.Parameter.KEYWORD_ONLY)
+        self.assertIs(operation_parameter.default, inspect.Parameter.empty)
+
+        outcome = handler(
+            expert_operation="structural.check",
+            arguments=["(list)", {"var": "Evidence"}],
+        )
+
+        self.assertEqual(outcome["verdict"], "succeeded")
+        self.assertEqual(outcome["usage"], {"model_calls": 0})
+        self.assertEqual(outcome["effect_receipts"], [])
+        self.assertEqual(outcome["data"]["result"]["results"], ["symbolic-result"])
+        self.assertEqual(self.backend.calls[-1]["capability"].predicate, "structural_check")
+
+    def test_core_handler_blocks_repair_apply_before_backend_effects(self):
+        handler = make_lisp_expert_handler(self.host, "zara:expert/lisp")
+
+        outcome = handler(
+            expert_operation="repair.apply",
+            repair={"kind": "insert", "text": ")"},
+            expected_preimage="sha256:fixture",
+            source_generation="buffer:7",
+        )
+
+        self.assertEqual(outcome["verdict"], "blocked")
+        self.assertEqual(outcome["usage"], {"model_calls": 0})
+        self.assertEqual(outcome["effect_receipts"], [])
+        self.assertEqual(outcome["data"]["reason"], "canonical-typed-edit-required")
         self.assertEqual(self.backend.calls, [])
 
     def test_base_preview_and_dialect_verify_use_registered_predicate_capabilities(self):
@@ -288,6 +335,9 @@ class LispFamilyAdapterTests(unittest.TestCase):
             expected_lisp_symbols,
         )
         self.assertEqual(len(registered_symbols), len(set(registered_symbols)))
+
+        handler = plugin.lisp_expert_handler("zara:expert/emacs-lisp")
+        self.assertIn("expert_operation", inspect.signature(handler).parameters)
 
     def test_lisp_family_does_not_export_parallel_invocation_or_descriptor_tools(self):
         plugin = ZaraExpertPlugin(backend=self.backend, state_root=self.root / "plugin-state")

@@ -22,6 +22,7 @@ from .language_handler import make_language_expert_handler
 from .lisp_family import (
     descriptors as lisp_descriptors,
     invoke_lisp_operation,
+    make_lisp_expert_handler,
     register_descriptor_symbols as register_lisp_descriptor_symbols,
     register_lisp_family,
 )
@@ -138,13 +139,29 @@ class ZaraExpertPlugin(ServicePlugin):
         """Internal/status projection; public discovery is canonical ZARA-EXPERT/1."""
         return self._json(lisp_descriptors(self._registered_lisp_experts))
 
+    def lisp_expert_handler(self, expert_id: str):
+        """Return the trusted handler Core binds to one ZARA-EXPERT/1 descriptor.
+
+        The handler accepts Core-owned ``expert_operation`` metadata and emits an
+        explicit ``usage.model_calls=0`` ledger. It is intentionally not exposed
+        as a StructuredTool, so callers cannot bypass activation, generation,
+        cancellation, budget, approval or effect fencing.
+        """
+
+        return make_lisp_expert_handler(self.host, expert_id)
+
     def invoke_lisp_expert(
         self,
         expert_id: str,
         operation: str,
         arguments: list[Any] | None = None,
     ) -> str:
-        """Trusted adapter entrypoint used by canonical expert invocation wiring."""
+        """Legacy trusted adapter entrypoint for plugin-internal composition.
+
+        This is deliberately not exported as a plugin StructuredTool. New Core
+        registration must use :meth:`lisp_expert_handler` so the selected
+        operation remains host-owned ZARA-EXPERT/1 metadata.
+        """
         return self._json(
             invoke_lisp_operation(self.host, expert_id, operation, arguments)
         )
@@ -173,7 +190,12 @@ class ZaraExpertPlugin(ServicePlugin):
         operation: str,
         arguments: list[Any] | None = None,
     ) -> str:
-        """Trusted adapter entrypoint; never exported as a parallel StructuredTool."""
+        """Legacy trusted adapter entrypoint for plugin-internal composition.
+
+        This is deliberately not exported as a plugin StructuredTool. New Core
+        registration must use :meth:`language_expert_handler` so the selected
+        operation remains host-owned ZARA-EXPERT/1 metadata.
+        """
         return self._json(
             invoke_language_operation(self.host, expert_id, operation, arguments)
         )
@@ -187,9 +209,9 @@ class ZaraExpertPlugin(ServicePlugin):
         return self._json({"ok": True, "changed": changed, "persistent": persistent})
 
     def tools(self):
-        # Expert-family discovery/invocation intentionally does not get a
-        # parallel tool namespace. Descriptors published at start() are consumed
-        # by Zara's canonical ZARA-EXPERT/1 registry/lifecycle owner.
+        # Expert-family discovery/invocation intentionally does not get a parallel
+        # tool namespace. The descriptors published at start() are consumed by
+        # Zara's canonical ZARA-EXPERT/1 registry/lifecycle owner.
         return (
             StructuredTool.from_function(func=self.status, name="expert.status", description="Report whether a bounded Prolog backend is available."),
             StructuredTool.from_function(func=self.query, name="expert.query", description="Query one registered expert predicate using structured inert arguments."),
