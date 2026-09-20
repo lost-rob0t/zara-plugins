@@ -21,9 +21,16 @@ if ZARA_CURRENT_CORE_ROOT:
 sys.path.insert(0, str(ZARA_EXPERT_LIB))
 
 from zara_expert.backend import SwiplBackend
-from zara_expert.composition import CompositionError
+from zara_expert.catalog_composition import CoreCatalogCompositionAdapter
+from zara_expert.composition import (
+    CompositionError,
+    InvocationFence,
+    MetaExpertComposer,
+    SharedSymbolicBudget,
+)
 from zara_expert.core_catalog import CoreExpertCatalogAdapter
 from zara_expert.domain import ExpertHost
+from zara_expert.language_composition import CoreLanguageFamilyCompositionInvoker
 from zara_expert.language_family import descriptors, register_language_family
 from zara_expert.language_handler import make_language_expert_handler
 from zara_expert.language_source_contract import validate_language_source_contracts
@@ -153,6 +160,81 @@ class NixBashCoreCatalogE2ETests(unittest.TestCase):
             expected_expert_id="zara:expert/bash",
             source="printf '%s\\n' ok",
         )
+
+    def test_catalog_selection_flows_through_existing_composer_and_core_invoker(self) -> None:
+        principal = "user:nix-bash-core-catalog-composer"
+        workspace = "workspace:nix-bash-core-catalog-composer"
+        handles = {}
+        for expert_id in ("zara:expert/nix", "zara:expert/bash"):
+            handles[expert_id], _ = self.registry.activate(
+                principal,
+                workspace,
+                expert_id,
+                expected_registry_generation=self.registry.generation,
+                expected_runtime_generation=self.registry.runtime_generation,
+            )
+
+        core_invoker = CoreLanguageFamilyCompositionInvoker(
+            self.registry,
+            activation_for=lambda expert_id, _fence: handles[expert_id],
+            limits_factory=ExpertLimits,
+        )
+        adapter = CoreCatalogCompositionAdapter(
+            CoreExpertCatalogAdapter(self.registry, principal=principal),
+            MetaExpertComposer(core_invoker),
+        )
+        fence = InvocationFence(
+            workspace_id=workspace,
+            workspace_generation=23,
+            is_cancelled=lambda: False,
+            is_current_generation=lambda workspace_id, generation: (
+                workspace_id == workspace and generation == 23
+            ),
+        )
+        budget = SharedSymbolicBudget(
+            max_invocations=2,
+            max_depth=1,
+            max_evidence=64,
+            max_model_calls=0,
+        )
+
+        cases = (
+            (
+                "inspect this nix flake",
+                "zara:expert/nix",
+                "{ x = 1; }",
+            ),
+            (
+                "inspect this bash script",
+                "zara:expert/bash",
+                "printf '%s\\n' ok",
+            ),
+        )
+        for goal, expert_id, source in cases:
+            with self.subTest(expert_id=expert_id):
+                result = adapter.invoke(
+                    goal,
+                    "inspect",
+                    {
+                        "source": source,
+                        "source_generation": "generation:core-catalog-composer",
+                    },
+                    budget=budget,
+                    fence=fence,
+                )
+                self.assertEqual(result.selection.expert_id, expert_id)
+                self.assertEqual(result.evidence.expert_id, expert_id)
+                self.assertEqual(result.evidence.status, "succeeded")
+                self.assertIn(
+                    "canonical Zara ExpertRegistry selected",
+                    result.explanation,
+                )
+                self.assertIn("Zara Core ZARA-EXPERT/1", result.explanation)
+                self.assertEqual(result.evidence.reason, "root selection")
+
+        self.assertEqual(budget.invocations_used, 2)
+        self.assertEqual(budget.max_model_calls, 0)
+        self.assertEqual(budget.model_calls_used, 0)
 
     def test_catalog_missing_and_ambiguous_requests_fail_closed(self) -> None:
         with self.assertRaisesRegex(CompositionError, "no symbolic match"):
