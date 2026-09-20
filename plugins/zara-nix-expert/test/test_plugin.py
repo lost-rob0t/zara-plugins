@@ -39,6 +39,20 @@ class FakeRuntime:
         }
 
 
+def invoke(plugin: ZaraNixExpertPlugin, operation: str = "parse", payload: str = "{}") -> str:
+    return plugin.invoke(
+        "req-1",
+        "activation-1",
+        operation,
+        7,
+        3,
+        payload,
+        timeout_ms=2500,
+        max_results=8,
+        max_output_bytes=32768,
+    )
+
+
 class NixExpertPluginTests(unittest.TestCase):
     def test_start_and_descriptor_are_passive_zero_model_and_schema_shaped(self) -> None:
         runtime = FakeRuntime()
@@ -87,23 +101,46 @@ class NixExpertPluginTests(unittest.TestCase):
         self.assertEqual(runtime.resolved, [])
         self.assertEqual(runtime.requests, [])
 
-    def test_read_only_invocation_uses_canonical_capability_and_zero_model_limit(self) -> None:
+    def test_read_only_invocation_uses_exact_canonical_envelope_and_zero_model_limit(self) -> None:
         runtime = FakeRuntime()
         plugin = ZaraNixExpertPlugin()
         plugin.start(runtime)
 
-        result = json.loads(
-            plugin.invoke("activation-1", "inspect_flake", '{"path":"flake.nix"}')
-        )
+        result = json.loads(invoke(plugin, "inspect_flake", '{"path":"flake.nix"}'))
 
         self.assertEqual(runtime.resolved, ["expert.invoke"])
         self.assertEqual(len(runtime.requests), 1)
         request = runtime.requests[0]
+        self.assertEqual(
+            set(request),
+            {
+                "protocol",
+                "request_id",
+                "operation",
+                "activation_id",
+                "expert_id",
+                "expert_operation",
+                "expected_registry_generation",
+                "expected_runtime_generation",
+                "input",
+                "limits",
+            },
+        )
         self.assertEqual(request["protocol"], "ZARA-EXPERT/1")
+        self.assertEqual(request["request_id"], "req-1")
         self.assertEqual(request["expert_id"], "zara:expert/nix")
         self.assertEqual(request["expert_operation"], "inspect_flake")
-        self.assertEqual(request["limits"]["max_model_calls"], 0)
-        self.assertEqual(request["effect_policy"], "deny")
+        self.assertEqual(request["expected_registry_generation"], 7)
+        self.assertEqual(request["expected_runtime_generation"], 3)
+        self.assertEqual(
+            request["limits"],
+            {
+                "timeout_ms": 2500,
+                "max_results": 8,
+                "max_output_bytes": 32768,
+                "max_model_calls": 0,
+            },
+        )
         self.assertEqual(result["usage"]["model_calls"], 0)
         self.assertEqual(result["side_effect_receipts"], [])
 
@@ -113,9 +150,21 @@ class NixExpertPluginTests(unittest.TestCase):
         plugin.start(runtime)
 
         with self.assertRaisesRegex(NixExpertAdapterError, "unsupported-expert-operation"):
-            plugin.invoke("activation-1", "build", "{}")
+            invoke(plugin, "build")
 
         self.assertEqual(runtime.resolved, [])
+        self.assertEqual(runtime.requests, [])
+
+    def test_invalid_generation_or_limit_is_rejected_before_host(self) -> None:
+        runtime = FakeRuntime()
+        plugin = ZaraNixExpertPlugin()
+        plugin.start(runtime)
+
+        with self.assertRaisesRegex(NixExpertAdapterError, "invalid-registry-generation"):
+            plugin.invoke("req-1", "activation-1", "parse", 0, 1)
+        with self.assertRaisesRegex(NixExpertAdapterError, "invalid-max-results"):
+            plugin.invoke("req-1", "activation-1", "parse", 1, 1, max_results=33)
+
         self.assertEqual(runtime.requests, [])
 
     def test_missing_composition_fails_closed_without_fallback(self) -> None:
@@ -123,13 +172,13 @@ class NixExpertPluginTests(unittest.TestCase):
         plugin.start(object())
 
         with self.assertRaisesRegex(NixExpertAdapterError, "expert-host-composition-unavailable"):
-            plugin.invoke("activation-1", "parse", "{}")
+            invoke(plugin)
 
     def test_nonzero_or_missing_model_usage_is_rejected(self) -> None:
         plugin = ZaraNixExpertPlugin()
         plugin.start(FakeRuntime(model_calls=1))
         with self.assertRaisesRegex(NixExpertAdapterError, "zero-model-proof-missing"):
-            plugin.invoke("activation-1", "parse", "{}")
+            invoke(plugin)
 
         class MissingUsageRuntime(FakeRuntime):
             def invoke_capability(self, handle, request):
@@ -142,14 +191,14 @@ class NixExpertPluginTests(unittest.TestCase):
 
         plugin.start(MissingUsageRuntime())
         with self.assertRaisesRegex(NixExpertAdapterError, "zero-model-proof-missing"):
-            plugin.invoke("activation-1", "parse", "{}")
+            invoke(plugin)
 
     def test_read_only_result_with_effect_receipt_is_rejected(self) -> None:
         plugin = ZaraNixExpertPlugin()
         plugin.start(FakeRuntime(side_effect_receipts=[{"effect": "nix.eval"}]))
 
         with self.assertRaisesRegex(NixExpertAdapterError, "read-only-effect-leak"):
-            plugin.invoke("activation-1", "parse", "{}")
+            invoke(plugin)
 
     def test_invalid_or_deep_input_never_reaches_host(self) -> None:
         runtime = FakeRuntime()
@@ -157,7 +206,7 @@ class NixExpertPluginTests(unittest.TestCase):
         plugin.start(runtime)
 
         with self.assertRaisesRegex(NixExpertAdapterError, "input-must-be-object"):
-            plugin.invoke("activation-1", "parse", "[]")
+            invoke(plugin, payload="[]")
 
         deep = {}
         cursor = deep
@@ -166,7 +215,7 @@ class NixExpertPluginTests(unittest.TestCase):
             cursor["child"] = child
             cursor = child
         with self.assertRaisesRegex(NixExpertAdapterError, "input-structure-too-complex"):
-            plugin.invoke("activation-1", "parse", json.dumps(deep))
+            invoke(plugin, payload=json.dumps(deep))
 
         self.assertEqual(runtime.requests, [])
 
