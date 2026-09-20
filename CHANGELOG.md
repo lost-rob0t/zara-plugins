@@ -7,6 +7,13 @@
 - Route applicability, evidence, diagnostics, style rules, repair preview/verification, and explanation through host-issued registered-predicate authority with `max_model_calls=0`.
 - Expose closed applicability/result schemas and canonical runtime symbols; `repair.apply` remains behind Zara's typed edit/effect authority with fresh postcondition verification.
 
+### zara-emacs 0.3.0
+- Route editor control through the versioned `ZARA-EMACS/1` native bridge instead of per-operation Elisp templates.
+- Add live session/buffer/window/command inspection using opaque IDs.
+- Add bounded buffer reads plus revision-safe edit preview/apply/cancel/status and explicit save.
+- Keep named workflows and compatibility open/daily/Magit/dashboard/chat operations on the same bridge.
+- Fail closed on bridge version/operation/result mismatches.
+
 ### zara-emacs 0.2.0
 - Use the full configured Org notes root as a bounded knowledge surface.
 - Add Org QL queries for active shared agent memory and inventory/food state.

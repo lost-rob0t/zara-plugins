@@ -118,23 +118,33 @@ def register_lisp_family(
     This module intentionally contains no Lisp reader/parser implementation. The
     source files are the canonical Dotfiles-owned expert brains; this adapter
     owns only stable Zara namespace/operation bindings.
+
+    Source validation is completed for the whole configured family before any
+    host namespace is mutated. A bad later source therefore cannot leave a
+    partially registered Lisp family behind after startup failure.
     """
 
     if not isinstance(source_files_by_expert, Mapping):
         raise ExpertError("lisp_family_sources must be a mapping")
 
-    registered: set[str] = set()
     unknown = set(source_files_by_expert) - {spec.key for spec in _SPECS}
     if unknown:
         raise ExpertError(f"unknown Lisp expert source keys: {sorted(unknown)!r}")
 
+    validated_sources: dict[str, tuple[Path, ...]] = {}
     for spec in _SPECS:
         configured = source_files_by_expert.get(spec.key)
         if configured is None:
             continue
         if isinstance(configured, (str, bytes, Path)):
             raise ExpertError(f"source list for {spec.key!r} must be a sequence of paths")
-        files = _source_files(configured)
+        validated_sources[spec.key] = _source_files(configured)
+
+    registered: set[str] = set()
+    for spec in _SPECS:
+        files = validated_sources.get(spec.key)
+        if files is None:
+            continue
         host.register(spec.namespace, files, predicates=_PREDICATES)
         registered.add(spec.key)
     return frozenset(registered)
