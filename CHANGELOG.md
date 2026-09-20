@@ -11,6 +11,7 @@
 - Preflight every configured language expert source before namespace registration so an invalid later source cannot leave a partially activated Prolog/Python/Nim family.
 - Preflight both the Prolog/Python/Nim brain ABI and existing registered-predicate namespace authority before activating any Lisp or language family, preventing cross-family partial startup on source or authority conflicts.
 - Preserve ZARA-EXPERT/1 verdict semantics for empty symbolic result sets: missing evidence reports `unknown` instead of false `succeeded`, with the exact zero-model ledger retained.
+- Bridge Prolog/Python/Nim language experts into the canonical `MetaExpertComposer` under the caller-owned shared zero-model budget and cancellation/workspace-generation fence; late cancelled or stale output is rejected before evidence commit and `repair.apply` remains blocked at the typed effect boundary.
 
 ### zara-emacs 0.3.0
 - Route editor control through the versioned `ZARA-EMACS/1` native bridge instead of per-operation Elisp templates.
