@@ -217,6 +217,35 @@ class LispFamilyAdapterTests(unittest.TestCase):
             )
         self.assertEqual(self.backend.calls, [])
 
+    def test_authority_preflight_is_atomic_before_family_registration(self):
+        original_common = self._brain("common-original")
+        replacement_common = self._brain("common-replacement")
+        lisp_source = self._brain("lisp")
+        self.host.register(
+            "common-lisp",
+            [original_common],
+            predicates=registered_predicates(),
+        )
+
+        with self.assertRaisesRegex(ExpertError, "different authority"):
+            register_lisp_family(
+                self.host,
+                {
+                    "lisp": [lisp_source],
+                    "common-lisp": [replacement_common],
+                },
+            )
+
+        with self.assertRaisesRegex(ExpertError, "namespace 'lisp' is not registered"):
+            invoke_lisp_operation(
+                self.host,
+                "lisp",
+                "structural.check",
+                ["(list)", {"var": "Evidence"}],
+            )
+        self.host.query("common-lisp", "structural_check", ["(list)", {"var": "Evidence"}])
+        self.assertEqual(self.backend.calls[-1]["knowledge_bases"], (str(original_common.resolve()),))
+
     def test_descriptor_symbols_use_canonical_runtime_registry(self):
         runtime = RecordingRuntime()
         ids = register_descriptor_symbols(runtime, {"lisp", "emacs-lisp"})

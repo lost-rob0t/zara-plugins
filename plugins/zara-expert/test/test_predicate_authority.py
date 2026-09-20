@@ -56,6 +56,24 @@ class PredicateAuthorityTests(unittest.TestCase):
             self.host.query("alpha", "thing", ["a", "b"])
         self.assertEqual(self.backend.calls, [])
 
+    def test_namespace_authority_cannot_be_replaced(self):
+        self.host.register(
+            "alpha",
+            [],
+            predicates={"thing": 1, "verify": 2, "can_handle": 1},
+        )
+        with self.assertRaisesRegex(ExpertError, "different authority"):
+            self.host.register(
+                "alpha",
+                [],
+                predicates={"thing": 1, "verify": 1, "can_handle": 1},
+            )
+
+        self.host.query("alpha", "verify", ["build", {"var": "Evidence"}])
+        request = self.backend.calls[-1]
+        self.assertEqual(request["capability"].predicate, "verify")
+        self.assertEqual(request["capability"].arity, 2)
+
     def test_argument_string_is_data_not_prolog_source(self):
         payload = "x),halt,thing(y"
         self.host.query("alpha", "thing", [payload])

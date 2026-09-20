@@ -106,6 +106,34 @@ def _build_expert_authority():
             self._knowledge_bases: dict[str, tuple[str, ...]] = {}
             registries[self] = {}
 
+        def preflight_registration(
+            self,
+            namespace: str,
+            knowledge_bases: Iterable[Path],
+            *,
+            predicates: Mapping[str, int] | None = None,
+        ) -> tuple[str, tuple[str, ...], dict[str, int]]:
+            namespace, files, requested_predicates = self._registration_request(
+                namespace,
+                knowledge_bases,
+                predicates,
+            )
+            existing_files = self._knowledge_bases.get(namespace)
+            if existing_files is None:
+                return namespace, files, requested_predicates
+
+            existing_capabilities = registries[self].get(namespace, {})
+            existing_predicates = {
+                predicate: capability.arity
+                for predicate, capability in existing_capabilities.items()
+                if is_registered_predicate_capability(capability)
+            }
+            if existing_files != files or existing_predicates != requested_predicates:
+                raise ExpertError(
+                    f"expert namespace {namespace!r} is already registered with different authority"
+                )
+            return namespace, files, requested_predicates
+
         def register(
             self,
             namespace: str,
@@ -113,17 +141,37 @@ def _build_expert_authority():
             *,
             predicates: Mapping[str, int] | None = None,
         ) -> None:
+            namespace, files, requested_predicates = self.preflight_registration(
+                namespace,
+                knowledge_bases,
+                predicates=predicates,
+            )
+            if namespace in self._knowledge_bases:
+                return
+
+            self.state_files(namespace)
+            capabilities = {
+                predicate: issue(namespace, predicate, arity)
+                for predicate, arity in requested_predicates.items()
+            }
+            self._knowledge_bases[namespace] = files
+            registries[self][namespace] = capabilities
+
+        def _registration_request(
+            self,
+            namespace: str,
+            knowledge_bases: Iterable[Path],
+            predicates: Mapping[str, int] | None,
+        ) -> tuple[str, tuple[str, ...], dict[str, int]]:
             namespace = self._validate_namespace(namespace)
             files = tuple(str(Path(path).resolve()) for path in knowledge_bases)
-            capabilities: dict[str, object] = {}
+            requested_predicates: dict[str, int] = {}
             for predicate, arity in (predicates or {}).items():
                 predicate = self._validate_predicate(predicate)
                 if isinstance(arity, bool) or not isinstance(arity, int) or arity < 0 or arity > _MAX_ARGUMENTS:
                     raise ExpertError(f"invalid arity for predicate {predicate!r}")
-                capabilities[predicate] = issue(namespace, predicate, arity)
-            self._knowledge_bases[namespace] = files
-            registries[self][namespace] = capabilities
-            self.state_files(namespace)
+                requested_predicates[predicate] = arity
+            return namespace, files, requested_predicates
 
         def query(self, namespace: str, predicate: str, arguments: Sequence[Any] | None = None) -> dict[str, Any]:
             return self._run(namespace, "query", predicate, arguments)
