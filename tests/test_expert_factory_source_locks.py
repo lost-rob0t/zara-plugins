@@ -84,7 +84,7 @@ class ExpertFactorySourceLockTests(unittest.TestCase):
             self.assertEqual(lock["zara_contract"], {
                 "repository": "lost-rob0t/zara",
                 "issue": 1233,
-                "schema_pr": 1257,
+                "schema_pr": 1273,
             }, language)
 
     def test_language_pairs_do_not_collapse_to_one_canonical_source(self) -> None:
