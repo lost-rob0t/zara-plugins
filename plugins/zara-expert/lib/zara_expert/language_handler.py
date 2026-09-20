@@ -90,8 +90,12 @@ def make_language_expert_handler(host: ExpertHost, expert_id: str):
             expert_operation,
             arguments,
         )
+        # ZARA-EXPERT/1 defines missing evidence as unknown, never success or
+        # failure. SWI can validly return an empty solution set, so preserve that
+        # semantic distinction instead of false-greening the domain verdict.
+        verdict = "succeeded" if result["evidence"] else "unknown"
         return {
-            "verdict": "succeeded",
+            "verdict": verdict,
             "data": {"result": result},
             "evidence_refs": [],
             "usage": {"model_calls": MAX_MODEL_CALLS},
