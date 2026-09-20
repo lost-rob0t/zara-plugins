@@ -37,6 +37,7 @@ class ZaraEmacsPlugin(ServicePlugin):
     def tools(self):
         operations = (
             (self.command_catalog, "emacs.command_catalog", "List configuration-owned Emacs action IDs and their exact command symbols for Zara and voice routing."),
+            (self.resolve_voice, "emacs.resolve_voice", "Resolve a configured deterministic voice phrase to an Emacs action ID without executing it."),
             (self.invoke_command, "emacs.invoke_command", "Invoke one configured Emacs action by stable action ID; arbitrary Elisp and raw command names are not accepted."),
             (self.open_scratch, "emacs.open_scratch", "Open the Emacs scratch buffer using the configured server."),
             (self.open_file, "emacs.open_file", "Open an absolute file path in the configured Emacs server."),
@@ -65,6 +66,9 @@ class ZaraEmacsPlugin(ServicePlugin):
 
     def command_catalog(self) -> str:
         return self._json(self._client.command_catalog())
+
+    def resolve_voice(self, utterance: str) -> str:
+        return self._json(self._client.resolve_voice(utterance))
 
     def invoke_command(self, action_id: str) -> str:
         return self._json(self._client.invoke_command(action_id))
