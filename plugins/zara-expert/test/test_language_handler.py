@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
 from zara_expert.domain import ExpertError, ExpertHost
-from zara_expert.language_family import register_language_family
+from zara_expert.language_family import descriptors, register_language_family
 from zara_expert.language_handler import make_language_expert_handler
 from zara_expert.plugin import ZaraExpertPlugin
 
@@ -52,7 +52,8 @@ class LanguageHandlerTests(unittest.TestCase):
 
         outcome = handler(
             expert_operation="inspect",
-            arguments=["print('ok')", "generation-1", {"var": "Evidence"}],
+            source="print('ok')",
+            source_generation="generation-1",
         )
 
         self.assertEqual(outcome["verdict"], "succeeded")
@@ -63,10 +64,49 @@ class LanguageHandlerTests(unittest.TestCase):
             outcome["data"]["result"]["evidence"],
             ["evidence:language"],
         )
+        call = self.backend.calls[-1]
+        self.assertEqual(call["capability"].predicate, "language_evidence")
         self.assertEqual(
-            self.backend.calls[-1]["capability"].predicate,
-            "language_evidence",
+            call["arguments"],
+            ["print('ok')", "generation-1", {"var": "Result"}],
         )
+
+    def test_style_rules_preserve_project_style_and_private_result_variable(self):
+        register_language_family(self.host, {"nim": [self._brain("nim-style")]})
+        handler = make_language_expert_handler(self.host, "zara:expert/nim")
+
+        outcome = handler(
+            expert_operation="style.rules",
+            source="proc main() = discard",
+            project_style="style:project-v3",
+        )
+
+        self.assertEqual(outcome["usage"], {"model_calls": 0})
+        call = self.backend.calls[-1]
+        self.assertEqual(call["capability"].predicate, "language_style_rules")
+        self.assertEqual(
+            call["arguments"],
+            ["proc main() = discard", "style:project-v3", {"var": "Result"}],
+        )
+
+    def test_every_descriptor_operation_binds_to_core_handler_shape(self):
+        for item in descriptors({"prolog", "python", "nim"}):
+            handler = make_language_expert_handler(self.host, item["expert_id"])
+            signature = inspect.signature(handler)
+            self.assertIn("expert_operation", signature.parameters)
+            for operation in item["operations"]:
+                payload = {
+                    field["name"]: None
+                    for field in operation["input_schema"]["fields"]
+                }
+                with self.subTest(
+                    expert=item["expert_id"],
+                    operation=operation["operation_id"],
+                ):
+                    signature.bind(
+                        expert_operation=operation["operation_id"],
+                        **payload,
+                    )
 
     def test_core_handler_blocks_repair_apply_before_backend_effects(self):
         handler = make_language_expert_handler(self.host, "zara:expert/nim")
@@ -84,15 +124,27 @@ class LanguageHandlerTests(unittest.TestCase):
         self.assertEqual(outcome["data"]["reason"], "canonical-typed-edit-required")
         self.assertEqual(self.backend.calls, [])
 
-    def test_effect_fields_fail_closed_outside_repair_apply(self):
+    def test_undeclared_effect_field_fails_closed_before_backend(self):
         register_language_family(self.host, {"prolog": [self._brain("prolog")]})
         handler = make_language_expert_handler(self.host, "zara:expert/prolog")
 
-        with self.assertRaisesRegex(ExpertError, "repair effect fields"):
+        with self.assertRaisesRegex(ExpertError, "unknown input field"):
             handler(
                 expert_operation="inspect",
-                arguments=["fact(a).", "generation-1", {"var": "Evidence"}],
+                source="fact(a).",
+                source_generation="generation-1",
                 expected_preimage="sha256:must-not-cross",
+            )
+        self.assertEqual(self.backend.calls, [])
+
+    def test_missing_required_input_fails_closed_before_backend(self):
+        register_language_family(self.host, {"python": [self._brain("python-missing")]})
+        handler = make_language_expert_handler(self.host, "zara:expert/python")
+
+        with self.assertRaisesRegex(ExpertError, "missing required input field"):
+            handler(
+                expert_operation="inspect",
+                source="print('missing generation')",
             )
         self.assertEqual(self.backend.calls, [])
 
