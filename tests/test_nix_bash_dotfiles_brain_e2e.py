@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,7 +10,15 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DOTFILES_ROOT = os.environ.get("ZARA_DOTFILES_ROOT")
-EXPECTED_DOTFILES_COMMIT = "5c8d8670a18c97cebc33af8be85549a8fcb6bf02"
+EXPECTED_DOTFILES_COMMIT = "1b93e01f3482e49a853f651eb28c21eb1d9cad0e"
+ZARA_EXPERT_LIB = REPO_ROOT / "plugins" / "zara-expert" / "lib"
+sys.path.insert(0, str(ZARA_EXPERT_LIB))
+
+from zara_expert.backend import SwiplBackend
+from zara_expert.domain import ExpertHost
+from zara_expert.language_family import descriptors, register_language_family
+from zara_expert.language_handler import make_language_expert_handler
+from zara_expert.language_source_contract import validate_language_source_contracts
 
 
 def _run(*argv: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
@@ -61,7 +70,10 @@ class NixBashCanonicalBrainE2ETests(unittest.TestCase):
 
         cls.nix_source = cls.dotfiles_root / ".zara" / "experts" / "nix" / "kb" / "expert.pl"
         cls.bash_source = cls.dotfiles_root / ".zara" / "experts" / "bash" / "kb" / "expert.pl"
-        for source in (cls.nix_source, cls.bash_source):
+        cls.adapter_contract = (
+            cls.dotfiles_root / ".zara" / "experts" / "language" / "kb" / "adapter_contract.pl"
+        )
+        for source in (cls.nix_source, cls.bash_source, cls.adapter_contract):
             if not source.is_file():
                 raise AssertionError(f"missing canonical expert source: {source}")
 
@@ -72,10 +84,10 @@ class NixBashCanonicalBrainE2ETests(unittest.TestCase):
 
     def test_source_locks_pin_the_executed_canonical_brains(self) -> None:
         expected = {
-            "zara-nix-expert": ("zara:expert/nix", 503, ".zara/experts/nix"),
-            "zara-bash-expert": ("zara:expert/bash", 502, ".zara/experts/bash"),
+            "zara-nix-expert": ("zara:expert/nix", 286, 503, ".zara/experts/nix"),
+            "zara-bash-expert": ("zara:expert/bash", 287, 502, ".zara/experts/bash"),
         }
-        for plugin, (expert_id, runtime_issue, source_path) in expected.items():
+        for plugin, (expert_id, issue, runtime_issue, source_path) in expected.items():
             with self.subTest(plugin=plugin):
                 lock = self._load_lock(plugin)
                 self.assertEqual(lock["schema_version"], 1)
@@ -91,6 +103,8 @@ class NixBashCanonicalBrainE2ETests(unittest.TestCase):
                 self.assertIsInstance(canonical_source, dict)
                 self.assertEqual(canonical_source["repository"], "lost-rob0t/dotfiles")
                 self.assertEqual(canonical_source["path"], source_path)
+                self.assertEqual(canonical_source["issue"], issue)
+                self.assertEqual(canonical_source["producer_pr"], 300)
                 self.assertEqual(canonical_source["commit"], EXPECTED_DOTFILES_COMMIT)
 
     def test_nix_brain_enforces_read_only_zero_model_contract(self) -> None:
@@ -107,6 +121,7 @@ class NixBashCanonicalBrainE2ETests(unittest.TestCase):
             "repair_verification(parse_then_eval_or_check)",
             "supports_semantic(style)",
             "supports_semantic(repair_verify)",
+            "generation_current(7,7)",
         ):
             with self.subTest(goal=goal):
                 _prolog_fact(self.nix_source, goal)
@@ -135,6 +150,7 @@ class NixBashCanonicalBrainE2ETests(unittest.TestCase):
             "repair_verification(parse_and_bash_n)",
             "supports_semantic(style)",
             "supports_semantic(repair_verify)",
+            "generation_current(7,7)",
         ):
             with self.subTest(goal=goal):
                 _prolog_fact(self.bash_source, goal)
@@ -152,6 +168,56 @@ class NixBashCanonicalBrainE2ETests(unittest.TestCase):
             broken.write_text("if true; then\n", encoding="utf-8")
             rejected = _run("bash", "-n", str(broken))
             self.assertNotEqual(rejected.returncode, 0, "invalid Bash syntax must fail closed")
+
+    def test_real_brains_preflight_register_publish_and_invoke_through_zara_expert(self) -> None:
+        sources = {
+            "nix": [self.nix_source],
+            "bash": [self.bash_source],
+        }
+        validate_language_source_contracts(sources)
+        with tempfile.TemporaryDirectory() as temporary:
+            host = ExpertHost(
+                SwiplBackend(),
+                state_root=Path(temporary) / "zara-expert-state",
+            )
+            registered = register_language_family(host, sources)
+            self.assertEqual(registered, frozenset({"nix", "bash"}))
+
+            published = {item["expert_id"]: item for item in descriptors(registered)}
+            for expert_id in ("zara:expert/nix", "zara:expert/bash"):
+                with self.subTest(expert_id=expert_id, phase="descriptor"):
+                    descriptor = published[expert_id]
+                    self.assertEqual(descriptor["availability"], "available")
+                    self.assertEqual(descriptor["reasoning_kind"], "symbolic")
+                    self.assertEqual(descriptor["resource_limits"]["max_model_calls"], 0)
+                    self.assertEqual(descriptor["fallback_policy"], "fail_closed")
+
+            cases = (
+                ("zara:expert/nix", "{ x = 1; }"),
+                ("zara:expert/bash", "printf '%s\\n' ok"),
+            )
+            for expert_id, source in cases:
+                with self.subTest(expert_id=expert_id, phase="invoke"):
+                    handler = make_language_expert_handler(host, expert_id)
+                    outcome = handler(
+                        expert_operation="inspect",
+                        source=source,
+                        source_generation="generation-7",
+                    )
+                    self.assertEqual(outcome["verdict"], "succeeded")
+                    self.assertEqual(outcome["usage"], {"model_calls": 0})
+                    self.assertEqual(outcome["effect_receipts"], [])
+                    self.assertEqual(outcome["data"]["result"]["model_calls"], 0)
+                    self.assertTrue(outcome["data"]["result"]["evidence"])
+
+                    style = handler(
+                        expert_operation="style.rules",
+                        source=source,
+                        project_style="style:project-v1",
+                    )
+                    self.assertEqual(style["usage"], {"model_calls": 0})
+                    self.assertEqual(style["effect_receipts"], [])
+                    self.assertTrue(style["data"]["result"]["evidence"])
 
 
 if __name__ == "__main__":
