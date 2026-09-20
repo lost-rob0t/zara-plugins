@@ -118,7 +118,7 @@ class LispCompositionTests(unittest.TestCase):
 
             self.assertEqual(backend.requests, [])
 
-    def test_repair_apply_still_requires_canonical_effect_boundary(self):
+    def test_repair_apply_preserves_public_schema_but_still_requires_effect_boundary(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             backend = RecordingBackend()
@@ -128,7 +128,11 @@ class LispCompositionTests(unittest.TestCase):
                 MetaExpertComposer(LispFamilyCompositionInvoker(host)).invoke(
                     "zara:expert/lisp",
                     "repair.apply",
-                    {"arguments": []},
+                    {
+                        "repair": {"replacement": "(print 1)"},
+                        "expected_preimage": "(print 1",
+                        "source_generation": "project:4",
+                    },
                     budget=SharedSymbolicBudget(max_model_calls=0),
                     fence=current_fence(),
                 )
