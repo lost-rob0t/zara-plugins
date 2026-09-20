@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import re
@@ -81,18 +80,7 @@ class TypeScriptExpertAdapterError(RuntimeError):
     """Fail closed: this adapter never falls back to a provider or model."""
 
 
-def _manifest_digest() -> str:
-    manifest = {
-        "expert_id": EXPERT_ID,
-        "package_namespace": PACKAGE_NAMESPACE,
-        "source_reference": SOURCE_REFERENCE,
-        "upstream_contract": UPSTREAM_CONTRACT,
-        "operations": {key: list(value) for key, value in sorted(OPERATION_FIELDS.items())},
-    }
-    payload = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
-    return "sha256:" + hashlib.sha256(payload).hexdigest()
-
-MANIFEST_DIGEST = "sha256:2284d8dcf779bde01f57189ae1f7a7ec327c882262f0bb0db15883695288400e"
+MANIFEST_DIGEST = "sha256:31e50b1ad7c2656032cf508f2f47623ad48ed4e8fee3ef40aef5fa134af73ba4"
 
 
 def _reject_json_constant(_value: str) -> None:
