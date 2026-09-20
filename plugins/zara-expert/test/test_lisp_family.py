@@ -208,6 +208,14 @@ class LispFamilyAdapterTests(unittest.TestCase):
         self.assertEqual(json.loads(plugin.status())["model_calls"], 0)
         self.assertEqual(len(runtime.registrations), 3)
 
+    def test_lisp_family_does_not_export_parallel_invocation_or_descriptor_tools(self):
+        plugin = ZaraExpertPlugin(backend=self.backend, state_root=self.root / "plugin-state")
+        names = {tool.name for tool in plugin.tools()}
+        self.assertNotIn("expert.lisp_invoke", names)
+        self.assertNotIn("expert.lisp_descriptors", names)
+        self.assertIn("expert.query", names)
+        self.assertIn("expert.explain", names)
+
 
 if __name__ == "__main__":
     unittest.main()
