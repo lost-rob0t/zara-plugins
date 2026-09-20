@@ -14,6 +14,7 @@ from zara_expert.composition import (
     InvocationFence,
     InvocationResult,
     MetaExpertComposer,
+    RegisteredPredicateBinding,
     SharedSymbolicBudget,
     StyleOverlay,
     StyleScope,
@@ -38,14 +39,15 @@ class MutableFence:
 
 
 class CompositionTests(unittest.TestCase):
-    def test_dotfiles_nix_style_chain_shares_budget_and_evidence(self):
+    def test_dotfiles_nix_style_chain_shares_budget_data_and_evidence(self):
         calls = []
 
         def invoke(expert_id, operation, input_data, *, budget, fence, parent_path):
-            calls.append((expert_id, budget, parent_path))
+            calls.append((expert_id, operation, budget, parent_path))
             if expert_id == "zara:expert/dotfiles":
                 return InvocationResult(
                     status="succeeded",
+                    data={"language": "nix"},
                     evidence=("dotfiles:project",),
                     delegations=(
                         DelegationRequest(
@@ -59,6 +61,7 @@ class CompositionTests(unittest.TestCase):
             if expert_id == "zara:expert/nix":
                 return InvocationResult(
                     status="succeeded",
+                    data={"parsed": True},
                     evidence=("nix:parsed",),
                     delegations=(
                         DelegationRequest(
@@ -71,6 +74,7 @@ class CompositionTests(unittest.TestCase):
                 )
             return InvocationResult(
                 status="succeeded",
+                data={"style": "project-nix"},
                 evidence=("style:project-language",),
                 explanation="project Nix style selected",
             )
@@ -89,11 +93,48 @@ class CompositionTests(unittest.TestCase):
             "zara:expert/nix",
             "zara:expert/style",
         ])
-        self.assertTrue(all(item[1] is budget for item in calls))
+        self.assertTrue(all(item[2] is budget for item in calls))
         self.assertEqual(budget.invocations_used, 3)
         self.assertEqual(budget.evidence_used, 3)
         self.assertEqual(budget.model_calls_used, 0)
-        self.assertEqual(tree.children[0].children[0].explanation, "project Nix style selected")
+        self.assertEqual(tree.data, {"language": "nix"})
+        self.assertEqual(tree.children[0].data, {"parsed": True})
+        self.assertEqual(tree.children[0].children[0].data, {"style": "project-nix"})
+
+    def test_dotfiles_bash_expert_chain_remains_zero_model(self):
+        calls = []
+
+        def invoke(expert_id, operation, input_data, *, budget, fence, parent_path):
+            calls.append(expert_id)
+            if expert_id == "zara:expert/dotfiles":
+                return InvocationResult(
+                    status="succeeded",
+                    delegations=(
+                        DelegationRequest(
+                            "zara:expert/bash",
+                            "inspect",
+                            {"path": "bin/deploy"},
+                            "shell source detected",
+                        ),
+                    ),
+                )
+            return InvocationResult(
+                status="succeeded",
+                data={"shell": "bash"},
+                evidence=("bash:parsed",),
+            )
+
+        budget = SharedSymbolicBudget(max_invocations=2)
+        tree = MetaExpertComposer(invoke).invoke(
+            "zara:expert/dotfiles",
+            "inspect",
+            {"path": "bin/deploy"},
+            budget=budget,
+            fence=MutableFence().fence(),
+        )
+        self.assertEqual(calls, ["zara:expert/dotfiles", "zara:expert/bash"])
+        self.assertEqual(tree.children[0].data["shell"], "bash")
+        self.assertEqual(budget.model_calls_used, 0)
 
     def test_nested_budget_cannot_reset(self):
         def invoke(expert_id, operation, input_data, *, budget, fence, parent_path):
@@ -110,26 +151,50 @@ class CompositionTests(unittest.TestCase):
             )
         self.assertEqual(budget.invocations_used, 2)
 
-    def test_cycle_fails_closed_without_extra_invocation(self):
+    def test_exact_repeat_is_rejected_as_no_progress_before_dispatch(self):
         calls = []
 
         def invoke(expert_id, operation, input_data, *, budget, fence, parent_path):
-            calls.append(expert_id)
+            calls.append((expert_id, operation, dict(input_data)))
             target = "b" if expert_id == "a" else "a"
             return InvocationResult(
                 status="succeeded",
-                delegations=(DelegationRequest(target, "query", {}, "cycle"),),
+                delegations=(DelegationRequest(target, "query", {"step": 1}, "cycle"),),
             )
 
-        with self.assertRaisesRegex(CompositionError, "a -> b -> a"):
+        with self.assertRaisesRegex(CompositionError, "made no progress"):
             MetaExpertComposer(invoke).invoke(
                 "a",
                 "query",
-                {},
+                {"step": 1},
                 budget=SharedSymbolicBudget(),
                 fence=MutableFence().fence(),
             )
-        self.assertEqual(calls, ["a", "b"])
+        self.assertEqual([item[0] for item in calls], ["a", "b"])
+
+    def test_same_expert_operation_with_changed_input_may_progress(self):
+        calls = []
+
+        def invoke(expert_id, operation, input_data, *, budget, fence, parent_path):
+            calls.append(input_data["step"])
+            if input_data["step"] == 1:
+                return InvocationResult(
+                    status="succeeded",
+                    delegations=(
+                        DelegationRequest(expert_id, operation, {"step": 2}, "refined input"),
+                    ),
+                )
+            return InvocationResult(status="succeeded", data={"done": True})
+
+        tree = MetaExpertComposer(invoke).invoke(
+            "a",
+            "query",
+            {"step": 1},
+            budget=SharedSymbolicBudget(max_invocations=2),
+            fence=MutableFence().fence(),
+        )
+        self.assertEqual(calls, [1, 2])
+        self.assertTrue(tree.children[0].data["done"])
 
     def test_cancellation_fences_child_dispatch(self):
         state = MutableFence()
@@ -169,14 +234,48 @@ class CompositionTests(unittest.TestCase):
             )
         self.assertEqual(budget.evidence_used, 0)
 
-    def test_nonzero_model_usage_is_rejected(self):
+    def test_nonzero_declared_model_usage_is_rejected(self):
         with self.assertRaisesRegex(CompositionError, "model use"):
             InvocationResult(status="succeeded", model_calls=1)
         with self.assertRaisesRegex(ValueError, "max_model_calls=0"):
             SharedSymbolicBudget(max_model_calls=1)
 
+    def test_invoker_cannot_mutate_shared_model_call_ledger(self):
+        calls = []
+
+        def invoke(expert_id, operation, input_data, *, budget, fence, parent_path):
+            calls.append(expert_id)
+            budget.model_calls_used = 1
+            return InvocationResult(
+                status="succeeded",
+                delegations=(DelegationRequest("child", "query", {}, "must not run"),),
+            )
+
+        budget = SharedSymbolicBudget()
+        with self.assertRaisesRegex(CompositionError, "ledger is nonzero"):
+            MetaExpertComposer(invoke).invoke(
+                "parent", "query", {}, budget=budget, fence=MutableFence().fence()
+            )
+        self.assertEqual(calls, ["parent"])
+
+    def test_non_inert_input_fails_before_invoker(self):
+        calls = []
+
+        def invoke(*args, **kwargs):
+            calls.append(True)
+            return InvocationResult(status="succeeded")
+
+        with self.assertRaisesRegex(CompositionError, "unsupported value"):
+            MetaExpertComposer(invoke).invoke(
+                "a",
+                "query",
+                {"callable": object()},
+                budget=SharedSymbolicBudget(),
+                fence=MutableFence().fence(),
+            )
+        self.assertEqual(calls, [])
+
     def test_style_precedence_and_provenance_are_deterministic(self):
-        state = MutableFence()
         overlays = [
             StyleOverlay(
                 StyleScope.PROJECT_LANGUAGE,
@@ -216,7 +315,7 @@ class CompositionTests(unittest.TestCase):
             ),
         ]
 
-        effective = resolve_style(overlays, language="nix", fence=state.fence())
+        effective = resolve_style(overlays, language="nix", fence=MutableFence().fence())
         self.assertEqual(effective.values, {
             "indent": 8,
             "quotes": "single",
@@ -270,28 +369,56 @@ class CompositionTests(unittest.TestCase):
         self.assertEqual(adapter.match({"kind": "nix"})[0]["reason"], "symbolic")
         self.assertEqual(len(calls), 3)
 
-    def test_host_adapter_uses_existing_host_and_canonical_identity_resolver(self):
+    def test_host_adapter_uses_registered_predicate_binding_not_user_goal(self):
         class Host:
             def __init__(self):
                 self.calls = []
 
-            def explain(self, namespace, goal):
-                self.calls.append((namespace, goal))
+            def query(self, namespace, predicate, arguments):
+                self.calls.append((namespace, predicate, tuple(arguments)))
                 return {"ok": True, "results": [{"proved": True}], "trace": ["fact:x"]}
 
         host = Host()
-        invoker = HostExpertInvoker(host, namespace_for_id=lambda expert_id: "dotfiles")
+        invoker = HostExpertInvoker(
+            host,
+            binding_for=lambda expert_id, operation, input_data: RegisteredPredicateBinding(
+                namespace="dotfiles",
+                predicate="valid",
+                arguments=(input_data["subject"],),
+            ),
+        )
         budget = SharedSymbolicBudget()
         tree = MetaExpertComposer(invoker).invoke(
             "zara:expert/dotfiles",
-            "explain",
-            {"goal": "valid(config)"},
+            "verify",
+            {"subject": "config", "predicate": "shell", "goal": "halt"},
             budget=budget,
             fence=MutableFence().fence(),
         )
-        self.assertEqual(host.calls, [("dotfiles", "valid(config)")])
+        self.assertEqual(host.calls, [("dotfiles", "valid", ("config",))])
         self.assertEqual(tree.evidence, ("fact:x",))
+        self.assertEqual(tree.data["results"][0]["proved"], True)
         self.assertEqual(budget.model_calls_used, 0)
+
+    def test_host_adapter_supports_registered_explain_binding(self):
+        class Host:
+            def explain(self, namespace, predicate, arguments):
+                return {"ok": True, "results": [], "trace": ["rule:why"]}
+
+        invoker = HostExpertInvoker(
+            Host(),
+            binding_for=lambda expert_id, operation, input_data: RegisteredPredicateBinding(
+                "style", "why_style", (input_data["language"],), host_operation="explain"
+            ),
+        )
+        tree = MetaExpertComposer(invoker).invoke(
+            "zara:expert/style",
+            "explain",
+            {"language": "nix"},
+            budget=SharedSymbolicBudget(),
+            fence=MutableFence().fence(),
+        )
+        self.assertEqual(tree.evidence, ("rule:why",))
 
     def test_dotfiles_source_adapter_is_transport_neutral_and_fenced(self):
         calls = []
@@ -326,7 +453,7 @@ class CompositionTests(unittest.TestCase):
                     adapter.read_resource("git", path, fence=MutableFence().fence())
         self.assertEqual(calls, [])
 
-    def test_dotfiles_source_adapter_rejects_case_collision(self):
+    def test_dotfiles_source_adapter_rejects_case_collision_or_invalid_case(self):
         adapter = DotfilesExpertSourceAdapter(
             list_package_names=lambda workspace, generation: ("git", "Git"),
             read_package_text=lambda *args: "",
