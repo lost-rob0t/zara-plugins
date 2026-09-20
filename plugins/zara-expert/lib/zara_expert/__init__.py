@@ -23,6 +23,7 @@ from .dotfiles_family import (
     register_dotfiles_expert,
 )
 from .dotfiles_handler import make_dotfiles_expert_handler
+from .dotfiles_style import DotfilesStyleSource, style_sources_for_language
 from .language_composition import (
     CoreLanguageFamilyCompositionInvoker,
     LanguageFamilyCompositionInvoker,
@@ -35,6 +36,7 @@ __all__ = [
     "CoreLanguageFamilyCompositionInvoker",
     "DelegationRequest",
     "DotfilesExpertSourceAdapter",
+    "DotfilesStyleSource",
     "EffectiveStyle",
     "EvidenceNode",
     "ExpertCatalogAdapter",
@@ -55,4 +57,5 @@ __all__ = [
     "make_dotfiles_expert_handler",
     "register_dotfiles_expert",
     "resolve_style",
+    "style_sources_for_language",
 ]
