@@ -87,7 +87,8 @@ class DotfilesLispBrainIntegrationTests(unittest.TestCase):
                     "match",
                     [path, {"var": "Applicability"}],
                 )
-                self.assertIn("applicable(true)", " ".join(matched["data"]["result"]["results"]))
+                rendered_match = " ".join(matched["data"]["result"]["results"])
+                self.assertIn(f"applicability('{expert_id}',true)", rendered_match)
 
                 checked = self._invoke(
                     expert_id,
