@@ -7,6 +7,8 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+DOTFILES_PRODUCER_PR = 293
+DOTFILES_PRODUCER_COMMIT = "5977ca3c45d431c6f7f7589c962dcd714877ae18"
 PACKAGES = {
     "javascript": {
         "package": "zara-javascript-expert",
@@ -71,6 +73,8 @@ class ExpertFactorySourceLockTests(unittest.TestCase):
                 "repository": "lost-rob0t/dotfiles",
                 "path": expected["source_path"],
                 "issue": 292,
+                "producer_pr": DOTFILES_PRODUCER_PR,
+                "commit": DOTFILES_PRODUCER_COMMIT,
             }, language)
             self.assertEqual(lock["runtime_contract"], {
                 "repository": "lost-rob0t/prolog-rlm",
