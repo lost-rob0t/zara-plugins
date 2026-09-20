@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -16,9 +17,16 @@ HOST_CAPABILITY = "expert.invoke"
 MANIFEST_DIGEST = "sha256:a09f376755aa3c83c1fc30133d08d3ac4cad7638e26fb5e7f95713beca597f3e"
 MAX_INPUT_BYTES = 65536
 MAX_OUTPUT_BYTES = 65536
+MAX_TIMEOUT_MS = 3000
+MAX_RESULTS = 32
 MAX_INPUT_DEPTH = 16
 MAX_INPUT_NODES = 4096
-MAX_KEY_LENGTH = 256
+MAX_OBJECT_PROPERTIES = 128
+MAX_ARRAY_ITEMS = 256
+MAX_KEY_LENGTH = 128
+MAX_STRING_LENGTH = 4096
+MAX_GENERATION = 9007199254740991
+REFERENCE_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 ALLOWED_OPERATIONS = frozenset(
     {
         "parse",
@@ -71,16 +79,38 @@ def _validate_json_tree(value: object) -> None:
         if nodes > MAX_INPUT_NODES or depth > MAX_INPUT_DEPTH:
             raise BashExpertAdapterError("input-structure-too-complex")
         if isinstance(current, dict):
+            if len(current) > MAX_OBJECT_PROPERTIES:
+                raise BashExpertAdapterError("input-object-too-large")
             for key, child in current.items():
                 if not isinstance(key, str) or len(key) > MAX_KEY_LENGTH:
                     raise BashExpertAdapterError("invalid-input-key")
                 stack.append((child, depth + 1))
         elif isinstance(current, list):
+            if len(current) > MAX_ARRAY_ITEMS:
+                raise BashExpertAdapterError("input-array-too-large")
             stack.extend((child, depth + 1) for child in current)
+        elif isinstance(current, str):
+            if len(current) > MAX_STRING_LENGTH:
+                raise BashExpertAdapterError("input-string-too-large")
         elif isinstance(current, float) and not math.isfinite(current):
             raise BashExpertAdapterError("invalid-input-number")
         elif current is not None and not isinstance(current, (str, int, float, bool)):
             raise BashExpertAdapterError("invalid-input-value")
+
+
+def _validate_reference(value: str, field: str) -> None:
+    if not isinstance(value, str) or REFERENCE_RE.fullmatch(value) is None:
+        raise BashExpertAdapterError(f"invalid-{field}")
+
+
+def _validate_generation(value: int, field: str) -> None:
+    if type(value) is not int or not 1 <= value <= MAX_GENERATION:
+        raise BashExpertAdapterError(f"invalid-{field}")
+
+
+def _validate_limit(value: int, field: str, maximum: int) -> None:
+    if type(value) is not int or not 1 <= value <= maximum:
+        raise BashExpertAdapterError(f"invalid-{field}")
 
 
 def _operation_descriptor(operation: str) -> dict[str, object]:
@@ -165,8 +195,8 @@ class ZaraBashExpertPlugin(ServicePlugin):
                 "fallback_policy": "none",
                 "delegation_policy": "none",
                 "resource_limits": {
-                    "timeout_ms": 3000,
-                    "max_results": 32,
+                    "timeout_ms": MAX_TIMEOUT_MS,
+                    "max_results": MAX_RESULTS,
                     "max_output_bytes": MAX_OUTPUT_BYTES,
                     "max_model_calls": 0,
                 },
@@ -176,11 +206,27 @@ class ZaraBashExpertPlugin(ServicePlugin):
             }
         )
 
-    def invoke(self, activation_id: str, expert_operation: str, input_json: str = "{}") -> str:
+    def invoke(
+        self,
+        request_id: str,
+        activation_id: str,
+        expert_operation: str,
+        expected_registry_generation: int,
+        expected_runtime_generation: int,
+        input_json: str = "{}",
+        timeout_ms: int = MAX_TIMEOUT_MS,
+        max_results: int = MAX_RESULTS,
+        max_output_bytes: int = MAX_OUTPUT_BYTES,
+    ) -> str:
         if expert_operation not in ALLOWED_OPERATIONS:
             raise BashExpertAdapterError("unsupported-expert-operation")
-        if not isinstance(activation_id, str) or not activation_id or len(activation_id) > 256:
-            raise BashExpertAdapterError("invalid-activation-id")
+        _validate_reference(request_id, "request-id")
+        _validate_reference(activation_id, "activation-id")
+        _validate_generation(expected_registry_generation, "registry-generation")
+        _validate_generation(expected_runtime_generation, "runtime-generation")
+        _validate_limit(timeout_ms, "timeout-ms", MAX_TIMEOUT_MS)
+        _validate_limit(max_results, "max-results", MAX_RESULTS)
+        _validate_limit(max_output_bytes, "max-output-bytes", MAX_OUTPUT_BYTES)
 
         payload = self._decode_input(input_json)
         runtime = self._runtime
@@ -195,17 +241,20 @@ class ZaraBashExpertPlugin(ServicePlugin):
                 handle,
                 {
                     "protocol": PROTOCOL,
+                    "request_id": request_id,
                     "operation": "expert.invoke",
                     "activation_id": activation_id,
                     "expert_id": EXPERT_ID,
                     "expert_operation": expert_operation,
+                    "expected_registry_generation": expected_registry_generation,
+                    "expected_runtime_generation": expected_runtime_generation,
                     "input": payload,
                     "limits": {
-                        "max_results": 32,
-                        "max_output_bytes": MAX_OUTPUT_BYTES,
+                        "timeout_ms": timeout_ms,
+                        "max_results": max_results,
+                        "max_output_bytes": max_output_bytes,
                         "max_model_calls": 0,
                     },
-                    "effect_policy": "deny",
                 },
             )
         except BashExpertAdapterError:
@@ -224,7 +273,7 @@ class ZaraBashExpertPlugin(ServicePlugin):
             raise BashExpertAdapterError("read-only-effect-leak")
 
         encoded = self._json(dict(result))
-        if len(encoded.encode("utf-8")) > MAX_OUTPUT_BYTES:
+        if len(encoded.encode("utf-8")) > max_output_bytes:
             raise BashExpertAdapterError("expert-result-too-large")
         return encoded
 
