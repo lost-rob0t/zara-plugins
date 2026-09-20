@@ -70,15 +70,26 @@ class EmacsClientTest(unittest.TestCase):
         self.assertTrue(result["acknowledged"])
 
     def test_daily_emits_dictation_request_but_never_claims_started(self):
-        client, runner = self.client([Result(stdout='"/notes/2026-09-05.org"\n')])
+        client, runner = self.client(
+            [
+                bridge_result(
+                    "org_roam.open_daily",
+                    {
+                        "file": "/notes/2026-09-05.org",
+                        "post_open": {"request": "dictation", "started": False},
+                    },
+                )
+            ]
+        )
         result = client.open_daily("2026-09-05")
         self.assertTrue(result["acknowledged"])
         self.assertEqual(result["post_open"], {"request": "dictation", "started": False})
-        expression = runner.calls[0][0][-1]
-        self.assertIn("org-roam-dailies--capture", expression)
-        self.assertIn('(org-read-date nil t "2026-09-05")', expression)
-        self.assertNotIn("org-roam-dailies-goto-date", expression)
-        self.assertNotIn("start-process-shell-command", expression)
+        payload = bridge_payload(runner)
+        self.assertEqual(payload["operation"], "org_roam.open_daily")
+        self.assertEqual(payload["args"]["date"], "2026-09-05")
+        self.assertNotIn("2026-09-05", runner.calls[0][0][-1])
+        self.assertNotIn("org-roam-dailies--capture", runner.calls[0][0][-1])
+        self.assertNotIn("start-process-shell-command", runner.calls[0][0][-1])
 
     def test_shared_memory_queries_org_ql_with_bounded_limit(self):
         payload = json.dumps([{"id": "m1", "subject": "editor", "value": "emacs"}])
