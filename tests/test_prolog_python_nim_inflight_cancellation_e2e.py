@@ -276,13 +276,21 @@ class PrologPythonNimInflightCancellationE2ETests(unittest.TestCase):
         self.assertIs(type(result.usage["model_calls"]), int)
         self.assertEqual(result.usage["model_calls"], 0)
 
-        trace = registry.explain(nim_invocation_id)
-        self.assertEqual(trace["expert_id"], "zara:expert/nim")
-        self.assertEqual(trace["verdict"], "cancelled")
-        self.assertEqual(trace["evidence_refs"], [])
-        self.assertEqual(trace["effect_receipts"], [])
-        self.assertIs(type(trace["usage"]["model_calls"]), int)
-        self.assertEqual(trace["usage"]["model_calls"], 0)
+        traces = [registry.explain(invocation_id) for invocation_id in invocation_ids]
+        self.assertEqual(
+            {trace["expert_id"] for trace in traces},
+            {
+                "zara:expert/prolog",
+                "zara:expert/python",
+                "zara:expert/nim",
+            },
+        )
+        for trace in traces:
+            self.assertEqual(trace["verdict"], "cancelled")
+            self.assertEqual(trace["evidence_refs"], [])
+            self.assertEqual(trace["effect_receipts"], [])
+            self.assertIs(type(trace["usage"]["model_calls"]), int)
+            self.assertEqual(trace["usage"]["model_calls"], 0)
 
 
 if __name__ == "__main__":
