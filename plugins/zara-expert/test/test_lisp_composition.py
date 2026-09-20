@@ -75,7 +75,6 @@ class LispCompositionTests(unittest.TestCase):
                     "arguments": [
                         "(print 1",
                         "missing-close-paren",
-                        {"var": "Repair"},
                     ]
                 },
                 budget=budget,
@@ -97,7 +96,7 @@ class LispCompositionTests(unittest.TestCase):
             self.assertEqual(child.operation, "repair.preview")
             self.assertEqual(child.status, "succeeded")
             self.assertEqual(child.evidence, ("lisp:preview_repair/3",))
-            self.assertEqual(child.data["results"], [{"repair": "(print 1)"}])
+            self.assertEqual(child.data["result"]["results"], [{"repair": "(print 1)"}])
             self.assertEqual(budget.invocations_used, 2)
             self.assertEqual(budget.evidence_used, 1)
             self.assertEqual(budget.model_calls_used, 0)
@@ -106,6 +105,10 @@ class LispCompositionTests(unittest.TestCase):
             self.assertEqual(capability.namespace, "lisp")
             self.assertEqual(capability.predicate, "preview_repair")
             self.assertEqual(capability.arity, 3)
+            self.assertEqual(
+                backend.requests[0]["arguments"],
+                ["(print 1", "missing-close-paren", {"var": "Result"}],
+            )
 
     def test_failed_generic_lisp_child_cannot_false_green_dialect_repair(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -121,7 +124,6 @@ class LispCompositionTests(unittest.TestCase):
                     "arguments": [
                         "(message \"broken\"",
                         "missing-close-paren",
-                        {"var": "Repair"},
                     ]
                 },
                 budget=budget,
@@ -135,6 +137,54 @@ class LispCompositionTests(unittest.TestCase):
             self.assertEqual(budget.invocations_used, 2)
             self.assertEqual(budget.model_calls_used, 0)
             self.assertEqual(len(backend.requests), 1)
+            self.assertEqual(
+                backend.requests[0]["arguments"],
+                ["(message \"broken\"", "missing-close-paren", {"var": "Result"}],
+            )
+
+    def test_composition_injects_result_variable_for_public_predicate_input(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            backend = RecordingBackend()
+            host = self.make_host(root, backend)
+
+            tree = MetaExpertComposer(LispFamilyCompositionInvoker(host)).invoke(
+                "zara:expert/lisp",
+                "structural.check",
+                {"arguments": ["(ok)"]},
+                budget=SharedSymbolicBudget(max_model_calls=0),
+                fence=current_fence(),
+            )
+
+            self.assertEqual(tree.status, "succeeded")
+            self.assertEqual(tree.evidence, ("lisp:structural_check/2",))
+            self.assertEqual(len(backend.requests), 1)
+            self.assertEqual(
+                backend.requests[0]["arguments"],
+                ["(ok)", {"var": "Result"}],
+            )
+
+    def test_caller_cannot_smuggle_result_variable_through_composition(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            backend = RecordingBackend()
+            host = self.make_host(root, backend)
+
+            with self.assertRaisesRegex(CompositionError, "caller-supplied Prolog result variable"):
+                MetaExpertComposer(LispFamilyCompositionInvoker(host)).invoke(
+                    "zara:expert/lisp",
+                    "repair.preview",
+                    {
+                        "arguments": [
+                            "(print 1",
+                            {"var": "Repair"},
+                        ]
+                    },
+                    budget=SharedSymbolicBudget(max_model_calls=0),
+                    fence=current_fence(),
+                )
+
+            self.assertEqual(backend.requests, [])
 
     def test_public_input_cannot_select_a_predicate_or_goal(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -147,7 +197,7 @@ class LispCompositionTests(unittest.TestCase):
                     "zara:expert/lisp",
                     "structural.check",
                     {
-                        "arguments": ["(ok)", {"var": "Result"}],
+                        "arguments": ["(ok)"],
                         "predicate": "shell",
                         "goal": "halt",
                     },
