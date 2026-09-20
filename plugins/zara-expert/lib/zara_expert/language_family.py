@@ -392,11 +392,19 @@ def invoke_language_operation(
     explanation = result.get("trace", [])
     if not isinstance(evidence, list) or not isinstance(explanation, list):
         raise ExpertError(f"{spec.namespace}: malformed expert evidence")
+    ok = result.get("ok")
+    if ok is True:
+        verdict = "succeeded" if evidence else "unknown"
+    elif ok is False:
+        verdict = "failed"
+    else:
+        verdict = "unknown"
     return {
         "protocol": PROTOCOL,
         "expert_id": spec.expert_id,
         "operation": operation,
         "source_reference": spec.source_reference,
+        "verdict": verdict,
         "evidence": evidence,
         "explanation": explanation,
         "model_calls": MAX_MODEL_CALLS,
