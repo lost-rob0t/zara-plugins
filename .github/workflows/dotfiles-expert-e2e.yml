@@ -48,7 +48,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          revision=3c2f6ffe892fb5e39e395fa94fe5329f195d5923
+          revision=f7810b0cba602b1e00597d04dd419d30ac0ef949
           rm -rf .ci/zara-core
           git init .ci/zara-core
           git -C .ci/zara-core remote add origin https://github.com/lost-rob0t/zara.git
@@ -70,6 +70,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 plugins/zara-expert/test/test_catalog_composition.py
           python3 plugins/zara-expert/test/test_dotfiles_family.py
           python3 plugins/zara-expert/test/test_dotfiles_style.py
 

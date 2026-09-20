@@ -1,6 +1,7 @@
 from .catalog_composition import (
     CoreCatalogCompositionAdapter,
     CoreCatalogCompositionResult,
+    CoreCatalogSelectedChildInvoker,
 )
 from .composition import (
     CompositionError,
@@ -42,6 +43,7 @@ __all__ = [
     "CompositionError",
     "CoreCatalogCompositionAdapter",
     "CoreCatalogCompositionResult",
+    "CoreCatalogSelectedChildInvoker",
     "CoreDotfilesCompositionInvoker",
     "CoreExpertCatalogAdapter",
     "CoreExpertSelection",
