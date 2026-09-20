@@ -212,6 +212,28 @@ class LanguageFamilyAdapterTests(unittest.TestCase):
         ):
             invoke_language_operation(self.host, "python", "execute.shell", [])
 
+    def test_source_preflight_is_atomic_before_namespace_registration(self):
+        prolog_source = self._brain("prolog-atomic")
+        missing_python = self.root / "missing-python.pl"
+
+        with self.assertRaisesRegex(ExpertError, "regular file"):
+            register_language_family(
+                self.host,
+                {
+                    "prolog": [prolog_source],
+                    "python": [missing_python],
+                },
+            )
+
+        with self.assertRaisesRegex(ExpertError, "namespace 'prolog-expert' is not registered"):
+            invoke_language_operation(
+                self.host,
+                "prolog",
+                "inspect",
+                ["fact(a).", "generation-1", {"var": "Evidence"}],
+            )
+        self.assertEqual(self.backend.calls, [])
+
     def test_operation_schemas_expose_evidence_explanation_and_style_provenance(self):
         schemas = language_expert_schemas()
         self.assertEqual(
