@@ -17,6 +17,12 @@ from .composition import (
     resolve_style,
 )
 from .domain import ExpertError, ExpertHost
+from .dotfiles_composition import CoreDotfilesCompositionInvoker
+from .dotfiles_family import (
+    descriptor as dotfiles_descriptor,
+    register_dotfiles_expert,
+)
+from .dotfiles_handler import make_dotfiles_expert_handler
 from .language_composition import (
     CoreLanguageFamilyCompositionInvoker,
     LanguageFamilyCompositionInvoker,
@@ -25,6 +31,7 @@ from .lisp_composition import LispFamilyCompositionInvoker
 
 __all__ = [
     "CompositionError",
+    "CoreDotfilesCompositionInvoker",
     "CoreLanguageFamilyCompositionInvoker",
     "DelegationRequest",
     "DotfilesExpertSourceAdapter",
@@ -44,5 +51,8 @@ __all__ = [
     "SharedSymbolicBudget",
     "StyleOverlay",
     "StyleScope",
+    "dotfiles_descriptor",
+    "make_dotfiles_expert_handler",
+    "register_dotfiles_expert",
     "resolve_style",
 ]
