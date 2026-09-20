@@ -134,6 +134,7 @@ class ZaraExpertPlugin(ServicePlugin):
         return self._json(self.host.explain(namespace, predicate, arguments))
 
     def lisp_family_descriptors(self) -> str:
+        """Internal/status projection; public discovery is canonical ZARA-EXPERT/1."""
         return self._json(lisp_descriptors(self._registered_lisp_experts))
 
     def invoke_lisp_expert(
@@ -142,14 +143,17 @@ class ZaraExpertPlugin(ServicePlugin):
         operation: str,
         arguments: list[Any] | None = None,
     ) -> str:
+        """Trusted adapter entrypoint used by canonical expert invocation wiring."""
         return self._json(
             invoke_lisp_operation(self.host, expert_id, operation, arguments)
         )
 
     def language_family_descriptors(self) -> str:
+        """Internal/status projection; public discovery is canonical ZARA-EXPERT/1."""
         return self._json(language_descriptors(self._registered_language_experts))
 
     def language_family_schemas(self) -> str:
+        """Internal schema projection consumed by canonical expert adapter wiring."""
         return self._json(language_expert_schemas())
 
     def invoke_language_expert(
@@ -158,6 +162,7 @@ class ZaraExpertPlugin(ServicePlugin):
         operation: str,
         arguments: list[Any] | None = None,
     ) -> str:
+        """Trusted adapter entrypoint; never exported as a parallel StructuredTool."""
         return self._json(
             invoke_language_operation(self.host, expert_id, operation, arguments)
         )
@@ -171,15 +176,13 @@ class ZaraExpertPlugin(ServicePlugin):
         return self._json({"ok": True, "changed": changed, "persistent": persistent})
 
     def tools(self):
+        # Expert-family discovery/invocation intentionally does not get a
+        # parallel tool namespace. Descriptors published at start() are consumed
+        # by Zara's canonical ZARA-EXPERT/1 registry/lifecycle owner.
         return (
             StructuredTool.from_function(func=self.status, name="expert.status", description="Report whether a bounded Prolog backend is available."),
             StructuredTool.from_function(func=self.query, name="expert.query", description="Query one registered expert predicate using structured inert arguments."),
             StructuredTool.from_function(func=self.explain, name="expert.explain", description="Explain one registered expert predicate using the same bounded authority path."),
-            StructuredTool.from_function(func=self.lisp_family_descriptors, name="expert.lisp_descriptors", description="List deterministic ZARA-EXPERT/1 Lisp-family descriptors and availability."),
-            StructuredTool.from_function(func=self.invoke_lisp_expert, name="expert.lisp_invoke", description="Invoke a fixed Lisp-family symbolic operation through registered predicate authority; never performs provider/model fallback."),
-            StructuredTool.from_function(func=self.language_family_descriptors, name="expert.language_descriptors", description="List deterministic ZARA-EXPERT/1 Prolog/Python/Nim descriptors and availability."),
-            StructuredTool.from_function(func=self.language_family_schemas, name="expert.language_schemas", description="Return closed domain schemas for Prolog/Python/Nim applicability and result envelopes."),
-            StructuredTool.from_function(func=self.invoke_language_expert, name="expert.language_invoke", description="Invoke a fixed Prolog/Python/Nim symbolic operation through registered predicate authority with zero model calls."),
             StructuredTool.from_function(func=self.assert_fact, name="expert.assert_fact", description="Assert one safe ground fact into session or persistent namespace state."),
             StructuredTool.from_function(func=self.retract_fact, name="expert.retract_fact", description="Idempotently retract one safe ground fact from session or persistent namespace state."),
         )
