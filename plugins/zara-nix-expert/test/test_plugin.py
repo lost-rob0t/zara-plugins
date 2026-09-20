@@ -1,0 +1,110 @@
+from __future__ import annotations
+
+import json
+import unittest
+
+from zara_nix_expert.plugin import NixExpertAdapterError, ZaraNixExpertPlugin
+
+
+class FakeRuntime:
+    def __init__(self, *, model_calls: int = 0) -> None:
+        self.model_calls = model_calls
+        self.resolved = []
+        self.requests = []
+
+    def resolve_capability(self, capability: str):
+        self.resolved.append(capability)
+        return object()
+
+    def invoke_capability(self, handle, request):
+        self.requests.append(request)
+        return {
+            "status": "succeeded",
+            "data": {"verdict": "clean"},
+            "evidence": [{"kind": "source", "ref": "flake.nix"}],
+            "usage": {"model_calls": self.model_calls},
+            "side_effect_receipts": [],
+        }
+
+
+class NixExpertPluginTests(unittest.TestCase):
+    def test_start_and_descriptor_are_passive_and_zero_model(self) -> None:
+        runtime = FakeRuntime()
+        plugin = ZaraNixExpertPlugin()
+        plugin.start(runtime)
+
+        descriptor = json.loads(plugin.descriptor())
+
+        self.assertEqual(descriptor["protocol"], "ZARA-EXPERT/1")
+        self.assertEqual(descriptor["reasoning_kind"], "symbolic")
+        self.assertEqual(descriptor["resource_limits"]["max_model_calls"], 0)
+        self.assertEqual(descriptor["fallback_policy"], "fail-closed-no-model")
+        self.assertEqual(runtime.resolved, [])
+        self.assertEqual(runtime.requests, [])
+
+    def test_read_only_invocation_uses_canonical_capability_and_zero_model_limit(self) -> None:
+        runtime = FakeRuntime()
+        plugin = ZaraNixExpertPlugin()
+        plugin.start(runtime)
+
+        result = json.loads(
+            plugin.invoke("activation-1", "inspect_flake", '{"path":"flake.nix"}')
+        )
+
+        self.assertEqual(runtime.resolved, ["expert.invoke"])
+        self.assertEqual(len(runtime.requests), 1)
+        request = runtime.requests[0]
+        self.assertEqual(request["protocol"], "ZARA-EXPERT/1")
+        self.assertEqual(request["expert_id"], "zara:expert/nix")
+        self.assertEqual(request["expert_operation"], "inspect_flake")
+        self.assertEqual(request["limits"]["max_model_calls"], 0)
+        self.assertEqual(request["effect_policy"], "deny")
+        self.assertEqual(result["usage"]["model_calls"], 0)
+        self.assertEqual(result["side_effect_receipts"], [])
+
+    def test_effectful_or_unknown_operation_is_rejected_before_host(self) -> None:
+        runtime = FakeRuntime()
+        plugin = ZaraNixExpertPlugin()
+        plugin.start(runtime)
+
+        with self.assertRaisesRegex(NixExpertAdapterError, "unsupported-expert-operation"):
+            plugin.invoke("activation-1", "build", "{}")
+
+        self.assertEqual(runtime.resolved, [])
+        self.assertEqual(runtime.requests, [])
+
+    def test_missing_composition_fails_closed_without_fallback(self) -> None:
+        plugin = ZaraNixExpertPlugin()
+        plugin.start(object())
+
+        with self.assertRaisesRegex(NixExpertAdapterError, "expert-host-composition-unavailable"):
+            plugin.invoke("activation-1", "parse", '{}')
+
+    def test_nonzero_or_missing_model_usage_is_rejected(self) -> None:
+        plugin = ZaraNixExpertPlugin()
+        plugin.start(FakeRuntime(model_calls=1))
+        with self.assertRaisesRegex(NixExpertAdapterError, "zero-model-proof-missing"):
+            plugin.invoke("activation-1", "parse", '{}')
+
+        class MissingUsageRuntime(FakeRuntime):
+            def invoke_capability(self, handle, request):
+                self.requests.append(request)
+                return {"status": "succeeded", "data": {}}
+
+        plugin.start(MissingUsageRuntime())
+        with self.assertRaisesRegex(NixExpertAdapterError, "zero-model-proof-missing"):
+            plugin.invoke("activation-1", "parse", '{}')
+
+    def test_invalid_input_never_reaches_host(self) -> None:
+        runtime = FakeRuntime()
+        plugin = ZaraNixExpertPlugin()
+        plugin.start(runtime)
+
+        with self.assertRaisesRegex(NixExpertAdapterError, "input-must-be-object"):
+            plugin.invoke("activation-1", "parse", "[]")
+
+        self.assertEqual(runtime.requests, [])
+
+
+if __name__ == "__main__":
+    unittest.main()
