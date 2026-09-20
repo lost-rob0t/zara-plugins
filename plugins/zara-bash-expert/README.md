@@ -10,16 +10,16 @@ The expert brain is not duplicated here. Canonical BashExpert rules, corpora, st
 
 The adapter exposes `bash.expert.descriptor` and `bash.expert.invoke`. Invocation is restricted to declared read-only operations (`parse`, startup-file inspection, source-graph inspection, quoting diagnosis, style checking, and check-plan production) and crosses Zara Core's canonical cross-plugin capability boundary through `expert.invoke`.
 
-Descriptors and requests follow the current `ZARA-EXPERT/1` contract from Zara #1233/#1257. Each invocation carries explicit request/activation identity, expected registry/runtime generations, a bounded deadline/result/output envelope, and `max_model_calls=0`. The adapter rejects unsupported operations, stale/malformed generation inputs, oversized/deep JSON, missing capability composition, non-mapping results, any result that does not prove `usage.model_calls == 0`, and any side-effect receipt returned from a read-only operation. There is no provider, network, raw-Prolog-goal, `source`, shell/subprocess, or model fallback in this package.
+Descriptors and requests follow the current `ZARA-EXPERT/1` contract from Zara #1233/#1273. Each invocation carries explicit request/activation identity, expected registry/runtime generations, a bounded deadline/result/output envelope, and `max_model_calls=0`. The adapter rejects unsupported operations, stale/malformed generation inputs, oversized/deep JSON, missing capability composition, non-mapping results, any result that does not prove `usage.model_calls == 0`, and any side-effect receipt returned from a read-only operation. Declared path inputs must also be non-empty and NUL-free before capability resolution. There is no provider, network, raw-Prolog-goal, `source`, shell/subprocess, or model fallback in this package.
 
 Potential effects are descriptor metadata only: `bash.execute` and `filesystem.write`. Every operation shipped by this adapter currently declares `effects: []`. A future effectful operation must cross Zara's normal capability/approval/executor boundary and provide fresh postcondition evidence; this adapter never performs those effects during discovery or inspection.
 
-The descriptor is deliberately `unavailable` until the canonical source and live host activation are present. Its manifest digest pins `expert-source.lock.json`; it does not fabricate live registry or runtime availability.
+The canonical source is pinned by `expert-source.lock.json` to the merged Dotfiles producer revision. The descriptor remains deliberately `unavailable` until the live canonical expert host activates that source; it does not fabricate registry or runtime availability.
 
 ## Dependency readiness
 
-Until the canonical dotfiles BashExpert source and the ZARA-EXPERT/1 host adapter are installed/activated, invocation fails closed. Discovery remains passive and does not manufacture availability.
+The canonical dotfiles BashExpert source is landed and pinned. Invocation still fails closed until the ZARA-EXPERT/1 registered-predicate host is installed/activated. Discovery remains passive and does not manufacture availability.
 
 ## Tests
 
-`test/test_plugin.py` proves passive discovery, canonical descriptor/request shape, capability composition, fixed registered operation names, bounded input and budgets, exact zero-model limits/results, rejection of effectful/unknown operations, rejection of read-only effect leakage, and fail-closed behavior when the expert host is unavailable.
+`test/test_plugin.py` and `test/test_typed_boundary.py` prove passive discovery, canonical descriptor/request shape, capability composition, fixed registered operation names, bounded input and budgets, exact zero-model limits/results, typed input admission including invalid-path rejection before host dispatch, rejection of effectful/unknown operations, rejection of read-only effect leakage, and fail-closed behavior when the expert host is unavailable.
