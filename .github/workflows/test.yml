@@ -39,6 +39,35 @@ jobs:
       - name: Run compatibility gate contract tests
         run: python3 -m unittest discover -s tests -t .
 
+      - name: Check out canonical Dotfiles language brains
+        uses: actions/checkout@v4
+        with:
+          repository: lost-rob0t/dotfiles
+          ref: 5b01f03bdce98bc55f9f3cc76a1023b91ab63784
+          path: .ci/dotfiles
+          persist-credentials: true
+          sparse-checkout: |
+            .zara/experts
+          sparse-checkout-cone-mode: false
+
+      - name: Install SWI-Prolog for canonical brain E2E
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends swi-prolog-nox
+
+      - name: Run canonical Dotfiles language brain E2E
+        env:
+          ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover \
+            -s plugins/zara-expert/test \
+            -t plugins/zara-expert/test \
+            -p 'test_dotfiles_language_brain_integration.py'
+
       - name: Install Nix
         uses: cachix/install-nix-action@v31
 

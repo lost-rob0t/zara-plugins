@@ -11,11 +11,22 @@ from zara.plugins import PluginMetadata, ServicePlugin
 
 from .backend import SwiplBackend
 from .domain import ExpertError, ExpertHost
+from .language_family import (
+    descriptors as language_descriptors,
+    invoke_language_operation,
+    language_expert_schemas,
+    language_family_specs,
+    register_descriptor_symbols as register_language_descriptor_symbols,
+    register_language_family,
+    registered_predicates as language_registered_predicates,
+)
+from .language_handler import make_language_expert_handler
+from .language_source_contract import validate_language_source_contracts
 from .lisp_family import (
     descriptors as lisp_descriptors,
     invoke_lisp_operation,
     make_lisp_expert_handler,
-    register_descriptor_symbols,
+    register_descriptor_symbols as register_lisp_descriptor_symbols,
     register_lisp_family,
 )
 
@@ -46,17 +57,22 @@ class ZaraExpertPlugin(ServicePlugin):
         self.backend = backend
         self.host = ExpertHost(self.backend, state_root=root)
         self._registered_lisp_experts: frozenset[str] = frozenset()
+        self._registered_language_experts: frozenset[str] = frozenset()
 
     @staticmethod
-    def _lisp_sources(configuration: Mapping[str, Any] | object) -> Mapping[str, Iterable[str | Path]]:
+    def _plugin_section(configuration: Mapping[str, Any] | object) -> Mapping[str, Any]:
         if not isinstance(configuration, Mapping):
             return {}
-        section: Mapping[str, Any] = configuration
         plugins = configuration.get("plugins")
         if isinstance(plugins, Mapping):
             candidate = plugins.get("zara-expert")
             if isinstance(candidate, Mapping):
-                section = candidate
+                return candidate
+        return configuration
+
+    @classmethod
+    def _lisp_sources(cls, configuration: Mapping[str, Any] | object) -> Mapping[str, Iterable[str | Path]]:
+        section = cls._plugin_section(configuration)
         sources = section.get("lisp_family_sources", {})
         if sources is None:
             return {}
@@ -64,15 +80,59 @@ class ZaraExpertPlugin(ServicePlugin):
             raise ExpertError("lisp_family_sources must be a mapping")
         return sources
 
+    @classmethod
+    def _language_sources(cls, configuration: Mapping[str, Any] | object) -> Mapping[str, Iterable[str | Path]]:
+        section = cls._plugin_section(configuration)
+        sources = section.get("language_expert_sources", {})
+        if sources is None:
+            return {}
+        if not isinstance(sources, Mapping):
+            raise ExpertError("language_expert_sources must be a mapping")
+        return sources
+
+    def _preflight_language_authority(
+        self,
+        sources: Mapping[str, Iterable[str | Path]],
+    ) -> None:
+        """Check configured language namespace authority without mutating host state."""
+
+        predicates = language_registered_predicates()
+        configured = set(sources)
+        for spec in language_family_specs():
+            if spec.key not in configured:
+                continue
+            files = tuple(Path(path).expanduser().resolve() for path in sources[spec.key])
+            self.host.preflight_registration(
+                spec.namespace,
+                files,
+                predicates=predicates,
+            )
+
     def start(self, runtime) -> None:
+        lisp_sources = self._lisp_sources(runtime.configuration)
+        language_sources = self._language_sources(runtime.configuration)
+
+        # Validate both the strict pure-symbolic ABI and existing namespace
+        # authority before mutating any expert namespace. A bad or conflicting
+        # Prolog/Python/Nim brain must not leave an unrelated Lisp family
+        # partially active after startup fails.
+        validate_language_source_contracts(language_sources)
+        self._preflight_language_authority(language_sources)
+
         self._registered_lisp_experts = register_lisp_family(
             self.host,
-            self._lisp_sources(runtime.configuration),
+            lisp_sources,
         )
-        register_descriptor_symbols(runtime, self._registered_lisp_experts)
+        self._registered_language_experts = register_language_family(
+            self.host,
+            language_sources,
+        )
+        register_lisp_descriptor_symbols(runtime, self._registered_lisp_experts)
+        register_language_descriptor_symbols(runtime, self._registered_language_experts)
 
     def stop(self) -> None:
         self._registered_lisp_experts = frozenset()
+        self._registered_language_experts = frozenset()
 
     @staticmethod
     def _json(value: object) -> str:
@@ -86,6 +146,7 @@ class ZaraExpertPlugin(ServicePlugin):
                 "status": "ready",
                 "backend": "swipl" if isinstance(self.backend, SwiplBackend) else "custom",
                 "lisp_family": sorted(self._registered_lisp_experts),
+                "language_family": sorted(self._registered_language_experts),
                 "model_calls": 0,
             }
         )
@@ -136,6 +197,40 @@ class ZaraExpertPlugin(ServicePlugin):
             invoke_lisp_operation(self.host, expert_id, operation, arguments)
         )
 
+    def language_family_descriptors(self) -> str:
+        """Internal/status projection; public discovery is canonical ZARA-EXPERT/1."""
+        return self._json(language_descriptors(self._registered_language_experts))
+
+    def language_family_schemas(self) -> str:
+        """Internal schema projection consumed by canonical expert adapter wiring."""
+        return self._json(language_expert_schemas())
+
+    def language_expert_handler(self, expert_id: str):
+        """Return the trusted Core handler for one language expert descriptor.
+
+        The returned callable accepts host-owned ``expert_operation`` metadata,
+        emits an exact zero-model usage ledger, and never exposes a parallel
+        StructuredTool that could bypass Core lifecycle or effect fencing.
+        """
+
+        return make_language_expert_handler(self.host, expert_id)
+
+    def invoke_language_expert(
+        self,
+        expert_id: str,
+        operation: str,
+        arguments: list[Any] | None = None,
+    ) -> str:
+        """Legacy trusted adapter entrypoint for plugin-internal composition.
+
+        This is deliberately not exported as a plugin StructuredTool. New Core
+        registration must use :meth:`language_expert_handler` so the selected
+        operation remains host-owned ZARA-EXPERT/1 metadata.
+        """
+        return self._json(
+            invoke_language_operation(self.host, expert_id, operation, arguments)
+        )
+
     def assert_fact(self, namespace: str, fact: str, persistent: bool = False) -> str:
         changed = self.host.assert_fact(namespace, fact, persistent=persistent)
         return self._json({"ok": True, "changed": changed, "persistent": persistent})
@@ -145,7 +240,7 @@ class ZaraExpertPlugin(ServicePlugin):
         return self._json({"ok": True, "changed": changed, "persistent": persistent})
 
     def tools(self):
-        # Lisp-family discovery/invocation intentionally does not get a parallel
+        # Expert-family discovery/invocation intentionally does not get a parallel
         # tool namespace. The descriptors published at start() are consumed by
         # Zara's canonical ZARA-EXPERT/1 registry/lifecycle owner.
         return (
