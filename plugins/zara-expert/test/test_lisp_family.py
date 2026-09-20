@@ -195,6 +195,28 @@ class LispFamilyAdapterTests(unittest.TestCase):
             register_lisp_family(self.host, {"scheme": [self._brain("scheme")]})
         self.assertEqual(self.backend.calls, [])
 
+    def test_source_preflight_is_atomic_before_namespace_registration(self):
+        lisp_source = self._brain("lisp")
+        missing_common = self.root / "missing-common-lisp.pl"
+
+        with self.assertRaisesRegex(ExpertError, "regular file"):
+            register_lisp_family(
+                self.host,
+                {
+                    "lisp": [lisp_source],
+                    "common-lisp": [missing_common],
+                },
+            )
+
+        with self.assertRaisesRegex(ExpertError, "namespace 'lisp' is not registered"):
+            invoke_lisp_operation(
+                self.host,
+                "lisp",
+                "structural.check",
+                ["(list)", {"var": "Evidence"}],
+            )
+        self.assertEqual(self.backend.calls, [])
+
     def test_descriptor_symbols_use_canonical_runtime_registry(self):
         runtime = RecordingRuntime()
         ids = register_descriptor_symbols(runtime, {"lisp", "emacs-lisp"})
