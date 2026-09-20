@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -9,29 +10,76 @@ from typing import Any
 from langchain_core.tools import StructuredTool
 from zara.plugins import PluginMetadata, ServicePlugin
 
-
 PLUGIN_VERSION = "0.1.0"
 PROTOCOL = "ZARA-EXPERT/1"
-EXPERT_ID = 'language:typescript'
+EXPERT_ID = 'zara:expert/typescript'
 PACKAGE_NAMESPACE = 'zara-typescript-expert'
 EXPERT_NAME = 'TypeScriptExpert'
 SOURCE_REFERENCE = 'source:dotfiles.typescript-expert'
 UPSTREAM_CONTRACT = 'lost-rob0t/prolog-rlm#500'
 HOST_CAPABILITY = "expert.invoke"
-INPUT_SCHEMA = "schema:zara.language-expert.subject.v1"
-OUTPUT_SCHEMA = "schema:zara.language-expert.result.v1"
-MAX_INPUT_BYTES = 65536
+MAX_INPUT_BYTES = 8192
 MAX_OUTPUT_BYTES = 65536
-MAX_RESULTS = 16
-TIMEOUT_MS = 1000
-_REFERENCE_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
-_TOKEN_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
-ALLOWED_OPERATIONS = ('applicable', 'parse', 'inspect', 'inspect_module', 'inspect_tsx', 'typecheck', 'diagnose', 'style', 'repair_verify', 'explain')
-REQUIRED_OBSERVATIONS = ('source-index', 'typescript-config', 'ecmascript-project-metadata')
-
+MAX_TIMEOUT_MS = 3000
+MAX_RESULTS = 32
+MAX_INPUT_DEPTH = 8
+MAX_INPUT_KEYS = 32
+MAX_INPUT_LIST = 64
+MAX_STRING_LENGTH = 4096
+MAX_GENERATION = 2_147_483_647
+REQUEST_ID_RE = re.compile(r"^[!-~]{1,128}$")
+ACTIVATION_ID_RE = re.compile(r"^act:[a-f0-9]{32}$")
+RESULT_VERDICTS = frozenset({"succeeded", "failed", "unknown", "blocked", "unsupported", "cancelled", "error"})
+OPERATION_FIELDS: dict[str, tuple[dict[str, object], ...]] = {
+    'applicable': (
+        {"name": 'source', "type": 'string', "required": False},
+        {"name": 'path', "type": 'string', "required": False},
+        {"name": 'project_metadata', "type": 'object', "required": False},
+    ),
+    'parse': (
+        {"name": 'source', "type": 'string', "required": True},
+        {"name": 'path', "type": 'string', "required": False},
+        {"name": 'language_variant', "type": 'string', "required": False},
+    ),
+    'inspect_module': (
+        {"name": 'source', "type": 'string', "required": True},
+        {"name": 'path', "type": 'string', "required": False},
+        {"name": 'project_metadata', "type": 'object', "required": False},
+    ),
+    'inspect_tsx': (
+        {"name": 'source', "type": 'string', "required": True},
+        {"name": 'path', "type": 'string', "required": False},
+    ),
+    'typecheck': (
+        {"name": 'source', "type": 'string', "required": True},
+        {"name": 'path', "type": 'string', "required": False},
+        {"name": 'project_metadata', "type": 'object', "required": False},
+        {"name": 'compiler_options', "type": 'object', "required": False},
+    ),
+    'diagnose': (
+        {"name": 'source', "type": 'string', "required": True},
+        {"name": 'path', "type": 'string', "required": False},
+        {"name": 'project_metadata', "type": 'object', "required": False},
+    ),
+    'style': (
+        {"name": 'source', "type": 'string', "required": True},
+        {"name": 'path', "type": 'string', "required": False},
+        {"name": 'style_profile', "type": 'string', "required": False},
+    ),
+    'repair_verify': (
+        {"name": 'source', "type": 'string', "required": True},
+        {"name": 'candidate_source', "type": 'string', "required": True},
+        {"name": 'path', "type": 'string', "required": False},
+        {"name": 'compiler_options', "type": 'object', "required": False},
+    ),
+    'explain': (
+        {"name": 'subject', "type": 'object', "required": True},
+    ),
+}
+ALLOWED_OPERATIONS = frozenset(OPERATION_FIELDS)
 
 class TypeScriptExpertAdapterError(RuntimeError):
-    """Fail-closed pure-symbolic adapter error."""
+    """Fail closed: this adapter never falls back to a provider or model."""
 
 
 def _manifest_digest() -> str:
@@ -40,70 +88,129 @@ def _manifest_digest() -> str:
         "package_namespace": PACKAGE_NAMESPACE,
         "source_reference": SOURCE_REFERENCE,
         "upstream_contract": UPSTREAM_CONTRACT,
-        "operations": list(ALLOWED_OPERATIONS),
-        "required_observations": list(REQUIRED_OBSERVATIONS),
+        "operations": {key: list(value) for key, value in sorted(OPERATION_FIELDS.items())},
     }
-    payload = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    payload = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
     return "sha256:" + hashlib.sha256(payload).hexdigest()
 
+MANIFEST_DIGEST = _manifest_digest()
 
-def _validate_reference(value: object, field: str) -> str:
-    if not isinstance(value, str) or not _REFERENCE_RE.fullmatch(value):
-        raise TypeScriptExpertAdapterError(f"invalid-{field}")
-    return value
+
+def _reject_json_constant(_value: str) -> None:
+    raise ValueError("non-finite JSON number")
+
+
+def _validate_json_tree(value: object, *, depth: int = 0) -> None:
+    if depth > MAX_INPUT_DEPTH:
+        raise TypeScriptExpertAdapterError("input-structure-too-complex")
+    if isinstance(value, dict):
+        if len(value) > MAX_INPUT_KEYS:
+            raise TypeScriptExpertAdapterError("input-object-too-large")
+        for key, child in value.items():
+            if not isinstance(key, str) or not key or len(key) > 64:
+                raise TypeScriptExpertAdapterError("invalid-input-key")
+            _validate_json_tree(child, depth=depth + 1)
+        return
+    if isinstance(value, list):
+        if len(value) > MAX_INPUT_LIST:
+            raise TypeScriptExpertAdapterError("input-array-too-lare")
+        for child in value:
+            _validate_json_tree(child, depth=depth + 1)
+        return
+    if isinstance(value, str):
+        if len(value) > MAX_STRING_LENGTH:
+            raise TypeScriptExpertAdapterError("input-string-too-large")
+        return
+    if isinstance(value, float) and not math.isfinite(value):
+        raise TypeScriptExpertAdapterError("invalid-input-number")
+    if value is None or isinstance(value, (bool, int, float)):
+        return
+    raise TypeScriptExpertAdapterError("invalid-input-value")
 
 
 def _validate_generation(value: object, field: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+    if type(value) is not int or not 0 <= value <= MAX_GENERATION:
         raise TypeScriptExpertAdapterError(f"invalid-{field}")
     return value
 
 
-def _validate_json_tree(value: object, *, depth: int = 0, budget: list[int] | None = None) -> None:
-    if budget is None:
-        budget = [4096]
-    budget[0] -= 1
-    if budget[0] < 0 or depth > 16:
-        raise TypeScriptExpertAdapterError("input-structure-too-large")
-    if value is None or isinstance(value, (bool, int, float)):
-        return
-    if isinstance(value, str):
-        if len(value) > 4096:
-            raise TypeScriptExpertAdapterError("input-string-too-large")
-        return
-    if isinstance(value, list):
-        if len(value) > 256:
-            raise TypeScriptExpertAdapterError("input-array-too-large")
-        for item in value:
-            _validate_json_tree(item, depth=depth + 1, budget=budget)
-        return
-    if isinstance(value, dict):
-        if len(value) > 128:
-            raise TypeScriptExpertAdapterError("input-object-too-large")
-        for key, item in value.items():
-            if not isinstance(key, str) or len(key) > 128:
-                raise TypeScriptExpertAdapterError("invalid-input-key")
-            _validate_json_tree(item, depth=depth + 1, budget=budget)
-        return
-    raise TypeScriptExpertAdapterError("input-not-json-compatible")
+def _validate_request_id(value: object) -> str:
+    if not isinstance(value, str) or REQUEST_ID_RE.fullmatch(value) is None:
+        raise TypeScriptExpertAdapterError("invalid-request-id")
+    return value
+
+
+def _validate_activation_id(value: object) -> str:
+    if not isinstance(value, str) or ACTIVATION_ID_RE.fullmatch(value) is None:
+        raise TypeScriptExpertAdapterError("invalid-activation-id")
+    return value
+
+
+def _check_field(field: Mapping[str, object], value: object) -> None:
+    kind = field["type"]
+    if kind == "string" and not isinstance(value, str):
+        raise TypeScriptExpertAdapterError("invalid-operation-input")
+    if kind == "object" and not isinstance(value, dict):
+        raise TypeScriptExpertAdapterError("invalid-operation-input")
+
+
+def _validate_operation_input(operation: str, payload: Mapping[str, object]) -> None:
+    fields = OPERATION_FIELDS[operation]
+    declared = {field["name"]: field for field in fields}
+    if set(payload) - set(declared):
+        raise TypeScriptExpertAdapterError("unknown-operation-input")
+    for name, field in declared.items():
+        if field["required"] and name not in payload:
+            raise TypeScriptExpertAdapterError("missing-operation-input")
+        if name in payload:
+            _check_field(field, payload[name])
+
+
+def _operation_descriptor(operation: str) -> dict[str, object]:
+    return {
+        "operation_id": operation,
+        "input_schema": {"fields": [dict(field) for field in OPERATION_FIELDS[operation]]},
+        "output_schema": {"fields": []},
+    }
+
+
+def _validate_result(result: Mapping[str, object], *, request_id: str, activation_id: str, expert_operation: str, registry_generation: int, runtime_generation: int) -> None:
+    expected = {
+        "protocol": PROTOCOL,
+        "request_id": request_id,
+        "activation_id": activation_id,
+        "expert_id": EXPERT_ID,
+        "expert_version": PLUGIN_VERSION,
+        "manifest_digest": MANIFEST_DIGEST,
+        "expert_operation": expert_operation,
+    }
+    for key, value in expected.items():
+        if result.get(key) != value:
+            raise TypeScriptExpertAdapterError("expert-result-identity-mismatch")
+    if result.get("resolved_registry_generation") != registry_generation or result.get("resolved_runtime_generation") != runtime_generation:
+        raise TypeScriptExpertAdapterError("stale-expert-result")
+    if result.get("verdict") not in RESULT_VERDICTS:
+        raise TypeScriptExpertAdapterError("invalid-expert-verdict")
+    usage = result.get("usage")
+    model_calls = usage.get("model_calls") if isinstance(usage, Mapping) else None
+    if type(model_calls) is not int or model_calls != 0:
+        raise TypeScriptExpertAdapterError("zero-model-proof-missing")
+    receipts = result.get("effect_receipts")
+    if not isinstance(receipts, (list, tuple)):
+        raise TypeScriptExpertAdapterError("read-only-effect-proof-missing")
+    if receipts:
+        raise TypeScriptExpertAdapterError("read-only-effect-leak")
 
 
 class ZaraTypeScriptExpertPlugin(ServicePlugin):
-    metadata = PluginMetadata(
-        name=PACKAGE_NAMESPACE,
-        version=PLUGIN_VERSION,
-        api_version="1",
-        description='Deterministic TypeScript/TSX syntax, module, type, diagnostic, style, and repair-verification adapter.',
-    )
+    metadata = PluginMetadata(name=PACKAGE_NAMESPACE, version=PLUGIN_VERSION, api_version="1", description='Deterministic TypeScript and TSX syntax, type, module, diagnostic, style, and repair-verification adapter.')
 
     def __init__(self) -> None:
         self._runtime: Any | None = None
 
     def start(self, runtime: Any) -> None:
-        # Passive bind only: no activation, provider, network, parser/compiler,
-        # subprocess, expert query, or model call occurs during discovery.
+        # Passive bind only. Discovery must not activate an expert or touch a provider/network/process.
         self._runtime = runtime
-        return None
 
     def stop(self) -> None:
         self._runtime = None
@@ -116,96 +223,56 @@ class ZaraTypeScriptExpertPlugin(ServicePlugin):
     def _decode_input(input_json: str) -> dict[str, Any]:
         if not isinstance(input_json, str):
             raise TypeScriptExpertAdapterError("input-must-be-json-text")
-        if len(input_json.encode("utf-8")) > MAX_INPUT_BYTES:
+        if len(input_json.encode()) > MAX_INPUT_BYTES:
             raise TypeScriptExpertAdapterError("input-too-large")
         try:
-            payload = json.loads(input_json)
+            value = json.loads(input_json, parse_constant=_reject_json_constant)
         except (TypeError, ValueError) as error:
             raise TypeScriptExpertAdapterError("invalid-input-json") from error
-        if not isinstance(payload, dict):
+        if not isinstance(value, dict):
             raise TypeScriptExpertAdapterError("input-must-be-object")
-        _validate_json_tree(payload)
-        return payload
+        _validate_json_tree(value)
+        return value
 
     def descriptor(self) -> str:
-        runtime = self._runtime
-        node_id = getattr(runtime, "node_id", "node.local") if runtime is not None else "node.local"
-        runtime_id = getattr(runtime, "runtime_id", "zara-runtime") if runtime is not None else "zara-runtime"
-        registry_generation = getattr(runtime, "registry_generation", 1) if runtime is not None else 1
-        node_id = _validate_reference(node_id, "node-id")
-        if not isinstance(runtime_id, str) or not _TOKEN_RE.fullmatch(runtime_id):
-            raise TypeScriptExpertAdapterError("invalid-runtime-id")
-        registry_generation = _validate_generation(registry_generation, "registry-generation")
-        operations = [
-            {
-                "id": operation,
-                "input_schema": INPUT_SCHEMA,
-                "output_schema": OUTPUT_SCHEMA,
-                "effects": [],
-                "required_capabilities": [HOST_CAPABILITY],
-            }
-            for operation in ALLOWED_OPERATIONS
-        ]
-        return self._json(
-            {
-                "protocol": PROTOCOL,
-                "expert_id": EXPERT_ID,
-                "expert_version": PLUGIN_VERSION,
-                "package_namespace": PACKAGE_NAMESPACE,
-                "manifest_digest": _manifest_digest(),
-                "name": EXPERT_NAME,
-                "description": 'Deterministic TypeScript/TSX syntax, module, type, diagnostic, style, and repair-verification adapter.',
-                "source_reference": SOURCE_REFERENCE,
-                "reasoning_kind": "symbolic",
-                "operations": operations,
-                "applicability_schema": INPUT_SCHEMA,
-                "required_observations": list(REQUIRED_OBSERVATIONS),
-                "required_capabilities": [HOST_CAPABILITY],
-                "possible_effects": [],
-                "supported_engines": ["swipl"],
-                "supported_platforms": ["zara-runtime"],
-                "placement": {"node_id": node_id, "runtime_id": runtime_id},
-                "fallback_policy": "none",
-                "delegation_policy": "none",
-                "resource_limits": {
-                    "timeout_ms": TIMEOUT_MS,
-                    "max_results": MAX_RESULTS,
-                    "max_output_bytes": MAX_OUTPUT_BYTES,
-                    "max_model_calls": 0,
-                },
-                "registry_generation": registry_generation,
-                "availability": "unavailable",
-                "unavailable_reason": "activation-required",
-            }
-        )
+        return self._json({
+            "protocol": PROTOCOL,
+            "expert_id": EXPERT_ID,
+            "expert_version": PLUGIN_VERSION,
+            "package_namespace": PACKAGE_NAMESPACE,
+            "manifest_digest": MANIFEST_DIGEST,
+            "name": EXPERT_NAME,
+            "description": 'Deterministic TypeScript and TSX syntax, type, module, diagnostic, style, and repair-verification adapter.',
+            "source_reference": SOURCE_REFERENCE,
+            "reasoning_kind": "symbolic",
+            "operations": [_operation_descriptor(operation) for operation in sorted(ALLOWED_OPERATIONS)],
+            "applicability": {"keywords": ['typescript', 'ts', 'tsx', 'types', 'esm', 'commonjs']},
+            "required_capabilities": [HOST_CAPABILITY],
+            "possible_effects": ["none"],
+            "supported_engines": ["swipl"],
+            "supported_platforms": ['desktop', 'server', 'android'],
+            "fallback_policy": "fail_closed",
+            "delegation_policy": "never",
+            "resource_limits": {"timeout_ms": MAX_TIMEOUT_MS, "max_results": MAX_RESULTS, "max_output_bytes": MAX_OUTPUT_BYTES, "max_model_calls": 0},
+            "registry_generation": 1,
+            "availability": "unavailable",
+            "unavailable_reason": "canonical-source-or-host-not-activated",
+        })
 
-    def invoke(
-        self,
-        request_id: str,
-        activation_id: str,
-        expert_operation: str,
-        expected_registry_generation: int,
-        expected_runtime_generation: int,
-        input_json: str = "{}",
-    ) -> str:
-        request_id = _validate_reference(request_id, "request-id")
-        activation_id = _validate_reference(activation_id, "activation-id")
-        expected_registry_generation = _validate_generation(
-            expected_registry_generation, "registry-generation"
-        )
-        expected_runtime_generation = _validate_generation(
-            expected_runtime_generation, "runtime-generation"
-        )
+    def invoke(self, request_id: str, activation_id: str, expert_operation: str, expected_registry_generation: int, expected_runtime_generation: int, input_json: str = "{}") -> str:
         if expert_operation not in ALLOWED_OPERATIONS:
             raise TypeScriptExpertAdapterError("unsupported-expert-operation")
+        request_id = _validate_request_id(request_id)
+        activation_id = _validate_activation_id(activation_id)
+        registry_generation = _validate_generation(expected_registry_generation, "registry-generation")
+        runtime_generation = _validate_generation(expected_runtime_generation, "runtime-generation")
         payload = self._decode_input(input_json)
-
+        _validate_operation_input(expert_operation, payload)
         runtime = self._runtime
         resolver = getattr(runtime, "resolve_capability", None)
         invoker = getattr(runtime, "invoke_capability", None)
         if not callable(resolver) or not callable(invoker):
             raise TypeScriptExpertAdapterError("expert-host-composition-unavailable")
-
         request = {
             "protocol": PROTOCOL,
             "request_id": request_id,
@@ -213,15 +280,10 @@ class ZaraTypeScriptExpertPlugin(ServicePlugin):
             "activation_id": activation_id,
             "expert_id": EXPERT_ID,
             "expert_operation": expert_operation,
-            "expected_registry_generation": expected_registry_generation,
-            "expected_runtime_generation": expected_runtime_generation,
+            "expected_registry_generation": registry_generation,
+            "expected_runtime_generation": runtime_generation,
             "input": payload,
-            "limits": {
-                "timeout_ms": TIMEOUT_MS,
-                "max_results": MAX_RESULTS,
-                "max_output_bytes": MAX_OUTPUT_BYTES,
-                "max_model_calls": 0,
-            },
+            "limits": {"timeout_ms": MAX_TIMEOUT_MS, "max_results": MAX_RESULTS, "max_output_bytes": MAX_OUTPUT_BYTES, "max_model_calls": 0},
         }
         try:
             handle = resolver(HOST_CAPABILITY)
@@ -230,48 +292,19 @@ class ZaraTypeScriptExpertPlugin(ServicePlugin):
             raise
         except Exception as error:
             raise TypeScriptExpertAdapterError("expert-host-invocation-failed") from error
-
         if not isinstance(result, Mapping):
             raise TypeScriptExpertAdapterError("invalid-expert-result")
-        usage = result.get("usage")
-        model_calls = usage.get("model_calls") if isinstance(usage, Mapping) else None
-        if type(model_calls) is not int or model_calls != 0:
-            raise TypeScriptExpertAdapterError("zero-model-proof-missing")
-        if result.get("request_id") != request_id:
-            raise TypeScriptExpertAdapterError("stale-or-unbound-expert-result")
-        if result.get("registry_generation") != expected_registry_generation:
-            raise TypeScriptExpertAdapterError("stale-or-unbound-expert-result")
-        if result.get("runtime_generation") != expected_runtime_generation:
-            raise TypeScriptExpertAdapterError("stale-or-unbound-expert-result")
-        evidence = result.get("evidence")
-        explanation = result.get("explanation")
-        if not isinstance(evidence, list) or not isinstance(explanation, list):
-            raise TypeScriptExpertAdapterError("evidence-or-explanation-missing")
-        receipts = result.get("side_effect_receipts")
-        if not isinstance(receipts, list) or receipts:
-            raise TypeScriptExpertAdapterError("unexpected-side-effect-receipt")
-
+        _validate_result(result, request_id=request_id, activation_id=activation_id, expert_operation=expert_operation, registry_generation=registry_generation, runtime_generation=runtime_generation)
         encoded = self._json(dict(result))
-        if len(encoded.encode("utf-8")) > MAX_OUTPUT_BYTES:
+        if len(encoded.encode()) > MAX_OUTPUT_BYTES:
             raise TypeScriptExpertAdapterError("expert-result-too-large")
         return encoded
 
     def tools(self):
-        prefix = EXPERT_ID.split(":", 1)[1]
+        prefix = EXPERT_ID.rsplit("/", 1)[-1]
         return (
-            StructuredTool.from_function(
-                func=self.descriptor,
-                name=f"{prefix}.expert.descriptor",
-                description=f"Return the passive {EXPERT_NAME} ZARA-EXPERT/1 descriptor.",
-            ),
-            StructuredTool.from_function(
-                func=self.invoke,
-                name=f"{prefix}.expert.invoke",
-                description=(
-                    f"Invoke one allowlisted pure-symbolic {EXPERT_NAME} operation through "
-                    "the canonical expert.invoke capability with explicit generation fences."
-                ),
-            ),
+            StructuredTool.from_function(func=self.descriptor, name=f"{prefix}.expert.descriptor", description=f"Return the passive {EXPERT_NAME} ZARA-EXPERTT/1 descriptor."),
+            StructuredTool.from_function(func=self.invoke, name=f"{prefix}.expert.invoke", description=f"Invoke one allowlisted read-only {EXPERT_NAME} operation through canonical expert.invoke with max_model_calls=0."),
         )
 
 

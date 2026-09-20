@@ -3,115 +3,76 @@ from __future__ import annotations
 import json
 import unittest
 
-from zara_typescript_expert.plugin import TypeScriptExpertAdapterError, ZaraTypeScriptExpertPlugin
+from zara_typescript_expert.plugin import MANIFEST_DIGEST, TypeScriptExpertAdapterError, ZaraTypeScriptExpertPlugin
 
+ACTIVATION = "act:" + "a" * 32
 
 class FakeRuntime:
-    node_id = "node.local"
-    runtime_id = "zara-runtime"
-    registry_generation = 7
-
-    def __init__(self, *, model_calls: object = 0, stale: bool = False, receipts=None) -> None:
-        self.model_calls = model_calls
-        self.stale = stale
-        self.receipts = [] if receipts is None else receipts
-        self.resolved = []
-        self.requests = []
-
-    def resolve_capability(self, capability: str):
-        self.resolved.append(capability)
-        return object()
-
-    def invoke_capability(self, handle, request):
+    def __init__(self, *, model_calls=0, stale=False, receipts=None):
+        self.model_calls=model_calls; self.stale=stale; self.receipts=[] if receipts is None else receipts; self.requests=[]; self.resolved=[]
+    def resolve_capability(self, capability):
+        self.resolved.append(capability); return object()
+    def invoke_capability(self, _handle, request):
         self.requests.append(request)
-        generation = request["expected_runtime_generation"] - 1 if self.stale else request["expected_runtime_generation"]
+        runtime_generation=request["expected_runtime_generation"] - 1 if self.stale else request["expected_runtime_generation"]
         return {
-            "request_id": request["request_id"],
-            "registry_generation": request["expected_registry_generation"],
-            "runtime_generation": generation,
-            "status": "succeeded",
-            "data": {"verdict": "clean"},
-            "evidence": [{"kind": "source", "ref": "fixture"}],
-            "explanation": [{"kind": "rule", "id": "fixture-rule"}],
-            "usage": {"model_calls": self.model_calls},
-            "side_effect_receipts": self.receipts,
+            "protocol":"ZARA-EXPERT/1", "request_id":request["request_id"], "invocation_id":"inv:fixture",
+            "activation_id":request["activation_id"], "expert_id":request["expert_id"], "expert_version":"0.1.0",
+            "manifest_digest":MANIFEST_DIGEST, "expert_operation":request["expert_operation"],
+            "resolved_registry_generation":request["expected_registry_generation"], "resolved_runtime_generation":runtime_generation,
+            "verdict":"succeeded", "data":{"ok":True}, "evidence_refs":["fixture:source"],
+            "usage":{"model_calls":self.model_calls}, "effect_receipts":self.receipts,
         }
 
-
-class TypeScriptExpertPluginTests(unittest.TestCase):
-    operation = "typecheck"
-
-    def _plugin(self, runtime=None):
-        plugin = ZaraTypeScriptExpertPlugin()
-        plugin.start(FakeRuntime() if runtime is None else runtime)
-        return plugin
-
-    def test_descriptor_is_passive_pure_symbolic(self) -> None:
-        runtime = FakeRuntime()
-        plugin = self._plugin(runtime)
-        descriptor = json.loads(plugin.descriptor())
-        self.assertEqual(descriptor["protocol"], "ZARA-EXPERT/1")
-        self.assertEqual(descriptor["expert_id"], "language:typescript")
-        self.assertEqual(descriptor["reasoning_kind"], "symbolic")
-        self.assertEqual(descriptor["fallback_policy"], "none")
-        self.assertEqual(descriptor["resource_limits"]["max_model_calls"], 0)
-        self.assertEqual(descriptor["required_capabilities"], ["expert.invoke"])
-        self.assertEqual(descriptor["possible_effects"], [])
-        self.assertEqual(runtime.resolved, [])
-        self.assertEqual(runtime.requests, [])
-
-    def test_invocation_is_generation_fenced_exact_zero_model(self) -> None:
-        runtime = FakeRuntime()
-        plugin = self._plugin(runtime)
-        result = json.loads(plugin.invoke("request-1", "activation-1", self.operation, 7, 11, '{"subject_id":"fixture"}'))
+class ContractTests(unittest.TestCase):
+    def plugin(self, runtime=None):
+        value=ZaraTypeScriptExpertPlugin(); value.start(runtime or FakeRuntime()); return value
+    def test_descriptor_matches_current_closed_contract_and_zero_model(self):
+        d=json.loads(self.plugin().descriptor())
+        self.assertEqual(d["expert_id"], 'zara:expert/typescript')
+        self.assertEqual(d["reasoning_kind"], "symbolic")
+        self.assertEqual(d["possible_effects"], ["none"])
+        self.assertEqual(d["fallback_policy"], "fail_closed")
+        self.assertEqual(d["delegation_policy"], "never")
+        self.assertEqual(d["resource_limits"]["max_model_calls"], 0)
+        self.assertIn("applicability", d); self.assertNotIn("required_observations", d); self.assertNotIn("placement", d)
+        for op in d["operations"]:
+            self.assertEqual(set(op), {"operation_id","input_schema","output_schema"})
+    def test_language_boundary_is_explicit(self):
+        ops={item["operation_id"] for item in json.loads(self.plugin().descriptor())["operations"]}
+        self.assertIn("inspect_tsx", ops); self.assertIn("typecheck", ops); self.assertNotIn("inspect_jsx", ops)
+    def test_canonical_invoke_and_exact_zero_model(self):
+        runtime=FakeRuntime(); p=self.plugin(runtime)
+        result=json.loads(p.invoke("req:1", ACTIVATION, 'typecheck', 0, 0, "{\"source\": \"export const x = 1\", \"project_metadata\": {}}"))
         self.assertEqual(runtime.resolved, ["expert.invoke"])
-        self.assertEqual(runtime.requests[0]["expert_id"], "language:typescript")
         self.assertEqual(runtime.requests[0]["limits"]["max_model_calls"], 0)
         self.assertEqual(result["usage"]["model_calls"], 0)
-        self.assertEqual(result["side_effect_receipts"], [])
-
-    def test_unknown_effectful_operation_rejected_before_host(self) -> None:
-        runtime = FakeRuntime()
-        plugin = self._plugin(runtime)
-        with self.assertRaisesRegex(TypeScriptExpertAdapterError, "unsupported-expert-operation"):
-            plugin.invoke("request-1", "activation-1", "repair_apply", 7, 11, "{}")
-        self.assertEqual(runtime.requests, [])
-
-    def test_nonzero_or_boolean_model_usage_fails_closed(self) -> None:
-        for model_calls in (1, False):
-            with self.subTest(model_calls=model_calls):
-                plugin = self._plugin(FakeRuntime(model_calls=model_calls))
-                with self.assertRaisesRegex(TypeScriptExpertAdapterError, "zero-model-proof-missing"):
-                    plugin.invoke("request-1", "activation-1", self.operation, 7, 11, "{}")
-
-    def test_stale_generation_is_rejected(self) -> None:
-        plugin = self._plugin(FakeRuntime(stale=True))
-        with self.assertRaisesRegex(TypeScriptExpertAdapterError, "stale-or-unbound-expert-result"):
-            plugin.invoke("request-1", "activation-1", self.operation, 7, 11, "{}")
-
-    def test_effect_receipt_is_rejected(self) -> None:
-        plugin = self._plugin(FakeRuntime(receipts=[{"effect": "filesystem.write"}]))
-        with self.assertRaisesRegex(TypeScriptExpertAdapterError, "unexpected-side-effect-receipt"):
-            plugin.invoke("request-1", "activation-1", self.operation, 7, 11, "{}")
-
-    def test_missing_effect_receipt_proof_is_rejected(self) -> None:
-        class MissingReceiptRuntime(FakeRuntime):
+        self.assertEqual(result["effect_receipts"], [])
+    def test_activation_and_generation_fences(self):
+        p=self.plugin()
+        with self.assertRaisesRegex(TypeScriptExpertAdapterError, "invalid-activation-id"):
+            p.invoke("req:1", "activation-1", 'typecheck', 0, 0, "{\"source\": \"export const x = 1\", \"project_metadata\": {}}")
+        with self.assertRaisesRegex(TypeScriptExpertAdapterError, "invalid-registry-generation"):
+            p.invoke("req:1", ACTIVATION, 'typecheck', False, 0, "{\"source\": \"export const x = 1\", \"project_metadata\": {}}")
+    def test_stale_result_rejected(self):
+        with self.assertRaisesRegex(TypeScriptExpertAdapterError, "stale-expert-result"):
+            self.plugin(FakeRuntime(stale=True)).invoke("req:1", ACTIVATION, 'typecheck', 1, 1, "{\"source\": \"export const x = 1\", \"project_metadata\": {}}")
+    def test_nonzero_or_boolean_model_usage_rejected(self):
+        for value in (1, False):
+            with self.subTest(value=value), self.assertRaisesRegex(TypeScriptExpertAdapterError, "zero-model-proof-missing"):
+                self.plugin(FakeRuntime(model_calls=value)).invoke("req:1", ACTIVATION, 'typecheck', 1, 1, "{\"source\": \"export const x = 1\", \"project_metadata\": {}}")
+    def test_read_only_effect_proof_required_and_empty(self):
+        with self.assertRaisesRegex(TypeScriptExpertAdapterError, "read-only-effect-leak"):
+            self.plugin(FakeRuntime(receipts=[{"effect":"filesystem.write"}])).invoke("req:1", ACTIVATION, 'typecheck', 1, 1, "{\"source\": \"export const x = 1\", \"project_metadata\": {}}")
+        class Missing(FakeRuntime):
             def invoke_capability(self, handle, request):
-                result = super().invoke_capability(handle, request)
-                result.pop("side_effect_receipts")
-                return result
-
-        plugin = self._plugin(MissingReceiptRuntime())
-        with self.assertRaisesRegex(TypeScriptExpertAdapterError, "unexpected-side-effect-receipt"):
-            plugin.invoke("request-1", "activation-1", self.operation, 7, 11, "{}")
-
-    def test_malformed_input_fails_before_host(self) -> None:
-        runtime = FakeRuntime()
-        plugin = self._plugin(runtime)
-        with self.assertRaisesRegex(TypeScriptExpertAdapterError, "input-must-be-object"):
-            plugin.invoke("request-1", "activation-1", self.operation, 7, 11, "[]")
+                out=super().invoke_capability(handle, request); out.pop("effect_receipts"); return out
+        with self.assertRaisesRegex(TypeScriptExpertAdapterError, "read-only-effect-proof-missing"):
+            self.plugin(Missing()).invoke("req:1", ACTIVATION, 'typecheck', 1, 1, "{\"source\": \"export const x = 1\", \"project_metadata\": {}}")
+    def test_unknown_or_malformed_input_fails_before_host(self):
+        runtime=FakeRuntime(); p=self.plugin(runtime)
+        with self.assertRaises(TypeScriptExpertAdapterError):
+            p.invoke("req:1", ACTIVATION, 'typecheck', 1, 1, '{"unknown":1}')
         self.assertEqual(runtime.requests, [])
 
-
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()
