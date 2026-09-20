@@ -171,6 +171,14 @@
           '';
 
           checks = {
+            emacs-expert = pkgs.runCommand "zara-check-emacs-expert"
+              { nativeBuildInputs = [ pkgs.swi-prolog ]; }
+              ''
+                test -s ${emacsExpert}/share/zara/experts/emacs/emacs-kb.pl
+                ${pkgs.swi-prolog}/bin/swipl -q -g "consult('${emacsExpert}/share/zara/experts/emacs/emacs-kb.pl'),consult('${emacsExpert}/share/zara/experts/emacs/rules.pl'),emacs_build_version(_),emacs_command(_),halt."
+                touch $out
+              '';
+
             registry = pkgs.runCommand "zara-check-registry"
               {
                 nativeBuildInputs = [ python ];
