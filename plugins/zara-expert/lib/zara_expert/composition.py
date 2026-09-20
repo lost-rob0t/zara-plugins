@@ -126,15 +126,23 @@ class SharedSymbolicBudget:
         self,
         snapshot: tuple[tuple[str, int], ...],
     ) -> None:
-        changed = []
         expected = dict(snapshot)
+        current_state = vars(self)
+        changed: list[str] = []
         for name in _BUDGET_FIELDS:
-            current = getattr(self, name)
             wanted = expected[name]
+            if name not in current_state:
+                changed.append(name)
+                continue
+            current = current_state[name]
             if type(current) is not int or current != wanted:
                 changed.append(name)
+        unexpected = sorted(set(current_state) - set(_BUDGET_FIELDS))
+        changed.extend(f"attribute:{name}" for name in unexpected)
         if not changed:
             return
+        for name in unexpected:
+            delattr(self, name)
         for name in _BUDGET_FIELDS:
             setattr(self, name, expected[name])
         names = ", ".join(changed)
@@ -464,7 +472,7 @@ class MetaExpertComposer:
                 parent_path=labels,
             )
         finally:
-            budget.assert_unchanged_by_invoker(budget_snapshot)
+            SharedSymbolicBudget.assert_unchanged_by_invoker(budget, budget_snapshot)
         fence.check()
         budget.assert_zero_model_usage()
         if result.model_calls != 0:
