@@ -18,6 +18,7 @@ from .language_family import (
     register_descriptor_symbols as register_language_descriptor_symbols,
     register_language_family,
 )
+from .language_handler import make_language_expert_handler
 from .lisp_family import (
     descriptors as lisp_descriptors,
     invoke_lisp_operation,
@@ -155,6 +156,16 @@ class ZaraExpertPlugin(ServicePlugin):
     def language_family_schemas(self) -> str:
         """Internal schema projection consumed by canonical expert adapter wiring."""
         return self._json(language_expert_schemas())
+
+    def language_expert_handler(self, expert_id: str):
+        """Return the trusted Core handler for one language expert descriptor.
+
+        The returned callable accepts host-owned ``expert_operation`` metadata,
+        emits an exact zero-model usage ledger, and never exposes a parallel
+        StructuredTool that could bypass Core lifecycle or effect fencing.
+        """
+
+        return make_language_expert_handler(self.host, expert_id)
 
     def invoke_language_expert(
         self,
