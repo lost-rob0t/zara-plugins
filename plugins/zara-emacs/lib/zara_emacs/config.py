@@ -113,7 +113,7 @@ class EmacsConfig:
                 raise EmacsConfigError("command aliases and command names must be strings")
             if not alias or len(alias) > 128 or any(ch.isspace() for ch in alias):
                 raise EmacsConfigError("command aliases must contain 1 to 128 non-whitespace characters")
-            if not command or len(command) > 256 or any(ch in command for ch in ("\\x00", "\\n", "\\r")):
+            if not command or len(command) > 256 or any(ch in command for ch in ("\x00", "\n", "\r")):
                 raise EmacsConfigError("Emacs command names must contain 1 to 256 single-line characters")
         if not isinstance(self.voice_commands, Mapping):
             raise EmacsConfigError("voice_commands must be a phrase-to-action mapping")
