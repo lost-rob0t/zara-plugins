@@ -12,6 +12,7 @@ on:
       - 'tests/test_nix_bash_zara_core_e2e.py'
       - 'tests/test_nix_bash_core_explain_e2e.py'
       - 'tests/test_nix_bash_current_core_delegation_e2e.py'
+      - 'tests/test_nix_bash_core_catalog_e2e.py'
       - 'flake.nix'
       - 'plugins.json'
       - '.github/workflows/nix-bash-expert-e2e.yml'
@@ -50,6 +51,25 @@ jobs:
           git -C .ci/dotfiles-nix-bash checkout --detach FETCH_HEAD
           test "$(git -C .ci/dotfiles-nix-bash rev-parse HEAD)" = "$revision"
 
+      - name: Fetch exact current Dotfiles brains for catalog acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=fe8f7fa3c42803e0e505dcb6f7e4600d27649d9e
+          rm -rf .ci/dotfiles-nix-bash-current
+          git init .ci/dotfiles-nix-bash-current
+          git -C .ci/dotfiles-nix-bash-current remote add origin https://github.com/lost-rob0t/dotfiles.git
+          git -C .ci/dotfiles-nix-bash-current config core.sparseCheckout true
+          mkdir -p .ci/dotfiles-nix-bash-current/.git/info
+          printf '%s\n' \
+            '/.zara/experts/nix/' \
+            '/.zara/experts/bash/' \
+            '/.zara/experts/language/' \
+            > .ci/dotfiles-nix-bash-current/.git/info/sparse-checkout
+          git -C .ci/dotfiles-nix-bash-current fetch --depth=1 origin "$revision"
+          git -C .ci/dotfiles-nix-bash-current checkout --detach FETCH_HEAD
+          test "$(git -C .ci/dotfiles-nix-bash-current rev-parse HEAD)" = "$revision"
+
       - name: Fetch exact canonical Zara Core
         shell: bash
         run: |
@@ -79,6 +99,21 @@ jobs:
           git -C .ci/zara-core-current fetch --depth=1 origin "$revision"
           git -C .ci/zara-core-current checkout --detach FETCH_HEAD
           test "$(git -C .ci/zara-core-current rev-parse HEAD)" = "$revision"
+
+      - name: Fetch exact current Zara Core for catalog acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=b9162dad35dfc17f8450e25503004222a813f9aa
+          rm -rf .ci/zara-core-catalog-current
+          git init .ci/zara-core-catalog-current
+          git -C .ci/zara-core-catalog-current remote add origin https://github.com/lost-rob0t/zara.git
+          git -C .ci/zara-core-catalog-current config core.sparseCheckout true
+          mkdir -p .ci/zara-core-catalog-current/.git/info
+          printf '%s\n' '/zara/' > .ci/zara-core-catalog-current/.git/info/sparse-checkout
+          git -C .ci/zara-core-catalog-current fetch --depth=1 origin "$revision"
+          git -C .ci/zara-core-catalog-current checkout --detach FETCH_HEAD
+          test "$(git -C .ci/zara-core-catalog-current rev-parse HEAD)" = "$revision"
 
       - name: Install symbolic runtimes and audit tools
         shell: bash
@@ -142,6 +177,30 @@ jobs:
             python3 -m unittest discover -s tests -t . -p 'test_nix_bash_current_core_delegation_e2e.py'
           if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
             echo 'unexpected IPv4/IPv6 network syscall during current-Core Nix/Bash delegation E2E' >&2
+            cat "$trace" >&2
+            exit 1
+          fi
+
+      - name: Prove canonical Core catalog selects real Nix/Bash brains without fallback
+        env:
+          ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles-nix-bash-current
+          ZARA_CURRENT_CORE_ROOT: ${{ github.workspace }}/.ci/zara-core-catalog-current
+        shell: bash
+        run: |
+          set -euo pipefail
+          trace="$RUNNER_TEMP/nix-bash-core-catalog-network.trace"
+          env \
+            -u OPENAI_API_KEY \
+            -u ANTHROPIC_API_KEY \
+            -u OPENROUTER_API_KEY \
+            -u GOOGLE_API_KEY \
+            -u GEMINI_API_KEY \
+            -u GROQ_API_KEY \
+            -u ZAI_API_KEY \
+            strace -f -e trace=network -o "$trace" \
+            python3 -m unittest discover -s tests -t . -p 'test_nix_bash_core_catalog_e2e.py'
+          if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
+            echo 'unexpected IPv4/IPv6 network syscall during canonical Core catalog E2E' >&2
             cat "$trace" >&2
             exit 1
           fi
