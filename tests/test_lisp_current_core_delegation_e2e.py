@@ -228,7 +228,7 @@ class LispCurrentCoreDelegationE2ETests(unittest.TestCase):
                     budget=budget,
                     fence=self._fence(),
                 )
-                self.assertEqual(tree.status, "succeeded")
+                self.assertEqual(tree.status, "blocked")
                 rendered = " ".join(tree.data["result"]["results"])
                 self.assertIn("verified(false)", rendered)
                 self.assertIn(postcondition, rendered)
