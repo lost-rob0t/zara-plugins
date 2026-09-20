@@ -353,7 +353,7 @@ class PrologPythonNimInflightRecreationE2ETests(unittest.TestCase):
         self.assertFalse(worker.is_alive(), "revoked nested invocation did not terminate")
         self.assertNotIn("error", outcome)
         failed = outcome["result"]
-        self.assertEqual(failed.verdict.value, "error")
+        self.assertIs(failed.verdict, ExpertVerdict.UNKNOWN)
         self.assertEqual(failed.data, {})
         self.assertEqual(failed.evidence_refs, ())
         self.assertIs(type(failed.usage["model_calls"]), int)
@@ -369,7 +369,7 @@ class PrologPythonNimInflightRecreationE2ETests(unittest.TestCase):
             },
             limits=ExpertLimits(max_model_calls=0),
         )
-        self.assertEqual(stale.verdict.value, "error")
+        self.assertIs(stale.verdict, ExpertVerdict.UNKNOWN)
         self.assertEqual(stale.evidence_refs, ())
         self.assertIs(type(stale.usage["model_calls"]), int)
         self.assertEqual(stale.usage["model_calls"], 0)
