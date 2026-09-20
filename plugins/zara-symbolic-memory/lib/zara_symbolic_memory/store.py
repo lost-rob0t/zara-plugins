@@ -64,8 +64,13 @@ def _normalized_render(subject: str, predicate: str, object_json: str) -> str:
         value = json.loads(object_json)
     except json.JSONDecodeError:
         value = object_json
-    rendered = json.dumps(value, ensure_ascii=False, sort_keys=True) if not isinstance(value, str) else value
-    return " ".join(f"{subject} {predicate} {rendered}".casefold().split())
+    if isinstance(value, dict) and isinstance(value.get("text"), str):
+        rendered = value["text"]
+    elif isinstance(value, str):
+        rendered = value
+    else:
+        rendered = json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return " ".join(f"{rendered}".split()) or " ".join(f"{subject} {predicate}".split())
 
 
 def _stable_memory_id(scope: str, subject: str, predicate: str) -> str:
@@ -137,6 +142,16 @@ class SymbolicMemoryStore:
                 versions[memory_id] = max(versions.get(memory_id, 0), int(match.group(2)))
         return versions
 
+    def _tombstone_versions(self) -> dict[str, int]:
+        versions: dict[str, int] = {}
+        for line in self.memory_path.read_text(encoding="utf-8").splitlines():
+            match = TOMBSTONE_RE.match(line)
+            if not match:
+                continue
+            memory_id = json.loads(match.group(1))
+            versions[memory_id] = max(versions.get(memory_id, 0), int(match.group(2)))
+        return versions
+
     def records(self) -> list[MemoryRecord]:
         records: list[MemoryRecord] = []
         for line in self.memory_path.read_text(encoding="utf-8").splitlines():
@@ -162,6 +177,22 @@ class SymbolicMemoryStore:
                 )
             )
         return records
+
+    def active_records(self) -> list[MemoryRecord]:
+        latest: dict[str, MemoryRecord] = {}
+        for record in self.records():
+            previous = latest.get(record.memory_id)
+            if previous is None or record.version > previous.version:
+                latest[record.memory_id] = record
+        tombstones = self._tombstone_versions()
+        return sorted(
+            (
+                record
+                for memory_id, record in latest.items()
+                if tombstones.get(memory_id, 0) < record.version
+            ),
+            key=lambda record: (record.created_epoch, record.memory_id),
+        )
 
     def remember(
         self,
@@ -221,10 +252,11 @@ class SymbolicMemoryStore:
     def forget(self, memory_id: str, *, reason: str = "user-request") -> dict[str, object]:
         memory_id = _bounded_text(memory_id, "memory id", 128)
         reason = _bounded_text(reason, "forget reason", 256)
-        versions = self._versions()
-        if memory_id not in versions:
+        active = {record.memory_id: record for record in self.active_records()}
+        record = active.get(memory_id)
+        if record is None:
             return {"status": "not-found", "memory_id": memory_id}
-        version = versions[memory_id] + 1
+        version = max(record.version, self._versions().get(memory_id, 0)) + 1
         epoch = int(self.clock())
         self._append(
             self.memory_path,
@@ -244,7 +276,7 @@ class SymbolicMemoryStore:
     def rebuild_embeddings(self, kb_roots: Iterable[str | os.PathLike[str]] = ()) -> dict[str, object]:
         if self.embedder is None:
             raise SymbolicMemoryError("embedding backend is not configured")
-        memory_records = self.records()
+        memory_records = self.active_records()
         kb_clauses = list(self._load_kb_clauses(kb_roots))
         items: list[tuple[str, object]] = [("memory", record) for record in memory_records]
         items.extend(("kb", clause) for clause in kb_clauses)
@@ -271,7 +303,7 @@ class SymbolicMemoryStore:
         self._atomic_write(self.embeddings_path, "\n".join(lines) + "\n")
         return {
             "status": "ok",
-            "memory_versions": len(memory_records),
+            "active_memories": len(memory_records),
             "kb_clauses": len(kb_clauses),
             "model": self.embedder.model,
         }
@@ -282,6 +314,7 @@ class SymbolicMemoryStore:
             "canonical_memory": str(self.memory_path),
             "derived_embeddings": str(self.embeddings_path),
             "memory_versions": len(self.records()),
+            "active_memories": len(self.active_records()),
             "embedding_backend": None if self.embedder is None else self.embedder.model,
         }
 
