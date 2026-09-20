@@ -29,6 +29,7 @@ from .lisp_family import (
     register_descriptor_symbols as register_lisp_descriptor_symbols,
     register_lisp_family,
 )
+from .lisp_source_contract import validate_lisp_source_contracts
 
 
 PLUGIN_VERSION = "0.1.0"
@@ -112,12 +113,12 @@ class ZaraExpertPlugin(ServicePlugin):
         lisp_sources = self._lisp_sources(runtime.configuration)
         language_sources = self._language_sources(runtime.configuration)
 
-        # Validate both the strict pure-symbolic ABI and existing namespace
-        # authority before mutating any expert namespace. A bad or conflicting
-        # Prolog/Python/Nim brain must not leave an unrelated Lisp family
-        # partially active after startup fails.
+        # Validate every configured brain ABI/policy and existing language
+        # authority before mutating any expert namespace. A bad later source
+        # must not leave an unrelated family partially active.
         validate_language_source_contracts(language_sources)
         self._preflight_language_authority(language_sources)
+        validate_lisp_source_contracts(lisp_sources)
 
         self._registered_lisp_experts = register_lisp_family(
             self.host,
