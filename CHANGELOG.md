@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### zara-expert
+- Add provider-free PrologExpert, PythonExpert, and NimExpert adapters over canonical Dotfiles-owned expert sources.
+- Route applicability, evidence, diagnostics, style rules, repair preview/verification, and explanation through host-issued registered-predicate authority with `max_model_calls=0`.
+- Expose closed applicability/result schemas and canonical runtime symbols; `repair.apply` remains behind Zara's typed edit/effect authority with fresh postcondition verification.
+
 ### zara-emacs 0.2.0
 - Use the full configured Org notes root as a bounded knowledge surface.
 - Add Org QL queries for active shared agent memory and inventory/food state.
