@@ -12,6 +12,11 @@ sys.path.insert(0, str(ROOT / "lib"))
 from zara_bash_expert.plugin import BashExpertAdapterError, ZaraBashExpertPlugin
 
 
+EXPECTED_MANIFEST_DIGEST = (
+    "sha256:a09f376755aa3c83c1fc30133d08d3ac4cad7638e26fb5e7f95713beca597f3e"
+)
+
+
 class FakeRuntime:
     def __init__(self, *, model_calls: int = 0, side_effect_receipts=None) -> None:
         self.model_calls = model_calls
@@ -35,7 +40,7 @@ class FakeRuntime:
 
 
 class BashExpertPluginTests(unittest.TestCase):
-    def test_start_and_descriptor_do_not_source_or_execute_shell(self) -> None:
+    def test_start_and_descriptor_are_passive_zero_model_and_schema_shaped(self) -> None:
         runtime = FakeRuntime()
         plugin = ZaraBashExpertPlugin()
         plugin.start(runtime)
@@ -43,9 +48,42 @@ class BashExpertPluginTests(unittest.TestCase):
         descriptor = json.loads(plugin.descriptor())
 
         self.assertEqual(descriptor["protocol"], "ZARA-EXPERT/1")
+        self.assertEqual(descriptor["expert_id"], "zara:expert/bash")
+        self.assertEqual(descriptor["manifest_digest"], EXPECTED_MANIFEST_DIGEST)
+        self.assertEqual(descriptor["source_reference"], "source:dotfiles-bash-expert-v1")
         self.assertEqual(descriptor["reasoning_kind"], "symbolic")
-        self.assertEqual(descriptor["resource_limits"]["max_model_calls"], 0)
-        self.assertEqual(descriptor["fallback_policy"], "fail-closed-no-model")
+        self.assertEqual(descriptor["fallback_policy"], "none")
+        self.assertEqual(descriptor["delegation_policy"], "none")
+        self.assertEqual(descriptor["availability"], "unavailable")
+        self.assertEqual(
+            descriptor["unavailable_reason"],
+            "canonical-source-or-host-not-activated",
+        )
+        self.assertEqual(
+            descriptor["resource_limits"],
+            {
+                "timeout_ms": 3000,
+                "max_results": 32,
+                "max_output_bytes": 65536,
+                "max_model_calls": 0,
+            },
+        )
+        self.assertEqual(
+            {operation["id"] for operation in descriptor["operations"]},
+            {
+                "parse",
+                "inspect_startup",
+                "inspect_source_graph",
+                "diagnose_quoting",
+                "style_check",
+                "check_plan",
+            },
+        )
+        for operation in descriptor["operations"]:
+            self.assertEqual(operation["effects"], [])
+            self.assertEqual(operation["required_capabilities"], ["expert.invoke"])
+            self.assertTrue(operation["input_schema"].startswith("schema:"))
+            self.assertTrue(operation["output_schema"].startswith("schema:"))
         self.assertEqual(runtime.resolved, [])
         self.assertEqual(runtime.requests, [])
 
