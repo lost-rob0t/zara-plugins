@@ -36,7 +36,7 @@ class LispHandlerResultContractTests(unittest.TestCase):
             handler = make_lisp_expert_handler(host, "zara:expert/lisp")
             outcome = handler(
                 expert_operation="structural.check",
-                arguments=["(list)", {"var": "Evidence"}],
+                arguments=["(list)"],
             )
             return backend, outcome
 
@@ -45,6 +45,10 @@ class LispHandlerResultContractTests(unittest.TestCase):
         self.assertEqual(outcome["verdict"], "succeeded")
         self.assertEqual(outcome["usage"], {"model_calls": 0})
         self.assertEqual(len(backend.calls), 1)
+        self.assertEqual(
+            backend.calls[0]["arguments"],
+            ["(list)", {"var": "Result"}],
+        )
 
     def test_truthy_non_boolean_backend_status_cannot_false_green(self):
         for malformed in (1, "true", "false", [True], {"value": True}):
@@ -54,6 +58,10 @@ class LispHandlerResultContractTests(unittest.TestCase):
                 self.assertEqual(outcome["usage"], {"model_calls": 0})
                 self.assertEqual(outcome["effect_receipts"], [])
                 self.assertEqual(len(backend.calls), 1)
+                self.assertEqual(
+                    backend.calls[0]["arguments"],
+                    ["(list)", {"var": "Result"}],
+                )
 
 
 if __name__ == "__main__":

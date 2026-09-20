@@ -13,6 +13,7 @@ SYMBOL_KIND = "expert"
 SOURCE_OWNER = "lost-rob0t/dotfiles#292"
 MAX_MODEL_CALLS = 0
 RESERVED_HOST_INPUT_FIELDS = frozenset({"expert_operation"})
+_RESULT_VARIABLE = {"var": "Result"}
 
 
 @dataclass(frozen=True)
@@ -183,6 +184,38 @@ def invoke_lisp_operation(
     return method(spec.namespace, binding.predicate, arguments)
 
 
+def _core_operation_arguments(
+    expert_operation: str,
+    arguments: list[Any] | None,
+) -> list[Any]:
+    binding = _OPERATION_BINDINGS.get(expert_operation)
+    if binding is None:
+        raise ExpertError(f"unsupported Lisp expert operation: {expert_operation!r}")
+
+    if arguments is None:
+        public_arguments: list[Any] = []
+    elif isinstance(arguments, list):
+        public_arguments = list(arguments)
+    else:
+        raise ExpertError("Lisp expert arguments must be a list of ground values")
+
+    expected_count = binding.arity - 1
+    if len(public_arguments) != expected_count:
+        raise ExpertError(
+            f"Lisp expert operation {expert_operation!r} requires "
+            f"{expected_count} public ground argument(s)"
+        )
+
+    for argument in public_arguments:
+        if isinstance(argument, Mapping) and set(argument) == {"var"}:
+            raise ExpertError(
+                "caller-supplied Prolog result variable is forbidden; "
+                "Lisp expert arguments must be ground"
+            )
+
+    return [*public_arguments, dict(_RESULT_VARIABLE)]
+
+
 def make_lisp_expert_handler(host: ExpertHost, expert_id: str):
     """Return one handler compatible with Zara Core's ZARA-EXPERT/1 registry.
 
@@ -226,11 +259,12 @@ def make_lisp_expert_handler(host: ExpertHost, expert_id: str):
                 "repair effect fields are accepted only for repair.apply through Zara Core"
             )
 
+        private_arguments = _core_operation_arguments(expert_operation, arguments)
         result = invoke_lisp_operation(
             host,
             spec.expert_id,
             expert_operation,
-            arguments,
+            private_arguments,
         )
         ok = result.get("ok")
         if ok is True:

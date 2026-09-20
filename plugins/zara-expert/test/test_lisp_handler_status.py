@@ -37,13 +37,14 @@ class LispHandlerStatusTests(unittest.TestCase):
 
         outcome = handler(
             expert_operation="structural.check",
-            arguments=["(broken", {"var": "Evidence"}],
+            arguments=["(broken"],
         )
 
         self.assertEqual(outcome["verdict"], "failed")
         self.assertEqual(outcome["usage"], {"model_calls": 0})
         self.assertEqual(outcome["effect_receipts"], [])
         self.assertEqual(len(host.calls), 1)
+        self.assertEqual(host.calls[0][2], ["(broken", {"var": "Result"}])
 
     def test_truthy_non_boolean_backend_result_cannot_manufacture_success(self):
         host = ResultHost("false")
@@ -51,13 +52,14 @@ class LispHandlerStatusTests(unittest.TestCase):
 
         outcome = handler(
             expert_operation="structural.check",
-            arguments=["(broken", {"var": "Evidence"}],
+            arguments=["(broken"],
         )
 
         self.assertEqual(outcome["verdict"], "unknown")
         self.assertEqual(outcome["usage"], {"model_calls": 0})
         self.assertEqual(outcome["effect_receipts"], [])
         self.assertEqual(len(host.calls), 1)
+        self.assertEqual(host.calls[0][2], ["(broken", {"var": "Result"}])
 
 
 if __name__ == "__main__":
