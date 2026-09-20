@@ -4,6 +4,9 @@ Structured Emacs integration for Zara using `emacsclient` and fixed operation te
 
 ## Operations
 
+- `emacs.command_catalog` — lists configuration-owned stable action IDs and their exact interactive command symbols.
+- `emacs.resolve_voice(utterance)` — normalizes and resolves a configured deterministic speech phrase to an action ID without executing it.
+- `emacs.invoke_command(action_id)` — invokes only a configured action ID through `call-interactively`; callers cannot submit raw Elisp or raw command symbols.
 - `emacs.open_scratch`
 - `emacs.open_file(path)` — absolute paths only, passed as an argv element.
 - `emacs.open_buffer(name)` — data is encoded as an Elisp string inside a fixed template.
@@ -43,6 +46,8 @@ emacsclient = "emacsclient"
 server_name = "server"
 timeout_seconds = 10
 notes_root = "/home/me/notes/org"
+commands = { "window.split-right" = "split-window-right", "window.other" = "other-window" }
+voice_commands = { "split window right" = "window.split-right", "other window" = "window.other" }
 
 [projects]
 zara = "/home/me/src/zara"
@@ -59,7 +64,7 @@ This gives Zara a compact operation such as “run my coding workflow” without
 
 ## Configuration
 
-Configure `emacsclient`, `server_name`, `timeout_seconds`, `notes_root`, `projects`, and optional `workflows` through Zara's plugin configuration. `notes_root` remains the configured Org knowledge surface; project paths, workflow names, roots, and private aliases remain user-owned configuration and are never written into the Nix store.
+Configure `emacsclient`, `server_name`, `timeout_seconds`, `notes_root`, `projects`, `commands`, and optional `workflows` through Zara's plugin configuration. `notes_root` remains the configured Org knowledge surface; project paths, workflow names, roots, and private aliases remain user-owned configuration and are never written into the Nix store.
 
 The plugin intentionally accepts a command *name* for `emacsclient`, not a shell command/path fragment. Every process call uses an argv vector with `shell=false`; tool parameters never become executable Elisp structure. Operations requiring Elisp use fixed templates and encode user/project data as string literals.
 
@@ -98,3 +103,21 @@ ITEM_KEY, or returns the existing node if it is already materialized. Historical
 events are not rewritten; future events can carry the returned Org ID. Manual
 `adjust` events additionally require `adjustment=add|remove`; Zara never guesses
 the sign of an inventory correction.
+
+
+## Voice control
+
+Voice is an input adapter, not a separate execution path. Speech recognition resolves an utterance to a stable `action_id` from `emacs.command_catalog`, then calls `emacs.invoke_command`. Deterministic phrases should win first; expert-assisted semantic resolution may propose an action ID, but the final invocation still passes through the configured capability catalog.
+
+Examples:
+
+- "split window right" -> `window.split-right`
+- "other window" -> `window.other`
+
+This keeps voice, chat, keyboard macros, and future agents on one auditable action protocol.
+
+## Emacs expert KB
+
+The plugin ships a Nix-built exporter under `expert/`. It runs a pinned Emacs build in batch mode and emits Prolog facts from Emacs' self-documenting runtime: version, interactive commands, functions, variables, documentation strings, source/library provenance, and active key bindings. The generated KB is data-only and is intended to be loaded through Zara's existing expert host/protocol.
+
+The expert answers discovery questions such as "what command splits the window right?" and returns canonical symbols/action candidates. It never executes Elisp; execution remains the responsibility of `emacs.invoke_command`.

@@ -127,6 +127,24 @@
               };
             };
 
+          emacsExpert = pkgs.runCommand "zara-emacs-expert"
+            {
+              nativeBuildInputs = [ pkgs.emacs-nox pkgs.coreutils ];
+              src = self;
+            }
+            ''
+              mkdir -p $out/share/zara/experts/emacs
+              export OUT=$out/share/zara/experts/emacs/emacs-kb.pl
+              ${pkgs.emacs-nox}/bin/emacs --batch -Q \
+                -l $src/plugins/zara-emacs/expert/export-emacs-kb.el \
+                --eval '(zara-emacs-export-kb (getenv "OUT"))'
+              cp $src/plugins/zara-emacs/expert/rules.pl \
+                $out/share/zara/experts/emacs/rules.pl
+              test -s $out/share/zara/experts/emacs/emacs-kb.pl
+              grep -q '^emacs_build_version(' $out/share/zara/experts/emacs/emacs-kb.pl
+              grep -q '^emacs_kb_complete(' $out/share/zara/experts/emacs/emacs-kb.pl
+            '';
+
           pluginPackages = pkgs.lib.listToAttrs (
             map (entry: pkgs.lib.nameValuePair entry.name (mkPluginPackage entry)) plugins
           );
@@ -153,6 +171,14 @@
           '';
 
           checks = {
+            emacs-expert = pkgs.runCommand "zara-check-emacs-expert"
+              { nativeBuildInputs = [ pkgs.swi-prolog ]; }
+              ''
+                test -s ${emacsExpert}/share/zara/experts/emacs/emacs-kb.pl
+                ${pkgs.swi-prolog}/bin/swipl -q -g "consult('${emacsExpert}/share/zara/experts/emacs/emacs-kb.pl'),consult('${emacsExpert}/share/zara/experts/emacs/rules.pl'),emacs_build_version(_),emacs_command(_),halt."
+                touch $out
+              '';
+
             registry = pkgs.runCommand "zara-check-registry"
               {
                 nativeBuildInputs = [ python ];
@@ -234,6 +260,7 @@
         in
         {
           packages = pluginPackages // {
+            zara-emacs-expert = emacsExpert;
             zara-plugins = pluginEnv;
             default = pluginEnv;
           };

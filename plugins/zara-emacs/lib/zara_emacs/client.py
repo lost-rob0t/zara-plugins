@@ -69,6 +69,53 @@ class EmacsClient:
             raise EmacsError(f"{name} must be a single line")
         return value.strip()
 
+    def command_catalog(self) -> dict:
+        rows = [
+            {"action_id": alias, "command": command}
+            for alias, command in sorted(self.config.commands.items())
+        ]
+        return {"operation": "command_catalog", "commands": rows, "count": len(rows)}
+
+    def resolve_voice(self, utterance: str) -> dict:
+        utterance = self._single_line("utterance", utterance, maximum=256)
+        normalized = " ".join(utterance.lower().split())
+        table = {
+            " ".join(phrase.strip().lower().split()): action_id
+            for phrase, action_id in self.config.voice_commands.items()
+        }
+        action_id = table.get(normalized)
+        if action_id is None:
+            raise EmacsError("voice utterance did not match a configured Emacs phrase")
+        return {
+            "operation": "resolve_voice",
+            "utterance": utterance,
+            "normalized": normalized,
+            "action_id": action_id,
+            "matched": True,
+        }
+
+    def invoke_command(self, action_id: str) -> dict:
+        action_id = self._single_line("action_id", action_id, maximum=128)
+        command = self.config.commands.get(action_id)
+        if command is None:
+            raise EmacsError(f"unknown Emacs action {action_id!r}")
+        encoded = json.dumps(command)
+        expression = (
+            "(let ((command (intern " + encoded + "))) "
+            "(unless (commandp command) "
+            "(error \"Configured symbol is not an interactive command: %s\" command)) "
+            "(call-interactively command) "
+            "(symbol-name command))"
+        )
+        observed = self._eval(expression)
+        return {
+            "operation": "invoke_command",
+            "action_id": action_id,
+            "command": command,
+            "observed": observed,
+            "acknowledged": True,
+        }
+
     def open_file(self, path: str) -> dict:
         resolved = Path(str(path)).expanduser()
         if not resolved.is_absolute() or "\x00" in str(resolved):
