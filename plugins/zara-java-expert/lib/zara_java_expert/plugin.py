@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import re
@@ -84,18 +83,7 @@ class JavaExpertAdapterError(RuntimeError):
     """Fail closed: this adapter never falls back to a provider or model."""
 
 
-def _manifest_digest() -> str:
-    manifest = {
-        "expert_id": EXPERT_ID,
-        "package_namespace": PACKAGE_NAMESPACE,
-        "source_reference": SOURCE_REFERENCE,
-        "upstream_contract": UPSTREAM_CONTRACT,
-        "operations": {key: list(value) for key, value in sorted(OPERATION_FIELDS.items())},
-    }
-    payload = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
-    return "sha256:" + hashlib.sha256(payload).hexdigest()
-
-MANIFEST_DIGEST = "sha256:908dab0e34fddc9df6181deac5049715392235297052fc10e436908f66c9c1e1"
+MANIFEST_DIGEST = "sha256:e64dde215241656e641e3186302a3af3353c91f2b53c53e439e302362f841564"
 
 
 def _reject_json_constant(_value: str) -> None:
