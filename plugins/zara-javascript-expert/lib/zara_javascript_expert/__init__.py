@@ -1,3 +1,3 @@
-from .plugin import JavaScriptExpertAdapterError, ZaraJavaScriptExpertPlugin, create_plugin
+from .plugin import JavaScriptExpertAdapterError, create_plugin
 
-__all__ = ["JavaScriptExpertAdapterError", "ZaraJavaScriptExpertPlugin", "create_plugin"]
+__all__ = ["JavaScriptExpertAdapterError", "create_plugin"]
