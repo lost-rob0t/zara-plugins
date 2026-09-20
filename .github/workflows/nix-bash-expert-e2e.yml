@@ -30,13 +30,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          revision=5c8d8670a18c97cebc33af8be85549a8fcb6bf02
+          revision=1b93e01f3482e49a853f651eb28c21eb1d9cad0e
           rm -rf .ci/dotfiles-nix-bash
           git init .ci/dotfiles-nix-bash
           git -C .ci/dotfiles-nix-bash remote add origin https://github.com/lost-rob0t/dotfiles.git
           git -C .ci/dotfiles-nix-bash config core.sparseCheckout true
           mkdir -p .ci/dotfiles-nix-bash/.git/info
-          printf '%s\n' '/.zara/experts/nix/' '/.zara/experts/bash/' > .ci/dotfiles-nix-bash/.git/info/sparse-checkout
+          printf '%s\n' \
+            '/.zara/experts/nix/' \
+            '/.zara/experts/bash/' \
+            '/.zara/experts/language/' \
+            > .ci/dotfiles-nix-bash/.git/info/sparse-checkout
           git -C .ci/dotfiles-nix-bash fetch --depth=1 origin "$revision"
           git -C .ci/dotfiles-nix-bash checkout --detach FETCH_HEAD
           test "$(git -C .ci/dotfiles-nix-bash rev-parse HEAD)" = "$revision"
@@ -51,7 +55,7 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@v31
 
-      - name: Prove canonical zero-model read-only brains
+      - name: Prove canonical zero-model read-only brains and host path
         env:
           ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles-nix-bash
         shell: bash
