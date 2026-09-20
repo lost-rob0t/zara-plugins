@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import Any, Iterable, Mapping
 
 from langchain_core.tools import StructuredTool
 from zara.plugins import PluginMetadata, ServicePlugin
@@ -52,11 +53,20 @@ class ZaraExpertPlugin(ServicePlugin):
             return self._json({"status": "unavailable", "reason": self.backend.reason})
         return self._json({"status": "ready", "backend": "swipl" if isinstance(self.backend, SwiplBackend) else "custom"})
 
-    def query(self, namespace: str, goal: str) -> str:
-        return self._json(self.host.query(namespace, goal))
+    def register_namespace(
+        self,
+        namespace: str,
+        knowledge_bases: Iterable[Path],
+        predicates: Mapping[str, int],
+    ) -> None:
+        """Trusted construction-time registration; intentionally not a StructuredTool."""
+        self.host.register(namespace, knowledge_bases, predicates=predicates)
 
-    def explain(self, namespace: str, goal: str) -> str:
-        return self._json(self.host.explain(namespace, goal))
+    def query(self, namespace: str, predicate: str, arguments: list[Any] | None = None) -> str:
+        return self._json(self.host.query(namespace, predicate, arguments))
+
+    def explain(self, namespace: str, predicate: str, arguments: list[Any] | None = None) -> str:
+        return self._json(self.host.explain(namespace, predicate, arguments))
 
     def assert_fact(self, namespace: str, fact: str, persistent: bool = False) -> str:
         changed = self.host.assert_fact(namespace, fact, persistent=persistent)
@@ -69,8 +79,8 @@ class ZaraExpertPlugin(ServicePlugin):
     def tools(self):
         return (
             StructuredTool.from_function(func=self.status, name="expert.status", description="Report whether a bounded Prolog backend is available."),
-            StructuredTool.from_function(func=self.query, name="expert.query", description="Run one validated bounded query in a registered expert namespace."),
-            StructuredTool.from_function(func=self.explain, name="expert.explain", description="Run one validated bounded explanation query and return structured evidence."),
+            StructuredTool.from_function(func=self.query, name="expert.query", description="Query one registered expert predicate using structured inert arguments."),
+            StructuredTool.from_function(func=self.explain, name="expert.explain", description="Explain one registered expert predicate using the same bounded authority path."),
             StructuredTool.from_function(func=self.assert_fact, name="expert.assert_fact", description="Assert one safe ground fact into session or persistent namespace state."),
             StructuredTool.from_function(func=self.retract_fact, name="expert.retract_fact", description="Idempotently retract one safe ground fact from session or persistent namespace state."),
         )
