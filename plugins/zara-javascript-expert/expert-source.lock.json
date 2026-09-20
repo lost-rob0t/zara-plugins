@@ -6,8 +6,8 @@
     "repository": "lost-rob0t/dotfiles",
     "path": ".zara/experts/javascript",
     "issue": 292,
-    "producer_pr": 295,
-    "commit": "113cfdedfc4db25557ef072315e48ac4c6e760fd"
+    "producer_pr": 299,
+    "commit": "423a00e4a93fbea8d191502b29b1d6ab0e1333fd"
   },
   "runtime_contract": {
     "repository": "lost-rob0t/prolog-rlm",
