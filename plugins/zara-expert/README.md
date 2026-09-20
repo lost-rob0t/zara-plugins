@@ -36,9 +36,7 @@ These adapters deliberately do not duplicate Core's invocation or budget logic. 
 - the reserved `expert_operation` discriminator must never be admitted as user-declared operation input; the host-selected operation is trusted metadata only;
 - caller limits may only narrow descriptor/host ceilings. In particular, an expert descriptor with `resource_limits.max_model_calls=0` must remain zero-model even when a caller presents a larger `max_model_calls` value.
 
-`make_lisp_expert_handler(...)` and `ZaraExpertPlugin.lisp_expert_handler(...)` provide the adapter half of that boundary without creating another dispatcher. Core binds one returned handler to one descriptor. The handler accepts `expert_operation` only as a keyword-only host parameter, accepts the descriptor-declared payload fields, and returns an explicit `usage.model_calls=0` ledger. `repair.apply` returns a blocked outcome before backend dispatch so Core must route the requested write through the canonical typed effect/approval path. The handler is intentionally not a StructuredTool and cannot be invoked through a parallel public command namespace.
-
-If either Core invariant is unavailable in the active Zara Core contract, the Lisp-family integration is not accepted as pure-symbolic and must stay fail-closed rather than adding a plugin-local dispatcher or accounting shim.
+If either invariant is unavailable in the active Zara Core contract, the Lisp-family integration is not accepted as pure-symbolic and must stay fail-closed rather than adding a plugin-local dispatcher or accounting shim.
 
 Canonical source files are opt-in through trusted plugin configuration:
 
@@ -52,9 +50,11 @@ lisp_family_sources:
     - /path/to/.zara/experts/emacs-lisp/expert.pl
 ```
 
-The base Lisp adapter maps structural check, diagnosis, missing-parenthesis repair preview, repair verification, style lookup, and explanation to fixed registered predicates. Dialect adapters may perform dialect-specific verification, but Common Lisp and Emacs Lisp **do not directly dispatch missing-paren preview through their own namespace**: Prolog-RLM #496/#497 require that repair proposal to delegate to `zara:expert/lisp`. Until Zara's canonical expert composition path can carry that child invocation with the caller's remaining shared budget, dialect `repair.preview` fails closed. This package contains no replacement parser or plugin-local delegation scheduler.
+The base Lisp adapter maps structural check, diagnosis, missing-parenthesis repair preview, repair verification, style lookup, and explanation to fixed registered predicates. Dialect adapters may perform dialect-specific verification, but Common Lisp and Emacs Lisp **do not directly dispatch missing-paren preview through their own namespace**: Prolog-RLM #496/#497 require that repair proposal to delegate to `zara:expert/lisp`.
 
-`repair.apply` is intentionally **not** a Prolog predicate. Its public ZARA-EXPERT/1 operation schema declares a filesystem-write effect and requires a repair proposal, expected preimage, and source generation. The expert host itself still refuses to apply the edit. Application must cross Zara's canonical typed edit/effect boundary and only succeeds after fresh postcondition evidence verifies the repaired structure. Until that capability is composed, `repair.apply` fails closed rather than writing files itself.
+`LispFamilyCompositionInvoker` is the downstream bridge for that delegation. When it is run by `MetaExpertComposer`, a Common Lisp or Emacs Lisp `repair.preview` becomes a canonical child invocation of `zara:expert/lisp` under the exact same caller-owned `SharedSymbolicBudget` and cancellation/workspace-generation fence. The bridge creates no registry, scheduler, provider runtime, or permission surface. Direct dialect dispatch through `invoke_lisp_operation(...)` still fails closed, so callers cannot bypass canonical composition or reset the budget. Public input is limited to inert `arguments`; caller-authored predicate/goal selectors are rejected before the expert host is reached.
+
+`repair.apply` is intentionally **not** a Prolog predicate. Its public ZARA-EXPERT/1 operation schema declares a filesystem-write effect and requires a repair proposal, expected preimage, and source generation. The expert host and composition bridge both refuse to apply the edit. Application must cross Zara's canonical typed edit/effect boundary and only succeeds after fresh postcondition evidence verifies the repaired structure. Until that capability is composed, `repair.apply` fails closed rather than writing files itself.
 
 ## Verification predicates
 
