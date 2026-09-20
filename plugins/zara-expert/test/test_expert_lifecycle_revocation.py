@@ -138,6 +138,72 @@ class ExpertLifecycleRevocationTests(unittest.TestCase):
             (str(second_source.resolve()),),
         )
 
+    def test_process_recreation_preserves_durable_state_and_old_handler_stays_revoked(self):
+        source = self._brain("python-process-restart")
+        state_root = self.root / "process-state"
+        runtime = RecordingRuntime(
+            {"language_expert_sources": {"python": [str(source)]}}
+        )
+        first_backend = RecordingBackend()
+        first_plugin = ZaraExpertPlugin(
+            backend=first_backend,
+            state_root=state_root,
+        )
+        first_plugin.start(runtime)
+        first_plugin.assert_fact(
+            "python-expert",
+            "remembered(process_restart)",
+            persistent=True,
+        )
+        stale_handler = first_plugin.language_expert_handler("python")
+        first = stale_handler(
+            expert_operation="inspect",
+            source="print('before restart')",
+            source_generation="generation-before-restart",
+        )
+        self.assertEqual(first["usage"]["model_calls"], 0)
+        first_calls_before_stop = len(first_backend.calls)
+        _session_path, persistent_path = first_plugin.host.state_files("python-expert")
+        self.assertIn(
+            "remembered(process_restart).",
+            persistent_path.read_text(encoding="utf-8"),
+        )
+
+        first_plugin.stop()
+
+        second_backend = RecordingBackend()
+        second_plugin = ZaraExpertPlugin(
+            backend=second_backend,
+            state_root=state_root,
+        )
+        second_plugin.start(runtime)
+        fresh_handler = second_plugin.language_expert_handler("python")
+        fresh = fresh_handler(
+            expert_operation="inspect",
+            source="print('after restart')",
+            source_generation="generation-after-restart",
+        )
+
+        self.assertEqual(fresh["usage"]["model_calls"], 0)
+        self.assertEqual(len(second_backend.calls), 1)
+        fresh_request = second_backend.calls[0]
+        self.assertEqual(fresh_request["knowledge_bases"], (str(source.resolve()),))
+        self.assertEqual(Path(fresh_request["state_files"][1]), persistent_path)
+        self.assertIn(
+            "remembered(process_restart).",
+            Path(fresh_request["state_files"][1]).read_text(encoding="utf-8"),
+        )
+
+        with self.assertRaisesRegex(ExpertError, "is not registered"):
+            stale_handler(
+                expert_operation="inspect",
+                source="print('late old process')",
+                source_generation="generation-before-restart",
+            )
+        self.assertEqual(len(first_backend.calls), first_calls_before_stop)
+        self.assertEqual(json.loads(second_plugin.status())["model_calls"], 0)
+        second_plugin.stop()
+
 
 if __name__ == "__main__":
     unittest.main()
