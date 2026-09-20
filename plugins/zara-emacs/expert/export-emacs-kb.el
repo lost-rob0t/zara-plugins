@@ -7,7 +7,7 @@
   (let* ((text (if value (format "%s" value) ""))
          (text (replace-regexp-in-string "\\\\" "\\\\\\\\" text t t))
          (text (replace-regexp-in-string "'" "''" text t t))
-         (text (replace-regexp-in-string "[\n\r\t]+" " " text t t)))
+         (text (replace-regexp-in-string "[[:cntrl:]]+" " " text t t)))
     (concat "'" text "'")))
 
 (defun zara-emacs--safe-doc (symbol kind)
