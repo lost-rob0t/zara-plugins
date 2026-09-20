@@ -6,6 +6,7 @@
 - Add provider-free PrologExpert, PythonExpert, and NimExpert adapters over canonical Dotfiles-owned expert sources.
 - Route applicability, evidence, diagnostics, style rules, repair preview/verification, and explanation through host-issued registered-predicate authority with `max_model_calls=0`.
 - Expose closed applicability/result schemas and canonical runtime symbols; `repair.apply` remains behind Zara's typed edit/effect authority with fresh postcondition verification.
+- Preflight every configured language expert source before namespace registration so an invalid later source cannot leave a partially activated Prolog/Python/Nim family.
 
 ### zara-emacs 0.3.0
 - Route editor control through the versioned `ZARA-EMACS/1` native bridge instead of per-operation Elisp templates.
