@@ -16,6 +16,7 @@ from .composition import (
     StyleScope,
     resolve_style,
 )
+from .core_catalog import CoreExpertCatalogAdapter, CoreExpertSelection
 from .domain import ExpertError, ExpertHost
 from .dotfiles_composition import CoreDotfilesCompositionInvoker
 from .dotfiles_family import (
@@ -36,6 +37,8 @@ from .lisp_composition import (
 __all__ = [
     "CompositionError",
     "CoreDotfilesCompositionInvoker",
+    "CoreExpertCatalogAdapter",
+    "CoreExpertSelection",
     "CoreLanguageFamilyCompositionInvoker",
     "CoreLispFamilyCompositionInvoker",
     "DelegationRequest",
