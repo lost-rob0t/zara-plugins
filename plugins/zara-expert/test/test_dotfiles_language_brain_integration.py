@@ -32,6 +32,14 @@ CLOSED_PROJECTION_KEYS = frozenset(
         "kotlin",
     }
 )
+STYLE_EXPLANATION_PROJECTION_KEYS = frozenset(
+    {
+        "prolog",
+        "python",
+        "nim",
+        *CLOSED_PROJECTION_KEYS,
+    }
+)
 
 
 @unittest.skipUnless(DOTFILES_ROOT, "canonical Dotfiles checkout not provided")
@@ -74,6 +82,10 @@ class DotfilesLanguageBrainIntegrationTests(unittest.TestCase):
 
     def _symbolic_terms(self, key, operation, outcome):
         data = outcome["data"]
+        if operation == "style.rules" and key in STYLE_EXPLANATION_PROJECTION_KEYS:
+            return data["style_rules"]
+        if operation == "explain" and key in STYLE_EXPLANATION_PROJECTION_KEYS:
+            return data["explanation"]["symbolic_terms"]
         if key not in CLOSED_PROJECTION_KEYS:
             return data["result"]["evidence"]
         if operation == "inspect":
@@ -82,10 +94,6 @@ class DotfilesLanguageBrainIntegrationTests(unittest.TestCase):
             return data["diagnostics"]
         if operation == "repair.preview":
             return data["repair"]["symbolic_terms"]
-        if operation == "style.rules":
-            return data["style_rules"]
-        if operation == "explain":
-            return data["explanation"]["symbolic_terms"]
         raise AssertionError(f"unsupported symbolic projection: {key}/{operation}")
 
     def _assert_applicable(self, key, path, expected):
@@ -196,6 +204,7 @@ class DotfilesLanguageBrainIntegrationTests(unittest.TestCase):
                 for item in self._symbolic_terms(key, "style.rules", styled)
             )
         )
+        self.assertTrue(styled["data"]["style_provenance"])
 
         explained = handler(
             expert_operation="explain",
@@ -209,10 +218,7 @@ class DotfilesLanguageBrainIntegrationTests(unittest.TestCase):
                 for item in self._symbolic_terms(key, "explain", explained)
             )
         )
-        if key in CLOSED_PROJECTION_KEYS:
-            self.assertTrue(explained["data"]["explanation"]["trace"])
-        else:
-            self.assertTrue(explained["data"]["result"]["explanation"])
+        self.assertTrue(explained["data"]["explanation"]["trace"])
 
         blocked = handler(
             expert_operation="repair.apply",
