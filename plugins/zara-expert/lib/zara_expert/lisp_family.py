@@ -233,10 +233,8 @@ def _core_evidence_refs(result: Mapping[str, Any]) -> list[str]:
         raise ExpertError("Lisp expert trace must be a sequence")
     if len(raw_trace) > _MAX_CORE_EVIDENCE_REFS:
         raise ExpertError(f"Lisp expert trace exceeds {_MAX_CORE_EVIDENCE_REFS} entries")
-    if raw_trace:
-        if any(not isinstance(item, str) for item in raw_trace):
-            raise ExpertError("Lisp expert trace entries must be strings")
-        return [_content_addressed_evidence_ref(item) for item in raw_trace]
+    if any(not isinstance(item, str) for item in raw_trace):
+        raise ExpertError("Lisp expert trace entries must be strings")
 
     raw_results = result.get("results", ())
     if isinstance(raw_results, (str, bytes)) or not isinstance(raw_results, (list, tuple)):
@@ -246,7 +244,8 @@ def _core_evidence_refs(result: Mapping[str, Any]) -> list[str]:
     if any(not isinstance(item, str) for item in raw_results):
         raise ExpertError("Lisp expert result entries must be strings")
 
-    return [_content_addressed_evidence_ref(item) for item in raw_results]
+    evidence_items = raw_trace if raw_trace else raw_results
+    return [_content_addressed_evidence_ref(item) for item in evidence_items]
 
 
 def _pending_postcondition(
@@ -261,7 +260,9 @@ def _pending_postcondition(
     raw_results = result.get("results", ())
     if isinstance(raw_results, (str, bytes)) or not isinstance(raw_results, (list, tuple)):
         return None
-    rendered = tuple(str(item) for item in raw_results)
+    if any(not isinstance(item, str) for item in raw_results):
+        return None
+    rendered = tuple(raw_results)
     if not any("verified(false)" in item for item in rendered):
         return None
     required: set[str] = set()
