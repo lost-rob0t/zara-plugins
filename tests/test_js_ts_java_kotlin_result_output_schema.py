@@ -101,6 +101,7 @@ def _result(
         "resolved_runtime_generation": EXPECTED_GENERATION,
         "verdict": verdict,
         "data": data,
+        "evidence_refs": [],
         "usage": {"model_calls": 0},
         "effect_receipts": [],
     }
@@ -191,7 +192,9 @@ class FourLanguageResultOutputSchemaTests(unittest.TestCase):
         for module, error_type in EXPERTS:
             with self.subTest(expert_id=module.EXPERT_ID):
                 _validate(module, "inspect", {}, verdict="cancelled")
-                with self.assertRaisesRegex(error_type, "invalid-expert-output"):
+                with self.assertRaisesRegex(
+                    error_type, "cancelled-expert-output-leak"
+                ):
                     _validate(
                         module,
                         "inspect",
