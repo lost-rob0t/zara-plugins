@@ -29,6 +29,7 @@ MAX_STRING_LENGTH = 4096
 MAX_GENERATION = 2147483647
 REQUEST_ID_RE = re.compile(r"^[!-~]{1,128}$")
 ACTIVATION_ID_RE = re.compile(r"^act:[a-f0-9]{32}$")
+INVOCATION_ID_RE = re.compile(r"^inv:[a-f0-9]{32}$")
 ALLOWED_OPERATIONS = frozenset(
     {
         "parse",
@@ -127,7 +128,6 @@ def _json_integer(value: int | float, field: str, minimum: int, maximum: int) ->
 def _validate_generation(value: int | float, field: str) -> int:
     return _json_integer(value, field, 0, MAX_GENERATION)
 
-
 def _validate_limit(value: int | float, field: str, maximum: int) -> int:
     return _json_integer(value, field, 1, maximum)
 
@@ -215,6 +215,9 @@ def _validate_result(
     registry_generation: int,
     runtime_generation: int,
 ) -> None:
+    invocation_id = result.get("invocation_id")
+    if type(invocation_id) is not str or INVOCATION_ID_RE.fullmatch(invocation_id) is None:
+        raise BashExpertAdapterError("invalid-expert-invocation-id")
     expected_identity = {
         "protocol": PROTOCOL,
         "request_id": request_id,

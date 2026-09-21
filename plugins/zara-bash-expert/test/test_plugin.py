@@ -34,7 +34,7 @@ class FakeRuntime:
         return {
             "protocol": request["protocol"],
             "request_id": request["request_id"],
-            "invocation_id": "inv:test-bash",
+            "invocation_id": "inv:" + ("b" * 32),
             "activation_id": request["activation_id"],
             "expert_id": request["expert_id"],
             "expert_version": "0.1.0",
