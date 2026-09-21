@@ -488,7 +488,7 @@ class ZaraNixExpertPlugin(ServicePlugin):
         except Exception as error:
             raise NixExpertAdapterError("expert-host-invocation-failed") from error
 
-        if not isinstance(result, Mapping):
+        if type(result) is not dict:
             raise NixExpertAdapterError("invalid-expert-result")
         _validate_result(
             result,
