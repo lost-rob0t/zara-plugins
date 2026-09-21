@@ -1,3 +1,4 @@
+import hashlib
 import sys
 import tempfile
 import unittest
@@ -75,6 +76,11 @@ def current_fence():
     )
 
 
+def evidence_ref(term):
+    digest = hashlib.sha256(term.encode("utf-8", errors="strict")).hexdigest()
+    return f"evidence:lisp:sha256:{digest}"
+
+
 def core_result(
     *,
     status="succeeded",
@@ -150,7 +156,7 @@ class LispCompositionTests(unittest.TestCase):
             self.assertEqual(child.expert_id, "zara:expert/lisp")
             self.assertEqual(child.operation, "repair.preview")
             self.assertEqual(child.status, "succeeded")
-            self.assertEqual(child.evidence, ("lisp:preview_repair/3",))
+            self.assertEqual(child.evidence, (evidence_ref("lisp:preview_repair/3"),))
             self.assertEqual(child.data["result"]["results"], [{"repair": "(print 1)"}])
             self.assertEqual(budget.invocations_used, 2)
             self.assertEqual(budget.evidence_used, 1)
@@ -188,7 +194,10 @@ class LispCompositionTests(unittest.TestCase):
             self.assertEqual(tree.status, "unknown")
             self.assertEqual(len(tree.children), 1)
             self.assertEqual(tree.children[0].status, "failed")
-            self.assertEqual(tree.children[0].evidence, ("lisp:preview_repair/3",))
+            self.assertEqual(
+                tree.children[0].evidence,
+                (evidence_ref("lisp:preview_repair/3"),),
+            )
             self.assertEqual(budget.invocations_used, 2)
             self.assertEqual(budget.model_calls_used, 0)
             self.assertEqual(len(backend.requests), 1)
@@ -212,7 +221,7 @@ class LispCompositionTests(unittest.TestCase):
             )
 
             self.assertEqual(tree.status, "succeeded")
-            self.assertEqual(tree.evidence, ("lisp:structural_check/2",))
+            self.assertEqual(tree.evidence, (evidence_ref("lisp:structural_check/2"),))
             self.assertEqual(len(backend.requests), 1)
             self.assertEqual(
                 backend.requests[0]["arguments"],
