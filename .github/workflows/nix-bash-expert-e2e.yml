@@ -55,7 +55,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          revision=fe8f7fa3c42803e0e505dcb6f7e4600d27649d9e
+          revision=3309c54ecb5f65c29374de6c60d2135a9ea2f94b
           rm -rf .ci/dotfiles-nix-bash-current
           git init .ci/dotfiles-nix-bash-current
           git -C .ci/dotfiles-nix-bash-current remote add origin https://github.com/lost-rob0t/dotfiles.git
@@ -89,7 +89,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          revision=9d57493bd913bd838983efc90fe5d66aa777a8b6
+          revision=ebcf9c4192ffb67ff75fe9205c6e839774f551fd
           rm -rf .ci/zara-core-current
           git init .ci/zara-core-current
           git -C .ci/zara-core-current remote add origin https://github.com/lost-rob0t/zara.git
@@ -104,7 +104,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          revision=b9162dad35dfc17f8450e25503004222a813f9aa
+          revision=ebcf9c4192ffb67ff75fe9205c6e839774f551fd
           rm -rf .ci/zara-core-catalog-current
           git init .ci/zara-core-catalog-current
           git -C .ci/zara-core-catalog-current remote add origin https://github.com/lost-rob0t/zara.git
@@ -252,7 +252,7 @@ jobs:
             -u GROQ_API_KEY \
             -u ZAI_API_KEY \
             strace -f -e trace=network -o "$trace" \
-            python3 -m unittest discover -s tests -t . -p 'test_nix_bash_core_explain_e2e.py'
+            python3 -m unittest discover -s tests -t . -p 'test_nix_bash_core-explain_e2e.py'
           if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
             echo 'unexpected IPv4/IPv6 network syscall during pure-symbolic Nix/Bash explanation E2E' >&2
             cat "$trace" >&2
