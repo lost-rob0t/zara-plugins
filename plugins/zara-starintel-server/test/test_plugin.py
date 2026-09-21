@@ -114,6 +114,11 @@ class ZaraStarIntelServerPluginTest(unittest.TestCase):
         self.assertEqual(
             [tool.name for tool in tools],
             [
+                "star-kb.descriptor",
+                "star-kb.observe",
+                "star-kb.plan",
+                "star-kb.run",
+                "star-kb.explain",
                 "starintel_status",
                 "starintel_capabilities",
                 "starintel_api_operations",
@@ -121,6 +126,7 @@ class ZaraStarIntelServerPluginTest(unittest.TestCase):
                 "starintel_api_request",
             ],
         )
+        self.assertIn("dry-run", tools[3].description.lower())
         self.assertIn("destructive", tools[-1].description.lower())
 
     def test_start_loads_secret_safe_configuration(self):
