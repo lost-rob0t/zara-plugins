@@ -16,6 +16,11 @@ from zara_bash_expert.plugin import MANIFEST_DIGEST
 ACTIVATION_ID = "act:" + ("f" * 32)
 
 
+class FalseyReceiptList(list):
+    def __bool__(self) -> bool:
+        return False
+
+
 class RecordingRuntime:
     def __init__(self) -> None:
         self.resolved: list[str] = []
@@ -88,6 +93,26 @@ class BashExpertFailClosedShapeTests(unittest.TestCase):
         self.assertEqual(len(self.runtime.requests), 1)
         request = self.runtime.requests[0]
         self.assertEqual(request["limits"]["max_model_calls"], 0)
+
+    def test_falsey_receipt_subclass_cannot_hide_effects(self) -> None:
+        self.runtime.result_mutation = {
+            "effect_receipts": FalseyReceiptList([{"effect": "forged"}])
+        }
+        with self.assertRaisesRegex(
+            BashExpertAdapterError, "read-only-effect-proof-missing"
+        ):
+            self.plugin.invoke(
+                "req:bash-effect-shape",
+                ACTIVATION_ID,
+                "inspect_startup",
+                1,
+                1,
+                json.dumps({"path": ".bashrc"}),
+            )
+
+        self.assertEqual(self.runtime.resolved, ["expert.invoke"])
+        self.assertEqual(len(self.runtime.requests), 1)
+        self.assertEqual(self.runtime.requests[0]["limits"]["max_model_calls"], 0)
 
 
 if __name__ == "__main__":
