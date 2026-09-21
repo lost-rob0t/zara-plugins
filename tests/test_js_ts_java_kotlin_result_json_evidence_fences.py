@@ -77,6 +77,7 @@ def _result(module, *, data: object, evidence_refs: object) -> dict[str, object]
     return {
         "protocol": module.PROTOCOL,
         "request_id": REQUEST_ID,
+        "invocation_id": "inv:" + ("0" * 32),
         "activation_id": ACTIVATION_ID,
         "expert_id": module.EXPERT_ID,
         "expert_version": module.PLUGIN_VERSION,
