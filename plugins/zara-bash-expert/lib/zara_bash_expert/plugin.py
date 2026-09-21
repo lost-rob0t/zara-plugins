@@ -150,6 +150,20 @@ def _operation_descriptor(operation: str) -> dict[str, object]:
     }
 
 
+def _validate_result_payload(result: Mapping[str, object]) -> tuple[Mapping[str, object], list[str] | tuple[str, ...]]:
+    data = result.get("data")
+    if not isinstance(data, Mapping):
+        raise BashExpertAdapterError("invalid-expert-data")
+
+    evidence_refs = result.get("evidence_refs")
+    if not isinstance(evidence_refs, (list, tuple)):
+        raise BashExpertAdapterError("invalid-expert-evidence")
+    for evidence_ref in evidence_refs:
+        if type(evidence_ref) is not str or not evidence_ref or len(evidence_ref) > MAX_STRING_LENGTH:
+            raise BashExpertAdapterError("invalid-expert-evidence")
+    return data, evidence_refs
+
+
 def _validate_result(
     result: Mapping[str, object],
     *,
@@ -186,6 +200,7 @@ def _validate_result(
     verdict = result.get("verdict")
     if type(verdict) is not str or verdict not in RESULT_VERDICTS:
         raise BashExpertAdapterError("invalid-expert-verdict")
+    data, evidence_refs = _validate_result_payload(result)
     usage = result.get("usage")
     model_calls = usage.get("model_calls") if isinstance(usage, Mapping) else None
     if type(model_calls) is not int or model_calls != 0:
@@ -196,11 +211,7 @@ def _validate_result(
     if receipts:
         raise BashExpertAdapterError("read-only-effect-leak")
     if verdict == "cancelled":
-        data = result.get("data")
-        evidence_refs = result.get("evidence_refs")
-        if not isinstance(data, Mapping) or data:
-            raise BashExpertAdapterError("cancelled-expert-output-leak")
-        if not isinstance(evidence_refs, (list, tuple)) or evidence_refs:
+        if data or evidence_refs:
             raise BashExpertAdapterError("cancelled-expert-output-leak")
 
 
