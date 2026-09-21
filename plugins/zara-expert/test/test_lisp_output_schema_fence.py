@@ -90,6 +90,10 @@ class LispOutputSchemaFenceTests(unittest.TestCase):
                 **canonical_result_data(),
                 "evidence_refs": "provider://fallback",
             },
+            {
+                **canonical_result_data(),
+                "evidence_refs": ["provider:openai"],
+            },
         )
 
         for data in malformed:
