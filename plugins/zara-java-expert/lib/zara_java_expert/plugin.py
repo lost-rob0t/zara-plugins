@@ -307,7 +307,6 @@ def _validate_result(
     verdict = result.get("verdict")
     if verdict not in RESULT_VERDICTS:
         raise JavaExpertAdapterError("invalid-expert-verdict")
-    data, evidence_refs = _validate_result_payload(result)
     usage = result.get("usage")
     model_calls = usage.get("model_calls") if isinstance(usage, Mapping) else None
     if type(model_calls) is not int or model_calls != 0:
@@ -317,9 +316,15 @@ def _validate_result(
         raise JavaExpertAdapterError("read-only-effect-proof-missing")
     if receipts:
         raise JavaExpertAdapterError("read-only-effect-leak")
-    if verdict == "cancelled" and (data or evidence_refs):
-        raise JavaExpertAdapterError("cancelled-expert-output-leak")
-    _validate_operation_output(expert_operation, verdict, data)
+    if verdict == "cancelled":
+        data = result.get("data")
+        evidence_refs = result.get("evidence_refs")
+        if not isinstance(data, Mapping) or data:
+            raise JavaExpertAdapterError("cancelled-expert-output-leak")
+        if not isinstance(evidence_refs, (list, tuple)) or evidence_refs:
+            raise JavaExpertAdapterError("cancelled-expert-output-leak")
+    _validate_operation_output(expert_operation, verdict, result.get("data"))
+    _validate_result_payload(result)
 
 
 class ZaraJavaExpertPlugin(ServicePlugin):
