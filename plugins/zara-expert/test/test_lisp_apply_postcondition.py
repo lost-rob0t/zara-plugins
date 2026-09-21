@@ -1,3 +1,4 @@
+import hashlib
 from types import SimpleNamespace
 import sys
 import unittest
@@ -84,6 +85,11 @@ def invoke_apply(result):
 
 class LispApplyPostconditionTests(unittest.TestCase):
     def setUp(self):
+        self.replacement = "(print 1)"
+        self.candidate_sha256 = hashlib.sha256(self.replacement.encode("utf-8")).hexdigest()
+        self.postcondition_ref = (
+            "zara.verified-outcome/v1:outcome:postcondition/common-lisp-project-5"
+        )
         self.receipt = {
             "receipt_id": "edit:42",
             "capability": "filesystem_write",
@@ -91,26 +97,37 @@ class LispApplyPostconditionTests(unittest.TestCase):
         }
         self.postcondition = {
             "checker": "sbcl-reader",
+            "expert_id": "zara:expert/common-lisp",
             "verified": True,
+            "fresh": True,
+            "source_generation": "project:4",
             "observed_generation": "project:5",
+            "candidate_sha256": self.candidate_sha256,
+            "required_postcondition": "sbcl_fresh_reader_and_compile_evidence",
+            "receipt_ref": self.postcondition_ref,
         }
 
-    def test_core_apply_success_requires_and_preserves_fresh_postcondition_evidence(self):
-        node, registry, budget = invoke_apply(
-            core_result(
-                data={
-                    "effect_receipt": self.receipt,
-                    "postcondition_evidence": self.postcondition,
-                },
-                evidence_refs=("postcondition:sbcl:project:5",),
-                effect_receipts=(self.receipt,),
-            )
+    def successful_result(self, *, postcondition=None, evidence_refs=None):
+        resolved_postcondition = self.postcondition if postcondition is None else postcondition
+        resolved_evidence = (
+            (self.postcondition_ref,) if evidence_refs is None else evidence_refs
         )
+        return core_result(
+            data={
+                "effect_receipt": self.receipt,
+                "postcondition_evidence": resolved_postcondition,
+            },
+            evidence_refs=resolved_evidence,
+            effect_receipts=(self.receipt,),
+        )
+
+    def test_core_apply_success_requires_and_preserves_fresh_postcondition_evidence(self):
+        node, registry, budget = invoke_apply(self.successful_result())
 
         self.assertEqual(node.status, "succeeded")
         self.assertEqual(node.data["effect_receipt"], self.receipt)
         self.assertEqual(node.data["postcondition_evidence"], self.postcondition)
-        self.assertEqual(node.evidence, ("postcondition:sbcl:project:5",))
+        self.assertEqual(node.evidence, (self.postcondition_ref,))
         self.assertEqual(len(registry.calls), 1)
         self.assertEqual(registry.calls[0]["operation"], "repair.apply")
         self.assertEqual(registry.calls[0]["limits"].max_model_calls, 0)
@@ -129,44 +146,24 @@ class LispApplyPostconditionTests(unittest.TestCase):
     def test_core_apply_success_rejects_explicitly_unverified_postcondition(self):
         postcondition = dict(self.postcondition, verified=False)
         with self.assertRaisesRegex(CompositionError, "verified"):
-            invoke_apply(
-                core_result(
-                    data={
-                        "effect_receipt": self.receipt,
-                        "postcondition_evidence": postcondition,
-                    },
-                    evidence_refs=("postcondition:sbcl:project:5",),
-                    effect_receipts=(self.receipt,),
-                )
-            )
+            invoke_apply(self.successful_result(postcondition=postcondition))
 
     def test_core_apply_success_rejects_truthy_non_boolean_verification(self):
         postcondition = dict(self.postcondition, verified=1)
         with self.assertRaisesRegex(CompositionError, "verified"):
-            invoke_apply(
-                core_result(
-                    data={
-                        "effect_receipt": self.receipt,
-                        "postcondition_evidence": postcondition,
-                    },
-                    evidence_refs=("postcondition:sbcl:project:5",),
-                    effect_receipts=(self.receipt,),
-                )
-            )
+            invoke_apply(self.successful_result(postcondition=postcondition))
+
+    def test_core_apply_success_requires_literal_fresh_postcondition(self):
+        for fresh in (False, 1, "true", None):
+            with self.subTest(fresh=fresh):
+                postcondition = dict(self.postcondition, fresh=fresh)
+                with self.assertRaisesRegex(CompositionError, "fresh"):
+                    invoke_apply(self.successful_result(postcondition=postcondition))
 
     def test_core_apply_success_requires_fresh_observed_generation(self):
         postcondition = dict(self.postcondition, observed_generation="project:4")
         with self.assertRaisesRegex(CompositionError, "fresh"):
-            invoke_apply(
-                core_result(
-                    data={
-                        "effect_receipt": self.receipt,
-                        "postcondition_evidence": postcondition,
-                    },
-                    evidence_refs=("postcondition:sbcl:project:4",),
-                    effect_receipts=(self.receipt,),
-                )
-            )
+            invoke_apply(self.successful_result(postcondition=postcondition))
 
     def test_core_apply_success_requires_request_receipt_generation_match(self):
         receipt = dict(self.receipt, source_generation="project:stale")
@@ -177,7 +174,7 @@ class LispApplyPostconditionTests(unittest.TestCase):
                         "effect_receipt": receipt,
                         "postcondition_evidence": self.postcondition,
                     },
-                    evidence_refs=("postcondition:sbcl:project:5",),
+                    evidence_refs=(self.postcondition_ref,),
                     effect_receipts=(receipt,),
                 )
             )
@@ -191,21 +188,53 @@ class LispApplyPostconditionTests(unittest.TestCase):
                         "effect_receipt": mismatched,
                         "postcondition_evidence": self.postcondition,
                     },
-                    evidence_refs=("postcondition:sbcl:project:5",),
+                    evidence_refs=(self.postcondition_ref,),
                     effect_receipts=(self.receipt,),
                 )
             )
 
     def test_core_apply_success_requires_postcondition_evidence_reference(self):
         with self.assertRaisesRegex(CompositionError, "evidence"):
+            invoke_apply(self.successful_result(evidence_refs=()))
+
+    def test_core_apply_success_requires_dialect_postcondition_contract(self):
+        wrong = dict(
+            self.postcondition,
+            required_postcondition="emacs_fresh_reader_and_byte_compile_evidence",
+        )
+        with self.assertRaisesRegex(CompositionError, "required postcondition"):
+            invoke_apply(self.successful_result(postcondition=wrong))
+
+    def test_core_apply_success_requires_postcondition_expert_identity(self):
+        wrong = dict(self.postcondition, expert_id="zara:expert/emacs-lisp")
+        with self.assertRaisesRegex(CompositionError, "expert identity"):
+            invoke_apply(self.successful_result(postcondition=wrong))
+
+    def test_core_apply_success_requires_postcondition_source_generation(self):
+        wrong = dict(self.postcondition, source_generation="project:stale")
+        with self.assertRaisesRegex(CompositionError, "source generation"):
+            invoke_apply(self.successful_result(postcondition=wrong))
+
+    def test_core_apply_success_binds_postcondition_to_replacement_digest(self):
+        wrong = dict(self.postcondition, candidate_sha256="0" * 64)
+        with self.assertRaisesRegex(CompositionError, "candidate digest"):
+            invoke_apply(self.successful_result(postcondition=wrong))
+
+    def test_core_apply_success_requires_canonical_verified_outcome_reference(self):
+        wrong = dict(self.postcondition, receipt_ref="postcondition:sbcl:project:5")
+        with self.assertRaisesRegex(CompositionError, "verified-outcome"):
             invoke_apply(
-                core_result(
-                    data={
-                        "effect_receipt": self.receipt,
-                        "postcondition_evidence": self.postcondition,
-                    },
-                    evidence_refs=(),
-                    effect_receipts=(self.receipt,),
+                self.successful_result(
+                    postcondition=wrong,
+                    evidence_refs=("postcondition:sbcl:project:5",),
+                )
+            )
+
+    def test_core_apply_success_requires_receipt_reference_in_projected_evidence(self):
+        with self.assertRaisesRegex(CompositionError, "evidence reference"):
+            invoke_apply(
+                self.successful_result(
+                    evidence_refs=("zara.verified-outcome/v1:outcome:postcondition/other",),
                 )
             )
 
