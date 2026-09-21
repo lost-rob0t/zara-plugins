@@ -213,6 +213,12 @@ def _core_operation_arguments(
     return [*public_arguments, dict(_RESULT_VARIABLE)]
 
 
+def _content_addressed_evidence_ref(item: Any) -> str:
+    encoded = str(item).encode("utf-8", errors="strict")
+    digest = hashlib.sha256(encoded).hexdigest()
+    return f"evidence:lisp:sha256:{digest}"
+
+
 def _core_evidence_refs(result: Mapping[str, Any]) -> list[str]:
     """Project bounded proof lineage without exposing raw result text as a ref."""
 
@@ -222,7 +228,7 @@ def _core_evidence_refs(result: Mapping[str, Any]) -> list[str]:
     if len(raw_trace) > _MAX_CORE_EVIDENCE_REFS:
         raise ExpertError(f"Lisp expert trace exceeds {_MAX_CORE_EVIDENCE_REFS} entries")
     if raw_trace:
-        return [str(item) for item in raw_trace]
+        return [_content_addressed_evidence_ref(item) for item in raw_trace]
 
     raw_results = result.get("results", ())
     if isinstance(raw_results, (str, bytes)) or not isinstance(raw_results, (list, tuple)):
@@ -230,12 +236,7 @@ def _core_evidence_refs(result: Mapping[str, Any]) -> list[str]:
     if len(raw_results) > _MAX_CORE_EVIDENCE_REFS:
         raise ExpertError(f"Lisp expert evidence exceeds {_MAX_CORE_EVIDENCE_REFS} entries")
 
-    refs: list[str] = []
-    for item in raw_results:
-        encoded = str(item).encode("utf-8", errors="strict")
-        digest = hashlib.sha256(encoded).hexdigest()
-        refs.append(f"evidence:lisp:sha256:{digest}")
-    return refs
+    return [_content_addressed_evidence_ref(item) for item in raw_results]
 
 
 def _pending_postcondition(
