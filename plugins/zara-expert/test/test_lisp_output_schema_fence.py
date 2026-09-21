@@ -10,6 +10,9 @@ from zara_expert import CoreLispFamilyCompositionInvoker
 from zara_expert.composition import CompositionError, InvocationFence, MetaExpertComposer, SharedSymbolicBudget
 
 
+CANONICAL_EVIDENCE_REF = f"evidence:lisp:sha256:{'0' * 64}"
+
+
 class RecordingCoreRegistry:
     def __init__(self, result):
         self.result = result
@@ -36,7 +39,7 @@ def current_fence():
     )
 
 
-def core_result(data, *, status="succeeded", evidence_refs=("evidence:lisp:test",)):
+def core_result(data, *, status="succeeded", evidence_refs=(CANONICAL_EVIDENCE_REF,)):
     return SimpleNamespace(
         verdict=SimpleNamespace(value=status),
         data=data,
@@ -57,7 +60,7 @@ def canonical_result_data():
 
 
 class LispOutputSchemaFenceTests(unittest.TestCase):
-    def invoke(self, data, *, status="succeeded", evidence_refs=("evidence:lisp:test",)):
+    def invoke(self, data, *, status="succeeded", evidence_refs=(CANONICAL_EVIDENCE_REF,)):
         handle = SimpleNamespace(expert_id="zara:expert/lisp", workspace="project")
         registry = RecordingCoreRegistry(
             core_result(data, status=status, evidence_refs=evidence_refs)
@@ -94,12 +97,25 @@ class LispOutputSchemaFenceTests(unittest.TestCase):
                 with self.assertRaisesRegex(CompositionError, "invalid-expert-output"):
                     self.invoke(data)
 
+    def test_core_lisp_rejects_noncanonical_top_level_evidence_refs(self):
+        noncanonical = (
+            ("provider:openai",),
+            ("registered-predicate",),
+            ("evidence:lisp:test",),
+            ("zara.verified-outcome/v1:outcome:postcondition/not-allowed-here",),
+        )
+
+        for evidence_refs in noncanonical:
+            with self.subTest(evidence_refs=evidence_refs):
+                with self.assertRaisesRegex(CompositionError, "invalid-expert-output"):
+                    self.invoke(canonical_result_data(), evidence_refs=evidence_refs)
+
     def test_core_lisp_accepts_declared_read_only_output_shape_at_zero_models(self):
         node, registry, budget = self.invoke(canonical_result_data())
 
         self.assertEqual(node.status, "succeeded")
         self.assertEqual(node.data, canonical_result_data())
-        self.assertEqual(node.evidence, ("evidence:lisp:test",))
+        self.assertEqual(node.evidence, (CANONICAL_EVIDENCE_REF,))
         self.assertEqual(len(registry.calls), 1)
         self.assertEqual(registry.calls[0][3].max_model_calls, 0)
         self.assertEqual(budget.model_calls_used, 0)
