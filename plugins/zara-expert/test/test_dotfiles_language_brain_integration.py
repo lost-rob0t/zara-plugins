@@ -24,6 +24,14 @@ FAMILY_KEYS = (
     "java",
     "kotlin",
 )
+CLOSED_PROJECTION_KEYS = frozenset(
+    {
+        "javascript",
+        "typescript",
+        "java",
+        "kotlin",
+    }
+)
 
 
 @unittest.skipUnless(DOTFILES_ROOT, "canonical Dotfiles checkout not provided")
@@ -64,6 +72,22 @@ class DotfilesLanguageBrainIntegrationTests(unittest.TestCase):
     def _handler(self, key):
         return make_language_expert_handler(self.host, f"zara:expert/{key}")
 
+    def _symbolic_terms(self, key, operation, outcome):
+        data = outcome["data"]
+        if key not in CLOSED_PROJECTION_KEYS:
+            return data["result"]["evidence"]
+        if operation == "inspect":
+            return data["result"]["evidence"]
+        if operation == "diagnose":
+            return data["diagnostics"]
+        if operation == "repair.preview":
+            return data["repair"]["symbolic_terms"]
+        if operation == "style.rules":
+            return data["style_rules"]
+        if operation == "explain":
+            return data["explanation"]["symbolic_terms"]
+        raise AssertionError(f"unsupported symbolic projection: {key}/{operation}")
+
     def _assert_applicable(self, key, path, expected):
         outcome = self._handler(key)(
             expert_operation="match",
@@ -71,6 +95,9 @@ class DotfilesLanguageBrainIntegrationTests(unittest.TestCase):
             source_generation=f"generation-{key}-routing",
         )
         self._assert_zero_model(outcome)
+        if key in CLOSED_PROJECTION_KEYS:
+            self.assertIs(outcome["data"]["applicable"], expected, outcome)
+            return
         marker = f"applicable({'true' if expected else 'false'})"
         self.assertTrue(
             any(marker in item for item in outcome["data"]["result"]["evidence"]),
@@ -89,9 +116,15 @@ class DotfilesLanguageBrainIntegrationTests(unittest.TestCase):
         )
         self._assert_zero_model(matched)
         self.assertEqual(matched["verdict"], "succeeded")
-        self.assertTrue(
-            any("applicable(true)" in item for item in matched["data"]["result"]["evidence"])
-        )
+        if key in CLOSED_PROJECTION_KEYS:
+            self.assertIs(matched["data"]["applicable"], True)
+        else:
+            self.assertTrue(
+                any(
+                    "applicable(true)" in item
+                    for item in matched["data"]["result"]["evidence"]
+                )
+            )
 
         inspected = handler(
             expert_operation="inspect",
@@ -102,7 +135,7 @@ class DotfilesLanguageBrainIntegrationTests(unittest.TestCase):
         self.assertTrue(
             any(
                 "source_never_executed" in item
-                for item in inspected["data"]["result"]["evidence"]
+                for item in self._symbolic_terms(key, "inspect", inspected)
             )
         )
 
@@ -115,7 +148,7 @@ class DotfilesLanguageBrainIntegrationTests(unittest.TestCase):
         self.assertTrue(
             any(
                 "fresh_evidence_required" in item
-                for item in diagnosed["data"]["result"]["evidence"]
+                for item in self._symbolic_terms(key, "diagnose", diagnosed)
             )
         )
 
@@ -127,7 +160,10 @@ class DotfilesLanguageBrainIntegrationTests(unittest.TestCase):
         )
         self._assert_zero_model(preview)
         self.assertTrue(
-            any("status(blocked)" in item for item in preview["data"]["result"]["evidence"])
+            any(
+                "status(blocked)" in item
+                for item in self._symbolic_terms(key, "repair.preview", preview)
+            )
         )
 
         verified = handler(
@@ -137,15 +173,16 @@ class DotfilesLanguageBrainIntegrationTests(unittest.TestCase):
             source_generation=f"generation-{key}-2",
         )
         self._assert_zero_model(verified)
-        self.assertTrue(
-            any("verified(false)" in item for item in verified["data"]["result"]["evidence"])
-        )
-        self.assertTrue(
-            any(
-                "fresh_postcondition_required" in item
-                for item in verified["data"]["result"]["evidence"]
+        self.assertEqual(verified["verdict"], "blocked")
+        if key in CLOSED_PROJECTION_KEYS:
+            self.assertEqual(verified["data"], {})
+            self.assertTrue(verified["evidence_refs"])
+        else:
+            verification_terms = self._symbolic_terms(key, "repair.verify", verified)
+            self.assertTrue(any("verified(false)" in item for item in verification_terms))
+            self.assertTrue(
+                any("fresh_postcondition_required" in item for item in verification_terms)
             )
-        )
 
         styled = handler(
             expert_operation="style.rules",
@@ -154,7 +191,10 @@ class DotfilesLanguageBrainIntegrationTests(unittest.TestCase):
         )
         self._assert_zero_model(styled)
         self.assertTrue(
-            any("dotfiles_canonical_brain" in item for item in styled["data"]["result"]["evidence"])
+            any(
+                "dotfiles_canonical_brain" in item
+                for item in self._symbolic_terms(key, "style.rules", styled)
+            )
         )
 
         explained = handler(
@@ -164,9 +204,15 @@ class DotfilesLanguageBrainIntegrationTests(unittest.TestCase):
         )
         self._assert_zero_model(explained)
         self.assertTrue(
-            any("provider_policy(disabled)" in item for item in explained["data"]["result"]["evidence"])
+            any(
+                "provider_policy(disabled)" in item
+                for item in self._symbolic_terms(key, "explain", explained)
+            )
         )
-        self.assertTrue(explained["data"]["result"]["explanation"])
+        if key in CLOSED_PROJECTION_KEYS:
+            self.assertTrue(explained["data"]["explanation"]["trace"])
+        else:
+            self.assertTrue(explained["data"]["result"]["explanation"])
 
         blocked = handler(
             expert_operation="repair.apply",

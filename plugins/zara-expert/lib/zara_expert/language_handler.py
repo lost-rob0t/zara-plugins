@@ -33,6 +33,14 @@ _REQUIRED_POSTCONDITIONS = {
     "zara:expert/nix": "parse_then_eval_or_check",
     "zara:expert/bash": "parse_and_bash_n",
 }
+_CLOSED_OPERATION_PROJECTION_EXPERTS = frozenset(
+    {
+        "zara:expert/javascript",
+        "zara:expert/typescript",
+        "zara:expert/java",
+        "zara:expert/kotlin",
+    }
+)
 VerifiedOutcomeResolver = Callable[..., Mapping[str, Any] | None]
 
 
@@ -88,6 +96,77 @@ def _evidence_refs(result: dict[str, Any]) -> list[str]:
         digest = hashlib.sha256(encoded).hexdigest()
         refs.append(f"evidence:language:sha256:{digest}")
     return refs
+
+
+def _symbolic_terms(result: Mapping[str, Any]) -> list[str]:
+    raw = result.get("evidence", ())
+    if isinstance(raw, (str, bytes)) or not isinstance(raw, (list, tuple)):
+        raise ExpertError("language expert evidence must be a sequence")
+    terms = [str(item) for item in raw]
+    if not terms:
+        raise ExpertError("language expert succeeded without symbolic output")
+    return terms
+
+
+def _literal_marker(terms: list[str], name: str) -> bool:
+    true_marker = f"{name}(true)"
+    false_marker = f"{name}(false)"
+    has_true = any(true_marker in term for term in terms)
+    has_false = any(false_marker in term for term in terms)
+    if has_true == has_false:
+        raise ExpertError(f"language expert output has ambiguous {name!r} marker")
+    return has_true
+
+
+def _closed_operation_data(
+    operation: str,
+    result: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project trusted registered-predicate output into declared package data.
+
+    The Dotfiles language brains return bounded Prolog terms as inert strings.
+    Keep those terms as provenance-bearing symbolic evidence while mapping them
+    into the closed ZARA-EXPERT/1 operation schemas consumed by the standalone
+    JS/TS/Java/Kotlin packages. No source term is executed or reinterpreted as
+    capability authority here.
+    """
+
+    terms = _symbolic_terms(result)
+    if operation == "match":
+        return {"applicable": _literal_marker(terms, "applicable")}
+    if operation == "inspect":
+        return {"result": dict(result)}
+    if operation == "diagnose":
+        return {"diagnostics": terms}
+    if operation == "repair.preview":
+        return {"repair": {"symbolic_terms": terms}}
+    if operation == "repair.verify":
+        return {
+            "verified": _literal_marker(terms, "verified"),
+            "postcondition_evidence": {
+                "symbolic_terms": terms,
+                "fresh": False,
+            },
+        }
+    if operation == "style.rules":
+        source_reference = result.get("source_reference")
+        if not isinstance(source_reference, str) or not source_reference:
+            raise ExpertError("language style output is missing source provenance")
+        return {
+            "style_rules": terms,
+            "style_provenance": [source_reference],
+        }
+    if operation == "explain":
+        raw_trace = result.get("explanation", ())
+        if isinstance(raw_trace, (str, bytes)) or not isinstance(raw_trace, (list, tuple)):
+            raise ExpertError("language expert explanation must be a sequence")
+        return {
+            "explanation": {
+                "symbolic_terms": terms,
+                "trace": [str(item) for item in raw_trace],
+            }
+        }
+    raise ExpertError(f"unsupported closed language output operation: {operation!r}")
 
 
 def _pending_postcondition(
@@ -206,14 +285,27 @@ def make_language_expert_handler(
         )
         evidence_refs = _evidence_refs(result)
         verdict = result["verdict"]
-        data: dict[str, Any] = {"result": result}
+        if canonical_id in _CLOSED_OPERATION_PROJECTION_EXPERTS:
+            data = (
+                _closed_operation_data(expert_operation, result)
+                if verdict == "succeeded"
+                else {}
+            )
+        else:
+            data = {"result": result}
         if expert_operation == "repair.verify" and verdict == "succeeded":
-            # Predicate completion only proves the symbolic verifier ran. The
-            # canonical Nix/Bash brains intentionally report verified(false)
-            # until Zara's effect/verification authority has produced a fresh
-            # parser/compiler/eval/check postcondition. Default to BLOCKED and
-            # permit promotion only from an exact canonical receipt lookup.
+            # Predicate completion only proves the symbolic verifier ran. A
+            # successful query does not mean the candidate passed its required
+            # postcondition. Preserve the existing fail-closed verdict for every
+            # language family; only the canonical verified-outcome path below
+            # may promote a supported operation back to succeeded.
             verdict = "blocked"
+            if canonical_id in _CLOSED_OPERATION_PROJECTION_EXPERTS:
+                # Standalone language packages intentionally require non-success
+                # projections to carry no data. Keep hashed evidence references
+                # for diagnosis, but never let a blocked symbolic verifier leak
+                # provider-shaped or stale result payload through the adapter.
+                data = {}
             required_postcondition = _pending_postcondition(canonical_id, result)
             candidate_source = payload.get("candidate_source")
             source_generation = payload.get("source_generation")
