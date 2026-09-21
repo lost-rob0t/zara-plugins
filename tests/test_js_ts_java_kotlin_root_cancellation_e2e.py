@@ -9,10 +9,10 @@ from tests import test_js_ts_java_kotlin_inflight_recreation_e2e as base
 
 
 CURRENT_DOTFILES_COMMIT = "fe8f7fa3c42803e0e505dcb6f7e4600d27649d9e"
-ROOT_CANCEL_ZARA_CORE_COMMIT = "f92a4a199958fdc0dcba3818483952bb52e84f55"
+ROOT_CANCEL_ZARA_CORE_COMMIT = "8177460982f94a5a60cf454c2fd4f9beae867a95"
 
-# Reuse the canonical four-language runtime/chain and point it at the upstream
-# Core root-cancellation fix under review. This file owns no registry/runtime.
+# Reuse the canonical four-language runtime/chain and point it at the merged
+# Core root-cancellation fix. This file owns no registry/runtime.
 base.EXPECTED_DOTFILES_COMMIT = CURRENT_DOTFILES_COMMIT
 base.EXPECTED_ZARA_CORE_COMMIT = ROOT_CANCEL_ZARA_CORE_COMMIT
 
@@ -100,7 +100,7 @@ class JsTsJavaKotlinRootCancellationE2ETests(
         self.assertIs(type(fresh_result.usage["model_calls"]), int)
         self.assertEqual(fresh_result.usage["model_calls"], 0)
 
-    def test_exact_upstream_root_cancellation_revision_is_pinned(self) -> None:
+    def test_exact_merged_root_cancellation_revision_is_pinned(self) -> None:
         self.assertEqual(base.EXPECTED_DOTFILES_COMMIT, CURRENT_DOTFILES_COMMIT)
         self.assertEqual(base.EXPECTED_ZARA_CORE_COMMIT, ROOT_CANCEL_ZARA_CORE_COMMIT)
 
