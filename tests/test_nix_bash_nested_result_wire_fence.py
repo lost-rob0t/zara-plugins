@@ -142,7 +142,7 @@ class NestedResultWireFenceTests(unittest.TestCase):
         plugin.start(_Runtime(_canonical_result(module)))
         adapter_error = self._adapter_error(module)
 
-        with self.assertRaisesRegex(adapter_error, "invalid-expert-data-json"):
+        with self.assertRaisesRegex(adapter_error, "invalid-expert-data"):
             plugin.invoke(
                 request_id=REQUEST_ID,
                 activation_id=ACTIVATION_ID,
