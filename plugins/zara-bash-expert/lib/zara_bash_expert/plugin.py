@@ -131,6 +131,17 @@ def _validate_limit(value: int | float, field: str, maximum: int) -> int:
     return _json_integer(value, field, 1, maximum)
 
 
+def _validate_operation_input(operation: str, payload: Mapping[str, object]) -> None:
+    declared = {field["name"]: field for field in OPERATION_FIELDS[operation]}
+    if set(payload) - set(declared):
+        raise BashExpertAdapterError("unknown-operation-input")
+    for name, field in declared.items():
+        if field["required"] and name not in payload:
+            raise BashExpertAdapterError("missing-operation-input")
+        if name in payload and field["type"] == "string" and not isinstance(payload[name], str):
+            raise BashExpertAdapterError("invalid-operation-input")
+
+
 def _operation_descriptor(operation: str) -> dict[str, object]:
     return {
         "operation_id": operation,
@@ -298,6 +309,7 @@ class ZaraBashExpertPlugin(ServicePlugin):
         )
 
         payload = self._decode_input(input_json)
+        _validate_operation_input(expert_operation, payload)
         runtime = self._runtime
         resolver = getattr(runtime, "resolve_capability", None)
         invoker = getattr(runtime, "invoke_capability", None)

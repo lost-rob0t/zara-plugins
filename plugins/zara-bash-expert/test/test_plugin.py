@@ -150,6 +150,28 @@ class BashExpertPluginTests(unittest.TestCase):
         self.assertEqual(runtime.resolved, [])
         self.assertEqual(runtime.requests, [])
 
+    def test_operation_input_schema_rejects_malformed_payload_before_host(self) -> None:
+        runtime = FakeRuntime()
+        plugin = ZaraBashExpertPlugin()
+        plugin.start(runtime)
+
+        cases = (
+            ("inspect_startup", "{}", "missing-operation-input"),
+            (
+                "parse",
+                '{"source":"echo ok","provider_fallback":true}',
+                "unknown-operation-input",
+            ),
+            ("parse", '{"source":7}', "invalid-operation-input"),
+        )
+        for operation, payload, error in cases:
+            with self.subTest(operation=operation, error=error):
+                with self.assertRaisesRegex(BashExpertAdapterError, error):
+                    invoke(plugin, operation, payload)
+
+        self.assertEqual(runtime.resolved, [])
+        self.assertEqual(runtime.requests, [])
+
     def test_invalid_generation_or_limit_is_rejected_before_host(self) -> None:
         runtime = FakeRuntime()
         plugin = ZaraBashExpertPlugin()
