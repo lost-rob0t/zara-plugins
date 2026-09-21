@@ -141,6 +141,25 @@ class PrologPythonNimPersistedUsageFenceE2ETests(unittest.TestCase):
                 ):
                     _projection([evidence]).validate()
 
+    def test_case_folded_model_calls_metadata_is_rejected_before_persistence(self) -> None:
+        for expert_id in (
+            "zara:expert/prolog",
+            "zara:expert/python",
+            "zara:expert/nim",
+        ):
+            for key_path in ("root", "nested"):
+                with self.subTest(expert_id=expert_id, key_path=key_path):
+                    evidence = _canonical_lane3_evidence(expert_id)
+                    if key_path == "root":
+                        evidence["MODEL_CALLS"] = 7
+                    else:
+                        evidence["explanation"]["MoDeL_CaLlS"] = 7
+                    with self.assertRaisesRegex(
+                        (TypeError, ValueError),
+                        "expert.*model|model.*expert",
+                    ):
+                        _projection([evidence]).validate()
+
     def test_legacy_provider_metadata_is_rejected_after_process_recreation(self) -> None:
         canonical = [
             _canonical_lane3_evidence(expert_id)
