@@ -25,7 +25,8 @@ _DIALECT_REPAIR_EXPERTS = frozenset(
     }
 )
 _LISP_EXPERT_IDS = frozenset(spec.expert_id for spec in lisp_family_specs())
-_ALLOWED_INPUT_KEYS = frozenset({"arguments"})
+_PREDICATE_INPUT_KEYS = frozenset({"arguments"})
+_REPAIR_VERIFY_INPUT_KEYS = frozenset({"arguments", "source_generation"})
 _REPAIR_APPLY_INPUT_KEYS = frozenset(
     {"repair", "expected_preimage", "source_generation"}
 )
@@ -118,7 +119,12 @@ def _validated_lisp_payload(
             )
         return dict(input_data)
 
-    unknown = set(input_data) - _ALLOWED_INPUT_KEYS
+    allowed_input_keys = (
+        _REPAIR_VERIFY_INPUT_KEYS
+        if operation == "repair.verify"
+        else _PREDICATE_INPUT_KEYS
+    )
+    unknown = set(input_data) - allowed_input_keys
     if unknown:
         raise CompositionError(
             f"Lisp expert input contains unsupported fields: {sorted(unknown)!r}"
@@ -131,7 +137,16 @@ def _validated_lisp_payload(
         _core_operation_arguments(operation, arguments)
     except ExpertError as exc:
         raise CompositionError(str(exc)) from exc
-    return {"arguments": arguments}
+
+    payload: dict[str, Any] = {"arguments": arguments}
+    if "source_generation" in input_data:
+        source_generation = input_data["source_generation"]
+        if not isinstance(source_generation, str) or not source_generation:
+            raise CompositionError(
+                "Lisp repair.verify source_generation must be a non-empty reference"
+            )
+        payload["source_generation"] = source_generation
+    return payload
 
 
 def _validated_core_result(
@@ -293,25 +308,10 @@ class LispFamilyCompositionInvoker:
             invoke_lisp_operation(self._host, expert_id, operation, ())
             raise AssertionError("repair.apply must fail closed before backend dispatch")
 
-        unknown = set(input_data) - _ALLOWED_INPUT_KEYS
-        if unknown:
-            raise CompositionError(
-                f"Lisp expert input contains unsupported fields: {sorted(unknown)!r}"
-            )
-        arguments = input_data.get("arguments", [])
-        if not isinstance(arguments, list):
-            raise CompositionError("Lisp expert arguments must be a list")
-        arguments = list(arguments)
+        payload = _validated_lisp_payload(expert_id, operation, input_data)
+        arguments = payload["arguments"]
 
         if expert_id in _DIALECT_REPAIR_EXPERTS and operation == "repair.preview":
-            try:
-                # Validate the public payload with the exact same ABI helper used
-                # by the Core-facing handler. The returned private Result variable
-                # is intentionally discarded here; the delegated Lisp child owns
-                # and injects its own result variable at dispatch time.
-                _core_operation_arguments(operation, arguments)
-            except ExpertError as exc:
-                raise CompositionError(str(exc)) from exc
             fence.check()
             budget.assert_zero_model_usage()
             return InvocationResult(
@@ -346,6 +346,7 @@ class LispFamilyCompositionInvoker:
             outcome = handler(
                 expert_operation=operation,
                 arguments=arguments,
+                source_generation=payload.get("source_generation"),
             )
         except ExpertError as exc:
             raise CompositionError(str(exc)) from exc
