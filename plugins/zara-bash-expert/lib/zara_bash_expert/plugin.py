@@ -172,7 +172,8 @@ def _validate_result(
         or resolved_runtime_generation != runtime_generation
     ):
         raise BashExpertAdapterError("stale-expert-result")
-    if result.get("verdict") not in RESULT_VERDICTS:
+    verdict = result.get("verdict")
+    if verdict not in RESULT_VERDICTS:
         raise BashExpertAdapterError("invalid-expert-verdict")
     usage = result.get("usage")
     model_calls = usage.get("model_calls") if isinstance(usage, Mapping) else None
@@ -183,6 +184,13 @@ def _validate_result(
         raise BashExpertAdapterError("read-only-effect-proof-missing")
     if receipts:
         raise BashExpertAdapterError("read-only-effect-leak")
+    if verdict == "cancelled":
+        data = result.get("data")
+        evidence_refs = result.get("evidence_refs")
+        if not isinstance(data, Mapping) or data:
+            raise BashExpertAdapterError("cancelled-expert-output-leak")
+        if not isinstance(evidence_refs, (list, tuple)) or evidence_refs:
+            raise BashExpertAdapterError("cancelled-expert-output-leak")
 
 
 class ZaraBashExpertPlugin(ServicePlugin):

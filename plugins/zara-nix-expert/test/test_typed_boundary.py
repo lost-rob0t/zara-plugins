@@ -117,6 +117,40 @@ class NixExpertTypedBoundaryTests(unittest.TestCase):
         self.assertEqual(self.runtime.resolved, ["expert.invoke"] * len(cases))
         self.assertEqual(len(self.runtime.requests), len(cases))
 
+    def test_cancelled_result_rejects_late_output(self) -> None:
+        cases = (
+            {"data": {"late": "flake result"}},
+            {"evidence_refs": ["ev:late-nix"]},
+        )
+        for mutation in cases:
+            with self.subTest(mutation=mutation):
+                self.runtime.result_mutation = {
+                    "verdict": "cancelled",
+                    "data": {},
+                    "evidence_refs": [],
+                    **mutation,
+                }
+                with self.assertRaisesRegex(
+                    NixExpertAdapterError, "cancelled-expert-output-leak"
+                ):
+                    self.invoke("inspect_flake", {"path": "flake.nix"})
+                request = self.runtime.requests[-1]
+                self.assertEqual(request["limits"]["max_model_calls"], 0)
+        self.assertEqual(len(self.runtime.requests), len(cases))
+
+    def test_clean_cancelled_result_is_admitted_without_output(self) -> None:
+        self.runtime.result_mutation = {
+            "verdict": "cancelled",
+            "data": {},
+            "evidence_refs": [],
+        }
+        result = json.loads(self.invoke("inspect_flake", {"path": "flake.nix"}))
+        self.assertEqual(result["verdict"], "cancelled")
+        self.assertEqual(result["data"], {})
+        self.assertEqual(result["evidence_refs"], [])
+        self.assertEqual(result["usage"]["model_calls"], 0)
+        self.assertEqual(result["effect_receipts"], [])
+
     def test_valid_typed_input_reaches_canonical_host_with_zero_model_limit(self) -> None:
         result = json.loads(self.invoke("inspect_flake", {"path": "flake.nix"}))
         self.assertEqual(self.runtime.resolved, ["expert.invoke"])
