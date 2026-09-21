@@ -12,7 +12,7 @@ from .client import StarIntelClient, StarIntelError
 from .config import StarIntelConfig
 
 
-PLUGIN_VERSION = "0.1.0"
+PLUGIN_VERSION = "0.2.0"
 
 
 def _json_value(value: str, label: str, default: Any) -> Any:
@@ -96,6 +96,30 @@ class ZaraStarIntelServerPlugin(ServicePlugin):
                     "administrative operations."
                 ),
             ),
+            StructuredTool.from_function(
+                func=self.star_funds_status,
+                name="star_funds_status",
+                description=(
+                    "Read the private Star Funds status and paper/expert capability state "
+                    "through the StarIntel credential."
+                ),
+            ),
+            StructuredTool.from_function(
+                func=self.star_funds_research_opportunities,
+                name="star_funds_research",
+                description=(
+                    "Ask Star Funds for current public prediction-market research candidates. "
+                    "This is research-only and does not place or simulate an order."
+                ),
+            ),
+            StructuredTool.from_function(
+                func=self.star_funds_paper_attempt,
+                name="star_funds_paper_attempt",
+                description=(
+                    "Run one Kalshi candidate through Star Funds evidence, Prolog authority, "
+                    "hard risk, and the immutable PAPER ledger. No live order capability exists."
+                ),
+            ),
         )
 
     def starintel_status(self, include_health: bool = True) -> str:
@@ -172,6 +196,57 @@ class ZaraStarIntelServerPlugin(ServicePlugin):
             headers=_json_mapping(headers_json, "headers_json"),
         )
         return json.dumps(result, ensure_ascii=False, sort_keys=True)
+
+    def _star_funds_task(self, task: str, body: dict[str, Any]) -> str:
+        result = self._client.call_operation(
+            "star-funds.tasks.call",
+            path_parameters={"task": task},
+            body=body,
+        )
+        return json.dumps(result, ensure_ascii=False, sort_keys=True)
+
+    def star_funds_status(self) -> str:
+        result = self._client.call_operation("star-funds.status.get")
+        return json.dumps(result, ensure_ascii=False, sort_keys=True)
+
+    def star_funds_research_opportunities(self, top: int = 25) -> str:
+        bounded_top = max(1, min(100, int(top)))
+        return self._star_funds_task(
+            "research-opportunities",
+            {"top": bounded_top},
+        )
+
+    def star_funds_paper_attempt(
+        self,
+        ticker: str,
+        word: str,
+        minimum_mentions: int,
+        side: str,
+        limit_price: float,
+        max_size: int,
+        minimum_volume: float,
+        maximum_spread: float,
+    ) -> str:
+        normalized_side = str(side).strip().lower()
+        if normalized_side not in {"yes", "no"}:
+            raise StarIntelError("side must be yes or no")
+        if max_size < 1:
+            raise StarIntelError("max_size must be positive")
+        if minimum_mentions < 0:
+            raise StarIntelError("minimum_mentions must be nonnegative")
+        return self._star_funds_task(
+            "kalshi-paper-attempt",
+            {
+                "ticker": str(ticker).strip(),
+                "word": str(word).strip(),
+                "minimum_mentions": int(minimum_mentions),
+                "side": normalized_side,
+                "limit_price": float(limit_price),
+                "max_size": int(max_size),
+                "minimum_volume": float(minimum_volume),
+                "maximum_spread": float(maximum_spread),
+            },
+        )
 
 
 def create_plugin():
