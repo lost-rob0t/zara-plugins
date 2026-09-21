@@ -134,7 +134,7 @@ def _payload(language: str, operation: str) -> dict[str, object]:
 class RegisteredPredicateRuntime:
     """Test facade for the existing expert.invoke capability over ExpertHost.
 
-    This owns no registry, planner, provider, permission state, or history.  It
+    This owns no registry, planner, provider, permission state, or history. It
     merely exposes the package runtime seam and dispatches to the canonical
     zara-expert registered-predicate handler used by the product integration.
     """
@@ -264,10 +264,10 @@ class JsTsJavaKotlinRegisteredHostAllOperationsE2ETests(unittest.TestCase):
                     self.assertEqual(result["usage"], {"model_calls": 0})
                     self.assertEqual(result["effect_receipts"], [])
                     self.assertTrue(result["evidence_refs"])
-                    _assert_declared_output(self, module, operation, result["data"])
                     if operation == "repair.verify":
-                        self.assertIs(result["data"]["verified"], False)
-                        self.assertIs(result["data"]["postcondition_evidence"]["fresh"], False)
+                        self.assertEqual(result["data"], {})
+                    else:
+                        _assert_declared_output(self, module, operation, result["data"])
 
             self.assertEqual(runtime.resolved, ["expert.invoke"] * len(module.ALLOWED_OPERATIONS))
             self.assertTrue(
