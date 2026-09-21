@@ -64,6 +64,23 @@ def _validated_evidence_refs(
     return tuple(raw) if require_exact_strings else tuple(str(item) for item in raw)
 
 
+def _validated_zero_model_usage(
+    raw: Any,
+    *,
+    source: str,
+    require_closed_envelope: bool,
+) -> None:
+    if not isinstance(raw, Mapping):
+        raise CompositionError(f"{source} is missing usage ledger")
+    if require_closed_envelope:
+        unknown = tuple(key for key in raw if key != "model_calls")
+        if unknown:
+            raise CompositionError(f"{source} usage ledger contains unsupported fields")
+    model_calls = raw.get("model_calls")
+    if type(model_calls) is not int or model_calls != 0:
+        raise CompositionError(f"{source} attempted model use")
+
+
 def _typed_explanation(
     expert_id: str,
     operation: str,
@@ -110,12 +127,11 @@ def _validated_core_result(
     operation: str,
     outcome: Any,
 ) -> InvocationResult:
-    usage = getattr(outcome, "usage", None)
-    if not isinstance(usage, Mapping):
-        raise CompositionError("Core expert result is missing usage ledger")
-    model_calls = usage.get("model_calls")
-    if type(model_calls) is not int or model_calls != 0:
-        raise CompositionError("Core language expert attempted model use")
+    _validated_zero_model_usage(
+        getattr(outcome, "usage", None),
+        source="Core language expert result",
+        require_closed_envelope=expert_id in _PRIMARY_TYPED_REPLAY_EXPERT_IDS,
+    )
 
     effect_receipts = getattr(outcome, "effect_receipts", None)
     if not isinstance(effect_receipts, (list, tuple)) or effect_receipts:
@@ -230,12 +246,11 @@ class LanguageFamilyCompositionInvoker:
         if not isinstance(outcome, Mapping):
             raise CompositionError("language expert handler returned non-object result")
 
-        usage = outcome.get("usage")
-        if not isinstance(usage, Mapping):
-            raise CompositionError("language expert result is missing usage ledger")
-        model_calls = usage.get("model_calls")
-        if type(model_calls) is not int or model_calls != 0:
-            raise CompositionError("language expert attempted model use")
+        _validated_zero_model_usage(
+            outcome.get("usage"),
+            source="language expert result",
+            require_closed_envelope=expert_id in _PRIMARY_TYPED_REPLAY_EXPERT_IDS,
+        )
 
         effect_receipts = outcome.get("effect_receipts")
         if not isinstance(effect_receipts, (list, tuple)) or effect_receipts:
