@@ -26,6 +26,8 @@ def _validate_expected_generation(value: object, field: str) -> int:
 
 
 def _validate_operation_payload(operation: str, payload: Mapping[str, Any]) -> None:
+    if type(operation) is not str:
+        raise BashExpertAdapterError("unsupported-expert-operation")
     fields = OPERATION_FIELDS.get(operation)
     if fields is None:
         raise BashExpertAdapterError("unsupported-expert-operation")
