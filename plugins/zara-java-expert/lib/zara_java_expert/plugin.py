@@ -258,6 +258,13 @@ def _validate_result(
         raise JavaExpertAdapterError("read-only-effect-proof-missing")
     if receipts:
         raise JavaExpertAdapterError("read-only-effect-leak")
+    if verdict == "cancelled":
+        data = result.get("data")
+        evidence_refs = result.get("evidence_refs")
+        if not isinstance(data, Mapping) or data:
+            raise JavaExpertAdapterError("cancelled-expert-output-leak")
+        if not isinstance(evidence_refs, (list, tuple)) or evidence_refs:
+            raise JavaExpertAdapterError("cancelled-expert-output-leak")
     _validate_operation_output(expert_operation, verdict, result.get("data"))
 
 
