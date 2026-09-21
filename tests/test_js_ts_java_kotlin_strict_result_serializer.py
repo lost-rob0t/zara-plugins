@@ -76,9 +76,8 @@ CASES = (
 
 
 class _Runtime:
-    def __init__(self, module, metadata_extra: object | None = None):
+    def __init__(self, module):
         self.module = module
-        self.metadata_extra = metadata_extra
         self.requests: list[dict[str, object]] = []
 
     def resolve_capability(self, capability: str) -> str:
@@ -88,9 +87,10 @@ class _Runtime:
 
     def invoke_capability(self, _handle: str, request: dict[str, object]):
         self.requests.append(request)
-        result: dict[str, object] = {
+        return {
             "protocol": self.module.PROTOCOL,
             "request_id": request["request_id"],
+            "invocation_id": "inv:" + ("0" * 32),
             "activation_id": request["activation_id"],
             "expert_id": self.module.EXPERT_ID,
             "expert_version": self.module.PLUGIN_VERSION,
@@ -104,15 +104,17 @@ class _Runtime:
             "usage": {"model_calls": 0},
             "effect_receipts": [],
         }
-        if self.metadata_extra is not None:
-            result["invocation_id"] = self.metadata_extra
-        return result
 
 
-def _invoke(module, metadata_extra: object | None = None) -> tuple[str, _Runtime]:
-    runtime = _Runtime(module, metadata_extra)
+def _plugin(module) -> tuple[object, _Runtime]:
+    runtime = _Runtime(module)
     plugin = module.create_plugin()
     plugin.start(runtime)
+    return plugin, runtime
+
+
+def _invoke(module) -> tuple[str, _Runtime]:
+    plugin, runtime = _plugin(module)
     encoded = plugin.invoke(
         REQUEST_ID,
         ACTIVATION_ID,
@@ -125,12 +127,27 @@ def _invoke(module, metadata_extra: object | None = None) -> tuple[str, _Runtime
 
 
 class StrictResultSerializerTests(unittest.TestCase):
-    def test_non_finite_unvalidated_result_metadata_fails_closed(self) -> None:
+    def test_strict_serializer_rejects_non_finite_and_cyclic_values(self) -> None:
+        cycle: dict[str, object] = {}
+        cycle["self"] = cycle
+        for module, _error_type in CASES:
+            plugin = module.create_plugin()
+            with self.subTest(expert_id=module.EXPERT_ID, case="nan"):
+                with self.assertRaises(ValueError):
+                    plugin._json({"probe": float("nan")})
+            with self.subTest(expert_id=module.EXPERT_ID, case="cycle"):
+                with self.assertRaises((ValueError, RecursionError)):
+                    plugin._json({"probe": cycle})
+
+    def test_final_serializer_errors_fail_closed_after_valid_result_validation(self) -> None:
         for module, error_type in CASES:
             with self.subTest(expert_id=module.EXPERT_ID):
-                runtime = _Runtime(module, float("nan"))
-                plugin = module.create_plugin()
-                plugin.start(runtime)
+                plugin, runtime = _plugin(module)
+
+                def fail_serializer(_value: object) -> str:
+                    raise ValueError("strict serializer probe")
+
+                plugin._json = fail_serializer
                 with self.assertRaisesRegex(error_type, "invalid-expert-result-json"):
                     plugin.invoke(
                         REQUEST_ID,
@@ -142,26 +159,6 @@ class StrictResultSerializerTests(unittest.TestCase):
                     )
                 self.assertEqual(len(runtime.requests), 1)
                 self.assertEqual(runtime.requests[0]["limits"]["max_model_calls"], 0)
-
-    def test_cyclic_unvalidated_result_metadata_fails_closed(self) -> None:
-        cycle: dict[str, object] = {}
-        cycle["self"] = cycle
-
-        for module, error_type in CASES:
-            with self.subTest(expert_id=module.EXPERT_ID):
-                runtime = _Runtime(module, cycle)
-                plugin = module.create_plugin()
-                plugin.start(runtime)
-                with self.assertRaisesRegex(error_type, "invalid-expert-result-json"):
-                    plugin.invoke(
-                        REQUEST_ID,
-                        ACTIVATION_ID,
-                        EXPERT_OPERATION,
-                        EXPECTED_GENERATION,
-                        EXPECTED_GENERATION,
-                        INPUT_JSON,
-                    )
-                self.assertEqual(len(runtime.requests), 1)
 
     def test_canonical_result_remains_strict_json_and_zero_model(self) -> None:
         def reject_constant(value: str) -> None:
