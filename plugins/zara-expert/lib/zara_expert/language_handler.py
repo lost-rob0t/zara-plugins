@@ -300,6 +300,12 @@ def make_language_expert_handler(
             # language family; only the canonical verified-outcome path below
             # may promote a supported operation back to succeeded.
             verdict = "blocked"
+            if canonical_id in _CLOSED_OPERATION_PROJECTION_EXPERTS:
+                # Standalone language packages intentionally require non-success
+                # projections to carry no data. Keep hashed evidence references
+                # for diagnosis, but never let a blocked symbolic verifier leak
+                # provider-shaped or stale result payload through the adapter.
+                data = {}
             required_postcondition = _pending_postcondition(canonical_id, result)
             candidate_source = payload.get("candidate_source")
             source_generation = payload.get("source_generation")
