@@ -1,0 +1,87 @@
+name: Fleet20 apply core evidence bounds
+
+on:
+  push:
+    branches:
+      - fleet20/859-four-language-core-evidence-bounds-20260921
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply four-language Core evidence bounds
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          paths = (
+              Path('plugins/zara-javascript-expert/lib/zara_javascript_expert/plugin.py'),
+              Path('plugins/zara-typescript-expert/lib/zara_typescript_expert/plugin.py'),
+              Path('plugins/zara-java-expert/lib/zara_java_expert/plugin.py'),
+              Path('plugins/zara-kotlin-expert/lib/zara_kotlin_expert/plugin.py'),
+          )
+
+          constant_needle = 'MAX_RESULT_NODES = 65_536\nREQUEST_ID_RE ='
+          constant_replacement = (
+              'MAX_RESULT_NODES = 65_536\n'
+              'MAX_EVIDENCE_REFS = 32\n'
+              'MAX_EVIDENCE_REF_LENGTH = 128\n'
+              'REQUEST_ID_RE ='
+          )
+          evidence_needle = (
+              '    if not isinstance(evidence_refs, (list, tuple)):\n'
+              '        raise {error}("invalid-expert-evidence")\n'
+              '    for evidence_ref in evidence_refs:\n'
+          )
+          evidence_replacement = (
+              '    if not isinstance(evidence_refs, (list, tuple)):\n'
+              '        raise {error}("invalid-expert-evidence")\n'
+              '    if len(evidence_refs) > MAX_EVIDENCE_REFS:\n'
+              '        raise {error}("invalid-expert-evidence")\n'
+              '    for evidence_ref in evidence_refs:\n'
+          )
+          errors = {
+              'zara_javascript_expert': 'JavaScriptExpertAdapterError',
+              'zara_typescript_expert': 'TypeScriptExpertAdapterError',
+              'zara_java_expert': 'JavaExpertAdapterError',
+              'zara_kotlin_expert': 'KotlinExpertAdapterError',
+          }
+
+          for path in paths:
+              text = path.read_text()
+              if text.count(constant_needle) != 1:
+                  raise SystemExit(f'unexpected constant anchor in {path}')
+              text = text.replace(constant_needle, constant_replacement, 1)
+
+              error = next(value for key, value in errors.items() if key in str(path))
+              needle = evidence_needle.format(error=error)
+              replacement = evidence_replacement.format(error=error)
+              if text.count(needle) != 1:
+                  raise SystemExit(f'unexpected evidence anchor in {path}')
+              text = text.replace(needle, replacement, 1)
+
+              old_bound = 'len(evidence_ref) > MAX_STRING_LENGTH'
+              if text.count(old_bound) != 1:
+                  raise SystemExit(f'unexpected evidence length anchor in {path}')
+              text = text.replace(
+                  old_bound,
+                  'len(evidence_ref) > MAX_EVIDENCE_REF_LENGTH',
+                  1,
+              )
+              path.write_text(text)
+
+          Path('.github/workflows/fleet20-apply-core-evidence-bounds.yml').unlink()
+          PY
+          git config user.name "nsaspy"
+          git config user.email "104283403+lost-rob0t@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(expert): align JS TS Java Kotlin evidence bounds with Core"
+          git push origin HEAD:fleet20/859-four-language-core-evidence-bounds-20260921
