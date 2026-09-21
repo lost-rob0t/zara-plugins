@@ -1,6 +1,6 @@
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+import * as THREE from './vendor/three/build/three.module.js';
+import { GLTFLoader } from './vendor/three/examples/jsm/loaders/GLTFLoader.js';
+import { VRMLoaderPlugin, VRMUtils } from './vendor/three-vrm/three-vrm.module.js';
 import { MotionActor, MOTIONS, EMOTIONS } from './motion.mjs';
 import { validateModel } from './model.mjs';
 
