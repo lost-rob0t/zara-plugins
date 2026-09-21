@@ -24,22 +24,8 @@ FAMILY_KEYS = (
     "java",
     "kotlin",
 )
-CLOSED_PROJECTION_KEYS = frozenset(
-    {
-        "javascript",
-        "typescript",
-        "java",
-        "kotlin",
-    }
-)
-STYLE_EXPLANATION_PROJECTION_KEYS = frozenset(
-    {
-        "prolog",
-        "python",
-        "nim",
-        *CLOSED_PROJECTION_KEYS,
-    }
-)
+CLOSED_PROJECTION_KEYS = frozenset(FAMILY_KEYS)
+STYLE_EXPLANATION_PROJECTION_KEYS = CLOSED_PROJECTION_KEYS
 
 
 @unittest.skipUnless(DOTFILES_ROOT, "canonical Dotfiles checkout not provided")
