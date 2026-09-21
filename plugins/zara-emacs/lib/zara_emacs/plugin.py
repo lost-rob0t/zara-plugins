@@ -11,7 +11,7 @@ from .config import EmacsConfig
 from .workflow import WorkflowEmacsClient, load_workflows
 
 
-PLUGIN_VERSION = "0.3.0"
+PLUGIN_VERSION = "0.4.0"
 
 
 class ZaraEmacsPlugin(ServicePlugin):
@@ -19,7 +19,7 @@ class ZaraEmacsPlugin(ServicePlugin):
         name="zara-emacs",
         version=PLUGIN_VERSION,
         api_version="1",
-        description="Deep native Emacs bridge, Org-roam/Org QL knowledge graph, shared memory, inventory, and Magit integration",
+        description="Deep native Emacs bridge with bounded Org TODO, Org-roam, shared-memory, inventory, and Magit operations",
     )
 
     def __init__(self) -> None:
@@ -57,6 +57,11 @@ class ZaraEmacsPlugin(ServicePlugin):
             (self.where_is, "emacs.where_is", "Report live key bindings for an Emacs command."),
             (self.key_lookup, "emacs.key_lookup", "Resolve an effective Emacs key sequence in the current buffer."),
             (self.open_daily, "org_roam.open_daily", "Open an Org-roam daily note and request a separate Zara dictation handoff."),
+            (self.todo_list, "org_todo.list", "List bounded canonical Org TODOs through the trusted Emacs adapter."),
+            (self.todo_capture, "org_todo.capture", "Capture a canonical Org TODO with an optional bounded scheduled timestamp."),
+            (self.todo_state, "org_todo.state", "Change one canonical Org TODO state by stable Org ID."),
+            (self.todo_snapshot, "org_todo.snapshot", "Refresh the derived Prolog projection of canonical Org TODO state."),
+            (self.roam_search, "org_roam.search", "Search bounded Org-roam nodes through the trusted Emacs adapter."),
             (self.shared_memory, "org_ql.shared_memory", "Query bounded active shared agent-memory assertions from the full Org graph."),
             (self.inventory, "org_ql.inventory", "Query bounded inventory, food, and stock-event entities from the full Org graph."),
             (self.unresolved_inventory, "inventory.unresolved", "List inventory events that still need a stable Org-roam item ID."),
@@ -165,6 +170,21 @@ class ZaraEmacsPlugin(ServicePlugin):
 
     def open_daily(self, date: str = "today") -> str:
         return self._json(self._client.open_daily(date))
+
+    def todo_list(self, state: str = "active", limit: int = 100) -> str:
+        return self._json(self._client.todo_list(state, limit))
+
+    def todo_capture(self, title: str, scheduled: str = "") -> str:
+        return self._json(self._client.todo_capture(title, scheduled))
+
+    def todo_state(self, todo_id: str, state: str) -> str:
+        return self._json(self._client.todo_state(todo_id, state))
+
+    def todo_snapshot(self) -> str:
+        return self._json(self._client.todo_snapshot())
+
+    def roam_search(self, query: str, limit: int = 50) -> str:
+        return self._json(self._client.roam_search(query, limit))
 
     def shared_memory(self, limit: int = 100) -> str:
         return self._json(self._client.shared_memory(limit))
