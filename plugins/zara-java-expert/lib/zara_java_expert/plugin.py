@@ -26,6 +26,7 @@ MAX_INPUT_KEYS = 32
 MAX_INPUT_LIST = 64
 MAX_STRING_LENGTH = 4096
 MAX_GENERATION = 2_147_483_647
+MAX_RESULT_NODES = 65_536
 REQUEST_ID_RE = re.compile(r"^[!-~]{1,128}$")
 ACTIVATION_ID_RE = re.compile(r"^act:[a-f0-9]{32}$")
 RESULT_VERDICTS = frozenset(
@@ -207,6 +208,63 @@ def _validate_operation_output(operation: str, verdict: str, data: object) -> No
             _validate_output_field(field, data[name])
 
 
+def _validate_result_data_tree(data: Mapping[str, object]) -> None:
+    stack: list[tuple[bool, object]] = [(False, data)]
+    active_containers: set[int] = set()
+    nodes = 0
+    while stack:
+        exiting, current = stack.pop()
+        if exiting:
+            active_containers.remove(id(current))
+            continue
+
+        nodes += 1
+        if nodes > MAX_RESULT_NODES:
+            raise JavaExpertAdapterError("invalid-expert-data-json")
+
+        if isinstance(current, dict):
+            container_id = id(current)
+            if container_id in active_containers:
+                raise JavaExpertAdapterError("invalid-expert-data-json")
+            active_containers.add(container_id)
+            stack.append((True, current))
+            for key, child in current.items():
+                if type(key) is not str:
+                    raise JavaExpertAdapterError("invalid-expert-data-json")
+                stack.append((False, child))
+        elif isinstance(current, (list, tuple)):
+            container_id = id(current)
+            if container_id in active_containers:
+                raise JavaExpertAdapterError("invalid-expert-data-json")
+            active_containers.add(container_id)
+            stack.append((True, current))
+            stack.extend((False, child) for child in current)
+        elif type(current) is float:
+            if not math.isfinite(current):
+                raise JavaExpertAdapterError("invalid-expert-data-json")
+        elif current is None or type(current) in (str, int, bool):
+            continue
+        else:
+            raise JavaExpertAdapterError("invalid-expert-data-json")
+
+
+def _validate_result_payload(
+    result: Mapping[str, object],
+) -> tuple[Mapping[str, object], list[str] | tuple[str, ...]]:
+    data = result.get("data")
+    if not isinstance(data, Mapping):
+        raise JavaExpertAdapterError("invalid-expert-data")
+    _validate_result_data_tree(data)
+
+    evidence_refs = result.get("evidence_refs")
+    if not isinstance(evidence_refs, (list, tuple)):
+        raise JavaExpertAdapterError("invalid-expert-evidence")
+    for evidence_ref in evidence_refs:
+        if type(evidence_ref) is not str or not evidence_ref or len(evidence_ref) > MAX_STRING_LENGTH:
+            raise JavaExpertAdapterError("invalid-expert-evidence")
+    return data, evidence_refs
+
+
 def _operation_descriptor(operation: str) -> dict[str, object]:
     return {
         "operation_id": operation,
@@ -266,6 +324,7 @@ def _validate_result(
         if not isinstance(evidence_refs, (list, tuple)) or evidence_refs:
             raise JavaExpertAdapterError("cancelled-expert-output-leak")
     _validate_operation_output(expert_operation, verdict, result.get("data"))
+    _validate_result_payload(result)
 
 
 class ZaraJavaExpertPlugin(ServicePlugin):

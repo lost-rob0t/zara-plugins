@@ -23,7 +23,7 @@ class FakeRuntime:
     def invoke_capability(self, _handle, request):
         self.requests.append(request)
         runtime_generation=request["expected_runtime_generation"] - 1 if self.stale else request["expected_runtime_generation"]
-        return {"protocol":"ZARA-EXPERT/1","request_id":request["request_id"],"activation_id":request["activation_id"],"expert_id":request["expert_id"],"expert_version":"0.1.0","manifest_digest":MANIFEST_DIGEST,"expert_operation":request["expert_operation"],"resolved_registry_generation":request["expected_registry_generation"],"resolved_runtime_generation":runtime_generation,"verdict":"succeeded","data":{"result":{}},"usage":{"model_calls":self.model_calls},"effect_receipts":self.receipts}
+        return {"protocol":"ZARA-EXPERT/1","request_id":request["request_id"],"activation_id":request["activation_id"],"expert_id":request["expert_id"],"expert_version":"0.1.0","manifest_digest":MANIFEST_DIGEST,"expert_operation":request["expert_operation"],"resolved_registry_generation":request["expected_registry_generation"],"resolved_runtime_generation":runtime_generation,"verdict":"succeeded","data":{"result":{}},"evidence_refs":[],"usage":{"model_calls":self.model_calls},"effect_receipts":self.receipts}
 
 
 class ContractTests(unittest.TestCase):
