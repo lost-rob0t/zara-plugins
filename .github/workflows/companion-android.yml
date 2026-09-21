@@ -184,6 +184,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           name: zara-companion-debug-${{ github.sha }}
@@ -196,6 +199,25 @@ jobs:
           set -euo pipefail
           test "$(cat candidate/SOURCE_SHA.txt)" = "$GITHUB_SHA"
           test "$(sha256sum candidate/zara-companion-debug.apk | awk '{print $1}')" = "$(awk '{print $1}' candidate/SHA256SUMS)"
+          git fetch origin main --tags --force
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "Refusing to publish a source outside main." >&2
+            exit 1
+          fi
+          previous="$(git rev-parse -q --verify 'refs/tags/companion-android-latest^{commit}' || true)"
+          if [[ -n "$previous" && "$previous" != "$GITHUB_SHA" ]]; then
+            if git merge-base --is-ancestor "$GITHUB_SHA" "$previous"; then
+              echo "companion-android-latest already points at a newer main build; keeping it there."
+              exit 0
+            fi
+            if ! git merge-base --is-ancestor "$previous" "$GITHUB_SHA"; then
+              echo "Refusing divergent companion-android-latest history." >&2
+              exit 1
+            fi
+          fi
+          git tag -f companion-android-latest "$GITHUB_SHA"
+          git push --force origin refs/tags/companion-android-latest
+
           mkdir -p release
           cp candidate/zara-companion-debug.apk release/zara-companion-latest.apk
           (cd release && sha256sum zara-companion-latest.apk > zara-companion-latest.apk.sha256)
@@ -210,7 +232,7 @@ jobs:
           notes="Rolling Zara Companion Android alpha from main commit $GITHUB_SHA. Includes the VRM overlay, built-in animation/dances, and on-device genre+tempo dance preference learning. This is a sideloaded update-compatible debug-signed prerelease, not a Play Store production build. Verify the APK with its checksum and manifest."
           if gh release view companion-android-latest >/dev/null 2>&1; then
             gh release upload companion-android-latest release/* --clobber
-            gh release edit companion-android-latest --title "Zara Companion Android latest" --notes "$notes" --prerelease --target "$GITHUB_SHA"
+            gh release edit companion-android-latest --title "Zara Companion Android latest" --notes "$notes" --prerelease
           else
             gh release create companion-android-latest release/* --title "Zara Companion Android latest" --notes "$notes" --prerelease --target "$GITHUB_SHA"
           fi
