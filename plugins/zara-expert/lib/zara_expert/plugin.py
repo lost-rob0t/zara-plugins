@@ -199,13 +199,19 @@ class ZaraExpertPlugin(ServicePlugin):
                 "strange_loop": (
                     self._strange_loop_manager.status()
                     if self._strange_loop_manager is not None
-                    else StrangeLoopManager(
-                        ExpertHost(
-                            self.backend,
-                            state_root=self._state_root / "strange-loop-status",
-                        ),
-                        StrangeLoopConfig(),
-                    ).status()
+                    else {
+                        "enabled": False,
+                        "background": False,
+                        "status": "disabled",
+                        "registered": False,
+                        "tick_count": 0,
+                        "error_count": 0,
+                        "source_count": 0,
+                        "max_iterations": 8,
+                        "max_candidates": 16,
+                        "min_improvement": 0.0,
+                        "model_calls": 0,
+                    }
                 ),
                 "model_calls": 0,
             }
