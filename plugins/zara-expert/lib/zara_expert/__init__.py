@@ -34,7 +34,7 @@ from .language_composition import (
     CoreLanguageFamilyCompositionInvoker,
     LanguageFamilyCompositionInvoker,
 )
-from .lisp_composition import (
+from .lisp_output_contract import (
     CoreLispFamilyCompositionInvoker,
     LispFamilyCompositionInvoker,
 )
