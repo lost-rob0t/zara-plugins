@@ -252,7 +252,7 @@ jobs:
             -u GROQ_API_KEY \
             -u ZAI_API_KEY \
             strace -f -e trace=network -o "$trace" \
-            python3 -m unittest discover -s tests -t . -p 'test_nix_bash_core-explain_e2e.py'
+            python3 -m unittest discover -s tests -t . -p 'test_nix_bash_core_explain_e2e.py'
           if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
             echo 'unexpected IPv4/IPv6 network syscall during pure-symbolic Nix/Bash explanation E2E' >&2
             cat "$trace" >&2
