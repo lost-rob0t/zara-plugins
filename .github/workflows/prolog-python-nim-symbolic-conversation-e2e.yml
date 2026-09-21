@@ -1,0 +1,95 @@
+name: Prolog Python Nim Symbolic Conversation E2E
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/zara-prolog-expert/**'
+      - 'plugins/zara-python-expert/**'
+      - 'plugins/zara-nim-expert/**'
+      - 'plugins/zara-expert/**'
+      - 'tests/test_prolog_python_nim_symbolic_conversation_e2e.py'
+      - '.github/workflows/prolog-python-nim-symbolic-conversation-e2e.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prolog-python-nim-symbolic-conversation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  canonical-symbolic-conversation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Fetch exact current Dotfiles brains
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=fe8f7fa3c42803e0e505dcb6f7e4600d27649d9e
+          rm -rf .ci/dotfiles-prolog-python-nim-conversation
+          git init .ci/dotfiles-prolog-python-nim-conversation
+          git -C .ci/dotfiles-prolog-python-nim-conversation remote add origin https://github.com/lost-rob0t/dotfiles.git
+          git -C .ci/dotfiles-prolog-python-nim-conversation config core.sparseCheckout true
+          mkdir -p .ci/dotfiles-prolog-python-nim-conversation/.git/info
+          printf '%s\n' \
+            '/.zara/experts/prolog/' \
+            '/.zara/experts/python/' \
+            '/.zara/experts/nim/' \
+            '/.zara/experts/language/' \
+            > .ci/dotfiles-prolog-python-nim-conversation/.git/info/sparse-checkout
+          git -C .ci/dotfiles-prolog-python-nim-conversation fetch --depth=1 origin "$revision"
+          git -C .ci/dotfiles-prolog-python-nim-conversation checkout --detach FETCH_HEAD
+          test "$(git -C .ci/dotfiles-prolog-python-nim-conversation rev-parse HEAD)" = "$revision"
+
+      - name: Fetch exact current Zara Core conversation revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=1095bc5537c98c555c29ac29ed335843191c558d
+          rm -rf .ci/zara-core-symbolic-conversation
+          git init .ci/zara-core-symbolic-conversation
+          git -C .ci/zara-core-symbolic-conversation remote add origin https://github.com/lost-rob0t/zara.git
+          git -C .ci/zara-core-symbolic-conversation config core.sparseCheckout true
+          mkdir -p .ci/zara-core-symbolic-conversation/.git/info
+          printf '%s\n' '/zara/' '/modules/' > .ci/zara-core-symbolic-conversation/.git/info/sparse-checkout
+          git -C .ci/zara-core-symbolic-conversation fetch --depth=1 origin "$revision"
+          git -C .ci/zara-core-symbolic-conversation checkout --detach FETCH_HEAD
+          test "$(git -C .ci/zara-core-symbolic-conversation rev-parse HEAD)" = "$revision"
+
+      - name: Install symbolic runtime and network audit tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends swi-prolog-nox strace
+          python3 -m pip install 'pykka>=3.1' 'langchain-core>=0.2'
+
+      - name: Prove real language chain feeds durable pure-symbolic conversation
+        env:
+          ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles-prolog-python-nim-conversation
+          ZARA_CORE_ROOT: ${{ github.workspace }}/.ci/zara-core-symbolic-conversation
+        shell: bash
+        run: |
+          set -euo pipefail
+          trace="$RUNNER_TEMP/prolog-python-nim-symbolic-conversation-network.trace"
+          env \
+            -u OPENAI_API_KEY \
+            -u ANTHROPIC_API_KEY \
+            -u OPENROUTER_API_KEY \
+            -u GOOGLE_API_KEY \
+            -u GEMINI_API_KEY \
+            -u GROQ_API_KEY \
+            -u ZAI_API_KEY \
+            -u AZURE_OPENAI_API_KEY \
+            -u HF_TOKEN \
+            strace -f -e trace=network -o "$trace" \
+            python3 -m unittest discover -s tests -t . -p 'test_prolog_python_nim_symbolic_conversation_e2e.py'
+          if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
+            echo 'unexpected IPv4/IPv6 network syscall during symbolic conversation E2E' >&2
+            cat "$trace" >&2
+            exit 1
+          fi
