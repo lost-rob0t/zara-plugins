@@ -98,7 +98,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          revision=4a7ad7673910e901a09a9e79c81e60bd2aeed8aa
+          revision=4f30f9f18c06ba3a5daf11122e0e2a8af30f7095
           rm -rf .ci/zara-core-current
           git init .ci/zara-core-current
           git -C .ci/zara-core-current remote add origin https://github.com/lost-rob0t/zara.git
