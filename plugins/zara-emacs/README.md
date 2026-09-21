@@ -4,6 +4,13 @@ Deep native Emacs integration for Zara using `emacsclient` only as the transport
 
 ## Operations
 
+## Org TODO / roam adapter ownership
+
+The public tools above never accept raw Elisp. They invoke fixed `command.invoke` adapter IDs over `ZARA-EMACS/1`; an operator configuration must register those adapters inside the running Emacs. If an adapter is absent, the operation fails explicitly.
+
+Org remains the mutable source of truth. `org_todo.snapshot` may produce a Prolog fact projection for deterministic expert reasoning, but that projection is derived/read-only and must never become a competing task database. Task mutation returns to Org through Emacs, then the projection is regenerated.
+
+
 - `emacs.open_scratch`
 - `emacs.open_file(path)` — absolute paths only, executed by the native bridge.
 - `emacs.open_buffer(name)` — compatibility open/switch through the native bridge.
@@ -15,6 +22,11 @@ Deep native Emacs integration for Zara using `emacsclient` only as the transport
 - `emacs.windows`, `emacs.select_window`, `emacs.split_window`, `emacs.delete_window` — selected-frame native window operations using opaque IDs.
 - `emacs.commands`, `emacs.describe_command`, `emacs.where_is`, `emacs.key_lookup` — live command/key introspection against the running Emacs state.
 - `org_roam.open_daily(date=today)` — opens a daily note, then returns `post_open: {request: dictation, started: false}` for Zara Core to consume.
+- `org_todo.list(state=active, limit=100)` — lists canonical Org tasks through a trusted Emacs adapter.
+- `org_todo.capture(title, scheduled="")` — appends a canonical Org task with an optional ISO date/time.
+- `org_todo.state(todo_id, state)` — changes one task by stable Org ID; accepted states are `TODO`, `NEXT`, `WAIT`, `DONE`, and `CANCELLED`.
+- `org_todo.snapshot()` — refreshes the derived Prolog projection of canonical Org task state.
+- `org_roam.search(query, limit=50)` — performs bounded node search through the operator-owned Org-roam adapter.
 - `org_ql.shared_memory(limit=100)` — returns bounded active shared-memory assertions from the full Org graph.
 - `org_ql.inventory(limit=100)` — returns bounded inventory/item/location/food/event rows from structured Org properties.
 - `inventory.unresolved(limit=100)` — lists daily inventory events that do not yet reference a stable item Org ID.
