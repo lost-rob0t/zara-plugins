@@ -10,6 +10,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 ACTIVATION_ID = "act:" + "a" * 32
+INVOCATION_ID = "inv:" + "b" * 32
+_MISSING = object()
 OPERATIONS = {"match", "inspect", "diagnose", "repair.preview", "repair.verify", "style.rules", "explain"}
 CASES = {
     "prolog": ("zara-prolog-expert", "zara_prolog_expert", "Prolog", "zara:expert/prolog", "lost-rob0t/prolog-rlm#495", 495, ".zara/experts/prolog", {"source": "p(x).", "source_generation": "buffer:pl:1"}),
@@ -47,12 +49,22 @@ def _load(package: str, module_name: str):
 
 
 class FakeRuntime:
-    def __init__(self, module, *, model_calls=0, receipts=None, stale=False, usage_extra=False):
+    def __init__(
+        self,
+        module,
+        *,
+        model_calls=0,
+        receipts=None,
+        stale=False,
+        usage_extra=False,
+        invocation_id=INVOCATION_ID,
+    ):
         self.module = module
         self.model_calls = model_calls
         self.receipts = [] if receipts is None else receipts
         self.stale = stale
         self.usage_extra = usage_extra
+        self.invocation_id = invocation_id
         self.requests: list[dict[str, object]] = []
         self.resolved: list[str] = []
 
@@ -75,7 +87,7 @@ class FakeRuntime:
         usage = {"model_calls": self.model_calls}
         if self.usage_extra:
             usage["provider_calls"] = 0
-        return {
+        result = {
             "protocol": self.module.PROTOCOL,
             "request_id": request["request_id"],
             "activation_id": request["activation_id"],
@@ -91,6 +103,9 @@ class FakeRuntime:
             "usage": usage,
             "effect_receipts": self.receipts,
         }
+        if self.invocation_id is not _MISSING:
+            result["invocation_id"] = self.invocation_id
+        return result
 
 
 class PrologPythonNimProductPackageTests(unittest.TestCase):
@@ -131,6 +146,7 @@ class PrologPythonNimProductPackageTests(unittest.TestCase):
             result = json.loads(plugin.invoke("request-1", ACTIVATION_ID, "inspect", 7, 11, json.dumps(inspect_payload)))
             self.assertEqual(runtime.resolved, ["expert.invoke"], language)
             self.assertEqual(runtime.requests[0]["limits"]["max_model_calls"], 0, language)
+            self.assertEqual(result["invocation_id"], INVOCATION_ID, language)
             self.assertEqual(result["usage"], {"model_calls": 0}, language)
             self.assertEqual(result["effect_receipts"], [], language)
 
@@ -152,6 +168,30 @@ class PrologPythonNimProductPackageTests(unittest.TestCase):
                 broken.start(broken_runtime)
                 with self.assertRaisesRegex(error_class, message, msg=language):
                     broken.invoke("request-bad", ACTIVATION_ID, "inspect", 7, 11, json.dumps(inspect_payload))
+
+    def test_host_invocation_identity_fails_closed_before_projection(self):
+        invalid_ids = (
+            _MISSING,
+            None,
+            123,
+            "",
+            "inv:" + "a" * 31,
+            "inv:" + "a" * 33,
+            "inv:" + "A" * 32,
+            "inv:" + "g" * 32,
+        )
+        for language, (package, module_name, class_name, _, _, _, _, inspect_payload) in CASES.items():
+            module = _load(package, module_name)
+            plugin_class = getattr(module, f"Zara{class_name}ExpertPlugin")
+            error_class = getattr(module, f"{class_name}ExpertAdapterError")
+            for invocation_id in invalid_ids:
+                with self.subTest(language=language, invocation_id=invocation_id):
+                    runtime = FakeRuntime(module, invocation_id=invocation_id)
+                    plugin = plugin_class()
+                    plugin.start(runtime)
+                    with self.assertRaisesRegex(error_class, "invalid-expert-invocation-id"):
+                        plugin.invoke("request-id-fence", ACTIVATION_ID, "inspect", 7, 11, json.dumps(inspect_payload))
+                    self.assertEqual(runtime.requests[0]["limits"]["max_model_calls"], 0)
 
     def test_source_locks_bind_canonical_dotfiles_and_prolog_rlm_contracts(self):
         for language, (package, _, _, expert_id, _, runtime_issue, source_path, _) in CASES.items():

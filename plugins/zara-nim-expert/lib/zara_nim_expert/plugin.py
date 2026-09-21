@@ -25,6 +25,7 @@ MAX_GENERATION = 2_147_483_647
 MAX_EVIDENCE_REFS = 32
 REQUEST_ID_RE = re.compile(r"^[!-~]{1,128}$")
 ACTIVATION_ID_RE = re.compile(r"^act:[a-f0-9]{32}$")
+INVOCATION_ID_RE = re.compile(r"^inv:[a-f0-9]{32}$")
 RESULT_VERDICTS = frozenset({"succeeded", "failed", "unknown", "blocked", "unsupported", "cancelled", "error"})
 RESULT_FIELDS = frozenset({"protocol", "request_id", "invocation_id", "activation_id", "expert_id", "expert_version", "manifest_digest", "expert_operation", "resolved_registry_generation", "resolved_runtime_generation", "verdict", "data", "evidence_refs", "usage", "effect_receipts", "error_code", "error_message", "replayed"})
 USAGE_FIELDS = frozenset({"model_calls"})
@@ -133,6 +134,9 @@ def _validate_output(operation: str, verdict: str, data: object) -> None:
 def _validate_result(result: Mapping[str, object], *, request_id: str, activation_id: str, operation: str, registry_generation: int, runtime_generation: int) -> None:
     if any(type(field) is not str or field not in RESULT_FIELDS for field in result):
         raise NimExpertAdapterError("unknown-expert-result-field")
+    invocation_id = result.get("invocation_id")
+    if type(invocation_id) is not str or INVOCATION_ID_RE.fullmatch(invocation_id) is None:
+        raise NimExpertAdapterError("invalid-expert-invocation-id")
     expected = {"protocol": PROTOCOL, "request_id": request_id, "activation_id": activation_id, "expert_id": EXPERT_ID, "expert_version": PLUGIN_VERSION, "manifest_digest": MANIFEST_DIGEST, "expert_operation": operation}
     if any(result.get(key) != value for key, value in expected.items()):
         raise NimExpertAdapterError("expert-result-identity-mismatch")
