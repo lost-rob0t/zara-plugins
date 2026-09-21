@@ -215,7 +215,7 @@ class ZaraPrologExpertPlugin(ServicePlugin):
         name=PACKAGE_NAMESPACE,
         version=PLUGIN_VERSION,
         api_version="1",
-        description="Pure-symbolic PrologExpert adapter over Zara's canonical expert host",
+        description="Pure-symbolic PrologExpert adapter over the canonical Zara expert host",
     )
 
     def __init__(self) -> None:
