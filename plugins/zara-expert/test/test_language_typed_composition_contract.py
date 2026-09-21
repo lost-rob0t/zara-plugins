@@ -7,7 +7,11 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
-from zara_expert.composition import InvocationFence, SharedSymbolicBudget
+from zara_expert.composition import (
+    CompositionError,
+    InvocationFence,
+    SharedSymbolicBudget,
+)
 from zara_expert.language_composition import (
     CoreLanguageFamilyCompositionInvoker,
     LanguageFamilyCompositionInvoker,
@@ -22,6 +26,12 @@ EXPERT_IDS = (
     "zara:expert/typescript",
     "zara:expert/java",
     "zara:expert/kotlin",
+)
+
+PRIMARY_EXPERT_IDS = (
+    "zara:expert/prolog",
+    "zara:expert/python",
+    "zara:expert/nim",
 )
 
 FOUR_LANGUAGE_EXPERT_IDS = (
@@ -45,6 +55,16 @@ class StaticRegistry:
     def invoke(self, handle, operation, payload, *, limits):
         self.calls.append((handle, operation, dict(payload), limits))
         return self.result
+
+
+class _ForgedText:
+    """Object that must never acquire trust by stringification after replay."""
+
+    def __init__(self, rendered):
+        self.rendered = rendered
+
+    def __str__(self):
+        return self.rendered
 
 
 class TypedLanguageCompositionContractTests(unittest.TestCase):
@@ -172,6 +192,117 @@ class TypedLanguageCompositionContractTests(unittest.TestCase):
                 self.assertNotIn("result", outcome.data)
                 self.assertEqual(outcome.model_calls, 0)
                 self.assertEqual(registry.calls[0][3].max_model_calls, 0)
+
+    def test_primary_direct_composition_rejects_replayed_non_string_evidence_refs(self):
+        invoker = LanguageFamilyCompositionInvoker(object())
+
+        for expert_id in PRIMARY_EXPERT_IDS:
+            with self.subTest(expert_id=expert_id):
+                fake_handler = lambda **_kwargs: {
+                    "verdict": "succeeded",
+                    "data": {"diagnostics": ["diagnostic(symbolic)."]},
+                    "evidence_refs": [_ForgedText("evidence:language:sha256:forged")],
+                    "usage": {"model_calls": 0},
+                    "effect_receipts": [],
+                }
+                with patch(
+                    "zara_expert.language_composition.make_language_expert_handler",
+                    return_value=fake_handler,
+                ):
+                    with self.assertRaisesRegex(
+                        CompositionError,
+                        "evidence_refs must contain exact strings",
+                    ):
+                        invoker(
+                            expert_id,
+                            "diagnose",
+                            {
+                                "source": "symbolic source",
+                                "source_generation": "generation:replay",
+                            },
+                            budget=SharedSymbolicBudget(max_model_calls=0),
+                            fence=self._fence(),
+                            parent_path=(),
+                        )
+
+    def test_primary_core_composition_rejects_replayed_non_string_evidence_refs(self):
+        for expert_id in PRIMARY_EXPERT_IDS:
+            with self.subTest(expert_id=expert_id):
+                result = SimpleNamespace(
+                    verdict=SimpleNamespace(value="succeeded"),
+                    data={"diagnostics": ["diagnostic(symbolic)."]},
+                    evidence_refs=(_ForgedText("evidence:language:sha256:forged"),),
+                    usage={"model_calls": 0},
+                    effect_receipts=(),
+                )
+                registry = StaticRegistry(result)
+                handle = SimpleNamespace(expert_id=expert_id, workspace="workspace-typed")
+                invoker = CoreLanguageFamilyCompositionInvoker(
+                    registry,
+                    activation_for=lambda _expert_id, _fence, handle=handle: handle,
+                    limits_factory=CoreLimits,
+                )
+
+                with self.assertRaisesRegex(
+                    CompositionError,
+                    "evidence_refs must contain exact strings",
+                ):
+                    invoker(
+                        expert_id,
+                        "diagnose",
+                        {
+                            "source": "symbolic source",
+                            "source_generation": "generation:replay",
+                        },
+                        budget=SharedSymbolicBudget(max_model_calls=0),
+                        fence=self._fence(),
+                        parent_path=(),
+                    )
+
+    def test_primary_core_composition_rejects_replayed_non_string_explanation_items(self):
+        malformed_cases = (
+            {
+                "symbolic_terms": ["decision(symbolic)."],
+                "trace": [_ForgedText("rule:forged")],
+            },
+            {
+                "symbolic_terms": [_ForgedText("decision(forged).")],
+                "trace": [],
+            },
+        )
+        for expert_id in PRIMARY_EXPERT_IDS:
+            for explanation in malformed_cases:
+                with self.subTest(expert_id=expert_id, explanation=explanation):
+                    result = SimpleNamespace(
+                        verdict=SimpleNamespace(value="succeeded"),
+                        data={"explanation": explanation},
+                        evidence_refs=("evidence:language:sha256:trusted",),
+                        usage={"model_calls": 0},
+                        effect_receipts=(),
+                    )
+                    registry = StaticRegistry(result)
+                    handle = SimpleNamespace(expert_id=expert_id, workspace="workspace-typed")
+                    invoker = CoreLanguageFamilyCompositionInvoker(
+                        registry,
+                        activation_for=lambda _expert_id, _fence, handle=handle: handle,
+                        limits_factory=CoreLimits,
+                    )
+
+                    with self.assertRaisesRegex(
+                        CompositionError,
+                        "typed language explanation .* exact strings",
+                    ):
+                        invoker(
+                            expert_id,
+                            "explain",
+                            {
+                                "decision_ref": "decision:replay",
+                                "source_generation": "generation:replay",
+                            },
+                            budget=SharedSymbolicBudget(max_model_calls=0),
+                            fence=self._fence(),
+                            parent_path=(),
+                        )
 
 
 if __name__ == "__main__":
