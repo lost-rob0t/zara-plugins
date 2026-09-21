@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -18,6 +19,7 @@ _EXPERT_IDS = frozenset(spec.expert_id for spec in language_family_specs())
 _EXPERT_KEYS = frozenset(spec.key for spec in language_family_specs())
 _RESULT_VARIABLE = {"var": "Result"}
 _MAX_CORE_EVIDENCE_REFS = 32
+_MAX_JSON_INPUT_DEPTH = 64
 _VERIFIED_OUTCOME_REF_RE = re.compile(
     r"^zara\.verified-outcome/v1:(?:effect|outcome):"
     r"[A-Za-z0-9][A-Za-z0-9._:/#-]{0,383}$"
@@ -57,12 +59,71 @@ def _canonical_expert_id(expert_id: str) -> str:
     raise ExpertError(f"unknown language expert: {expert_id!r}")
 
 
+def _ground_json_value(
+    value: Any,
+    *,
+    ancestors: set[int] | None = None,
+    depth: int = 0,
+) -> bool:
+    """Return whether caller data is finite, ground JSON with no variable shape."""
+
+    if depth > _MAX_JSON_INPUT_DEPTH:
+        return False
+    if value is None or type(value) in {bool, int, str}:
+        return True
+    if type(value) is float:
+        return math.isfinite(value)
+
+    if type(value) is list:
+        identity = id(value)
+        seen = ancestors if ancestors is not None else set()
+        if identity in seen:
+            return False
+        seen.add(identity)
+        try:
+            return all(
+                _ground_json_value(item, ancestors=seen, depth=depth + 1)
+                for item in value
+            )
+        finally:
+            seen.remove(identity)
+
+    if type(value) is dict:
+        if any(type(key) is not str for key in value):
+            return False
+        # ``{"var": ...}`` is the registered-predicate ABI's Prolog variable
+        # descriptor. Caller-owned objects must remain inert ground JSON and can
+        # never manufacture the host-owned final result variable, even nested.
+        if "var" in value:
+            return False
+        identity = id(value)
+        seen = ancestors if ancestors is not None else set()
+        if identity in seen:
+            return False
+        seen.add(identity)
+        try:
+            return all(
+                _ground_json_value(item, ancestors=seen, depth=depth + 1)
+                for item in value.values()
+            )
+        finally:
+            seen.remove(identity)
+
+    return False
+
+
 def _valid_operation_input(field_type: str, value: Any) -> bool:
     if field_type in {"string", "reference"}:
         return type(value) is str
     if field_type == "object":
-        return isinstance(value, Mapping)
+        return type(value) is dict
     raise ExpertError(f"unsupported language expert input schema type: {field_type!r}")
+
+
+def _valid_operation_input_value(field_type: str, value: Any) -> bool:
+    if field_type == "object":
+        return _ground_json_value(value)
+    return True
 
 
 def _operation_arguments(expert_operation: str, payload: dict[str, Any]) -> list[Any]:
@@ -99,6 +160,11 @@ def _operation_arguments(expert_operation: str, payload: dict[str, Any]) -> list
             raise ExpertError(
                 f"invalid input field type for {expert_operation!r}: "
                 f"{name!r} must be {field['type']!r}"
+            )
+        if not _valid_operation_input_value(field["type"], payload[name]):
+            raise ExpertError(
+                f"invalid input field value for {expert_operation!r}: "
+                f"{name!r} must be finite ground JSON"
             )
 
     # Registered language predicates reserve their final argument for this
