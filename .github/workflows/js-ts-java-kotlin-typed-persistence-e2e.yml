@@ -1,0 +1,99 @@
+name: JS TS Java Kotlin Typed Persistence E2E
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/zara-javascript-expert/**'
+      - 'plugins/zara-typescript-expert/**'
+      - 'plugins/zara-java-expert/**'
+      - 'plugins/zara-kotlin-expert/**'
+      - 'plugins/zara-expert/**'
+      - 'tests/test_js_ts_java_kotlin_typed_persistence_e2e.py'
+      - '.github/workflows/js-ts-java-kotlin-typed-persistence-e2e.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: js-ts-java-kotlin-typed-persistence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  canonical-typed-persistence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Fetch exact current Dotfiles brains
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=3309c54ecb5f65c29374de6c60d2135a9ea2f94b
+          root=.ci/dotfiles-js-ts-java-kotlin-typed
+          rm -rf "$root"
+          git init "$root"
+          git -C "$root" remote add origin https://github.com/lost-rob0t/dotfiles.git
+          git -C "$root" config core.sparseCheckout true
+          mkdir -p "$root/.git/info"
+          printf '%s\n' \
+            '/.zara/experts/javascript/' \
+            '/.zara/experts/typescript/' \
+            '/.zara/experts/java/' \
+            '/.zara/experts/kotlin/' \
+            '/.zara/experts/language/' \
+            > "$root/.git/info/sparse-checkout"
+          git -C "$root" fetch --depth=1 origin "$revision"
+          git -C "$root" checkout --detach FETCH_HEAD
+          test "$(git -C "$root" rev-parse HEAD)" = "$revision"
+
+      - name: Fetch exact current Zara Core conversation contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=af7185ee48def384783002332262412e9674343e
+          root=.ci/zara-core-js-ts-java-kotlin-typed
+          rm -rf "$root"
+          git init "$root"
+          git -C "$root" remote add origin https://github.com/lost-rob0t/zara.git
+          git -C "$root" config core.sparseCheckout true
+          mkdir -p "$root/.git/info"
+          printf '%s\n' '/zara/' '/modules/' '/android/' > "$root/.git/info/sparse-checkout"
+          git -C "$root" fetch --depth=1 origin "$revision"
+          git -C "$root" checkout --detach FETCH_HEAD
+          test "$(git -C "$root" rev-parse HEAD)" = "$revision"
+
+      - name: Install symbolic runtime and network audit tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends swi-prolog-nox strace
+          python3 -m pip install 'pykka>=3.1' 'langchain-core>=0.2'
+
+      - name: Prove typed four-language evidence survives restart and fences stale projects
+        env:
+          ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles-js-ts-java-kotlin-typed
+          ZARA_CURRENT_CORE_ROOT: ${{ github.workspace }}/.ci/zara-core-js-ts-java-kotlin-typed
+        shell: bash
+        run: |
+          set -euo pipefail
+          trace="$RUNNER_TEMP/js-ts-java-kotlin-typed-persistence-network.trace"
+          env \
+            -u OPENAI_API_KEY \
+            -u ANTHROPIC_API_KEY \
+            -u OPENROUTER_API_KEY \
+            -u GOOGLE_API_KEY \
+            -u GEMINI_API_KEY \
+            -u GROQ_API_KEY \
+            -u ZAI_API_KEY \
+            -u AZURE_OPENAI_API_KEY \
+            -u HF_TOKEN \
+            strace -f -e trace=network -o "$trace" \
+            python3 -m unittest discover -s tests -t . -p 'test_js_ts_java_kotlin_typed_persistence_e2e.py'
+          if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
+            echo 'unexpected IPv4/IPv6 network syscall during typed persistence E2E' >&2
+            cat "$trace" >&2
+            exit 1
+          fi
