@@ -1,0 +1,108 @@
+name: Lisp Unsupported Follow-up E2E
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/zara-expert/**'
+      - 'tests/test_lisp_current_core_delegation_e2e.py'
+      - 'tests/test_lisp_symbolic_conversation_e2e.py'
+      - 'tests/test_lisp_unsupported_followup_e2e.py'
+      - '.github/workflows/lisp-unsupported-followup-e2e.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'plugins/zara-expert/**'
+      - 'tests/test_lisp_current_core_delegation_e2e.py'
+      - 'tests/test_lisp_symbolic_conversation_e2e.py'
+      - 'tests/test_lisp_unsupported_followup_e2e.py'
+      - '.github/workflows/lisp-unsupported-followup-e2e.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisp-unsupported-followup-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  canonical-unsupported-followup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Fetch exact current Dotfiles Lisp brains
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=97534b85f96a5ae7962762268440fb9ae7815ae0
+          root=.ci/dotfiles-lisp-unsupported
+          rm -rf "$root"
+          git init "$root"
+          git -C "$root" remote add origin https://github.com/lost-rob0t/dotfiles.git
+          git -C "$root" config core.sparseCheckout true
+          mkdir -p "$root/.git/info"
+          printf '%s\n' \
+            '/.zara/experts/lisp/' \
+            '/.zara/experts/common-lisp/' \
+            '/.zara/experts/emacs-lisp/' \
+            > "$root/.git/info/sparse-checkout"
+          git -C "$root" fetch --depth=1 origin "$revision"
+          git -C "$root" checkout --detach FETCH_HEAD
+          test "$(git -C "$root" rev-parse HEAD)" = "$revision"
+
+      - name: Fetch exact current Zara conversation contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=5cb27a3504720d98f978130bd7317727ba334c70
+          root=.ci/zara-core-lisp-unsupported
+          rm -rf "$root"
+          git init "$root"
+          git -C "$root" remote add origin https://github.com/lost-rob0t/zara.git
+          git -C "$root" config core.sparseCheckout true
+          mkdir -p "$root/.git/info"
+          printf '%s\n' \
+            '/zara/' \
+            '/modules/' \
+            '/android/app/src/main/java/ai/zara/app/history/SymbolicConversationProjection.kt' \
+            > "$root/.git/info/sparse-checkout"
+          git -C "$root" fetch --depth=1 origin "$revision"
+          git -C "$root" checkout --detach FETCH_HEAD
+          test "$(git -C "$root" rev-parse HEAD)" = "$revision"
+
+      - name: Install symbolic runtime and network audit tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends swi-prolog-nox strace
+          python3 -m pip install 'pykka>=3.1' 'langchain-core>=0.2'
+
+      - name: Prove unsupported Lisp follow-up fails closed after restart
+        env:
+          ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles-lisp-unsupported
+          ZARA_CORE_ROOT: ${{ github.workspace }}/.ci/zara-core-lisp-unsupported
+        shell: bash
+        run: |
+          set -euo pipefail
+          trace="$RUNNER_TEMP/lisp-unsupported-followup-network.trace"
+          env \
+            -u OPENAI_API_KEY \
+            -u ANTHROPIC_API_KEY \
+            -u OPENROUTER_API_KEY \
+            -u GOOGLE_API_KEY \
+            -u GEMINI_API_KEY \
+            -u GROQ_API_KEY \
+            -u ZAI_API_KEY \
+            -u AZURE_OPENAI_API_KEY \
+            -u HF_TOKEN \
+            strace -f -e trace=network -o "$trace" \
+            python3 -m unittest -v tests.test_lisp_unsupported_followup_e2e
+          if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
+            echo 'unexpected IPv4/IPv6 network syscall during unsupported Lisp follow-up E2E' >&2
+            cat "$trace" >&2
+            exit 1
+          fi
