@@ -266,7 +266,7 @@ def _validate_result(
     ):
         raise JavaScriptExpertAdapterError("stale-expert-result")
     verdict = result.get("verdict")
-    if verdict not in RESULT_VERDICTS:
+    if type(verdict) is not str or verdict not in RESULT_VERDICTS:
         raise JavaScriptExpertAdapterError("invalid-expert-verdict")
     usage = result.get("usage")
     model_calls = usage.get("model_calls") if isinstance(usage, Mapping) else None
@@ -369,7 +369,7 @@ class ZaraJavaScriptExpertPlugin(ServicePlugin):
         expected_runtime_generation: int,
         input_json: str = "{}",
     ) -> str:
-        if expert_operation not in ALLOWED_OPERATIONS:
+        if type(expert_operation) is not str or expert_operation not in ALLOWED_OPERATIONS:
             raise JavaScriptExpertAdapterError("unsupported-expert-operation")
         request_id = _validate_request_id(request_id)
         activation_id = _validate_activation_id(activation_id)
