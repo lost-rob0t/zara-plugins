@@ -26,21 +26,17 @@ class _ServicePlugin:
 def _load_plugin(package: str, module_name: str):
     dependency_names = ("zara", "zara.plugins")
     previous = {name: sys.modules.get(name) for name in dependency_names}
-
     zara = types.ModuleType("zara")
     zara_plugins = types.ModuleType("zara.plugins")
     zara_plugins.PluginMetadata = _PluginMetadata
     zara_plugins.ServicePlugin = _ServicePlugin
     zara.plugins = zara_plugins
-
     sys.modules["zara"] = zara
     sys.modules["zara.plugins"] = zara_plugins
-
     try:
         path = REPO_ROOT / "plugins" / package / "lib" / module_name / "plugin.py"
         spec = importlib.util.spec_from_file_location(
-            f"result_output_schema_{module_name}",
-            path,
+            f"result_output_schema_{module_name}", path
         )
         assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
@@ -58,7 +54,6 @@ JAVASCRIPT = _load_plugin("zara-javascript-expert", "zara_javascript_expert")
 TYPESCRIPT = _load_plugin("zara-typescript-expert", "zara_typescript_expert")
 JAVA = _load_plugin("zara-java-expert", "zara_java_expert")
 KOTLIN = _load_plugin("zara-kotlin-expert", "zara_kotlin_expert")
-
 EXPERTS = (
     (JAVASCRIPT, JAVASCRIPT.JavaScriptExpertAdapterError),
     (TYPESCRIPT, TYPESCRIPT.TypeScriptExpertAdapterError),
@@ -87,7 +82,13 @@ VALID_OUTPUTS: Mapping[str, dict[str, object]] = {
 }
 
 
-def _result(module, operation: str, data: object) -> dict[str, object]:
+def _result(
+    module,
+    operation: str,
+    data: object,
+    *,
+    verdict: str = "succeeded",
+) -> dict[str, object]:
     return {
         "protocol": module.PROTOCOL,
         "request_id": REQUEST_ID,
@@ -98,16 +99,22 @@ def _result(module, operation: str, data: object) -> dict[str, object]:
         "expert_operation": operation,
         "resolved_registry_generation": EXPECTED_GENERATION,
         "resolved_runtime_generation": EXPECTED_GENERATION,
-        "verdict": "succeeded",
+        "verdict": verdict,
         "data": data,
         "usage": {"model_calls": 0},
         "effect_receipts": [],
     }
 
 
-def _validate(module, operation: str, data: object) -> None:
+def _validate(
+    module,
+    operation: str,
+    data: object,
+    *,
+    verdict: str = "succeeded",
+) -> None:
     module._validate_result(
-        _result(module, operation, data),
+        _result(module, operation, data, verdict=verdict),
         request_id=REQUEST_ID,
         activation_id=ACTIVATION_ID,
         expert_operation=operation,
@@ -117,6 +124,17 @@ def _validate(module, operation: str, data: object) -> None:
 
 
 class FourLanguageResultOutputSchemaTests(unittest.TestCase):
+    def test_all_package_descriptors_publish_the_closed_canonical_output_schema(self) -> None:
+        for module, _error_type in EXPERTS:
+            self.assertEqual(set(module.OPERATION_OUTPUT_FIELDS), set(VALID_OUTPUTS))
+            for operation in VALID_OUTPUTS:
+                with self.subTest(expert_id=module.EXPERT_ID, operation=operation):
+                    descriptor = module._operation_descriptor(operation)
+                    self.assertEqual(
+                        descriptor["output_schema"]["fields"],
+                        [dict(field) for field in module.OPERATION_OUTPUT_FIELDS[operation]],
+                    )
+
     def test_canonical_declared_outputs_remain_accepted(self) -> None:
         for module, _error_type in EXPERTS:
             for operation, data in VALID_OUTPUTS.items():
@@ -168,6 +186,18 @@ class FourLanguageResultOutputSchemaTests(unittest.TestCase):
             with self.subTest(expert_id=module.EXPERT_ID):
                 with self.assertRaisesRegex(error_type, "invalid-expert-output"):
                     _validate(module, "inspect", data)
+
+    def test_empty_cancelled_output_is_accepted_but_provider_shaped_cancelled_data_is_not(self) -> None:
+        for module, error_type in EXPERTS:
+            with self.subTest(expert_id=module.EXPERT_ID):
+                _validate(module, "inspect", {}, verdict="cancelled")
+                with self.assertRaisesRegex(error_type, "invalid-expert-output"):
+                    _validate(
+                        module,
+                        "inspect",
+                        {"renderer_fallback": "provider"},
+                        verdict="cancelled",
+                    )
 
 
 if __name__ == "__main__":
