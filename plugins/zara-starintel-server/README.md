@@ -10,6 +10,18 @@
 
 The plugin does not bypass StarIntel authorization. Zara can do everything permitted by the configured API key's scopes, including document and target operations, user and credential administration, and destructive operations.
 
+## StarKB agent/expert
+
+StarKB publishes a `ZARA-EXPERT/1` service descriptor through Zara's canonical symbol registry when that registry is available. Its public service capabilities are:
+
+- `star-kb.descriptor` — inspect the service-expert descriptor and current availability.
+- `star-kb.observe` — read live server capabilities and the operation manifest.
+- `star-kb.plan` — deterministically rank live operations against a goal. Write-capable operations are excluded by default.
+- `star-kb.explain` — explain the read-only operation selection.
+- `star-kb.run` — execute an admitted bounded plan. It defaults to dry-run; write operations require explicit admission and, by default, an `Idempotency-Key`.
+
+The planner is zero-model and manifest-grounded. It does not fabricate API routes, bypass StarIntel scopes, or turn discovery metadata into authority. Zara Core still owns plugin activation, capability authorization, cancellation, and approval boundaries.
+
 ## Zara tools
 
 - `starintel_status` — show secret-safe local configuration state and optionally call `GET /health`.
