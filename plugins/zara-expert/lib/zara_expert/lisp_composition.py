@@ -101,6 +101,10 @@ def _validated_lisp_payload(
     operation: str,
     input_data: Mapping[str, Any],
 ) -> dict[str, Any]:
+    if type(expert_id) is not str:
+        raise CompositionError("Lisp expert identity must be a string")
+    if type(operation) is not str:
+        raise CompositionError("Lisp expert operation must be a string")
     if expert_id not in _LISP_EXPERT_IDS:
         raise CompositionError(f"unsupported Lisp expert: {expert_id!r}")
     if not isinstance(input_data, Mapping):
