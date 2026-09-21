@@ -1,7 +1,6 @@
 """Stage the existing lockfile-pinned renderer dependencies; never fetch at runtime."""
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
 from pathlib import Path
@@ -41,16 +40,28 @@ def stage(output: Path, renderer: Path = BASE.parent / "renderer") -> None:
             target = root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
+            if target.suffix == ".js":
+                text = target.read_text()
+                replacement = (
+                    "../../../build/three.module.js"
+                    if package == "three" and "/examples/jsm/" in "/" + relative.as_posix()
+                    else "../three/build/three.module.js"
+                    if package == "@pixiv/three-vrm"
+                    else None
+                )
+                if replacement is not None:
+                    text = text.replace("from 'three'", f"from '{replacement}'")
+                    text = text.replace('from "three"', f'from "{replacement}"')
+                    target.write_text(text)
+                if "from 'three'" in text or 'from "three"' in text:
+                    raise ValueError(f"Unresolved bare three import in {relative}")
             receipt.append({"path": str(relative), "package": package, "version": version,
                             "npm_integrity": integrity, "sha256": hashlib.sha256(target.read_bytes()).hexdigest()})
-        imports = json.dumps({"imports": {"three": "/vendor/three/build/three.module.js",
-            "three/addons/": "/vendor/three/examples/jsm/", "@pixiv/three-vrm": "/vendor/three-vrm/three-vrm.module.js"}}, separators=(",", ":"))
-        script_hash = base64.b64encode(hashlib.sha256(imports.encode()).digest()).decode()
-        (root / "index.html").write_text(f'''<!doctype html>
+        (root / "index.html").write_text('''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-{script_hash}'; style-src 'self'; img-src blob: data:; connect-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src blob: data:; connect-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Zara Companion</title><link rel="stylesheet" href="/style.css">
-<script type="importmap">{imports}</script><script type="module" src="/scene.mjs"></script>
+<script type="module" src="/scene.mjs"></script>
 </head><body><div id="status" role="status">Loading avatar…</div></body></html>''')
         (root / "dependencies.json").write_text(json.dumps(receipt, indent=2) + "\n")
         destination = output / "companion"
