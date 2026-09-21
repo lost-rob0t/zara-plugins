@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
-from zara_expert.domain import ExpertHost
+from zara_expert.domain import ExpertError, ExpertHost
 from zara_expert.lisp_family import make_lisp_expert_handler, register_lisp_family
 
 
@@ -28,6 +28,31 @@ class TraceBackend:
             "ok": True,
             "results": ["symbolic-result"],
             "trace": ["provider:openai", "registered-predicate"],
+        }
+
+
+class CanonicalLookingHostTerm:
+    def __str__(self):
+        return f"evidence:lisp:sha256:{'0' * 64}"
+
+
+class ObjectTraceBackend:
+    def run(self, request):
+        del request
+        return {
+            "ok": True,
+            "results": ["symbolic-result"],
+            "trace": [CanonicalLookingHostTerm()],
+        }
+
+
+class ObjectResultBackend:
+    def run(self, request):
+        del request
+        return {
+            "ok": True,
+            "results": [CanonicalLookingHostTerm()],
+            "trace": [],
         }
 
 
@@ -76,6 +101,34 @@ class LispHandlerEvidenceTests(unittest.TestCase):
             self.assertNotIn("registered-predicate", outcome["evidence_refs"])
             self.assertEqual(outcome["usage"], {"model_calls": 0})
             self.assertEqual(outcome["effect_receipts"], [])
+
+    def test_registered_host_trace_rejects_stringifiable_object_before_hashing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            brain = root / "expert.pl"
+            brain.write_text("% canonical symbolic fixture\n", encoding="utf-8")
+            host = ExpertHost(ObjectTraceBackend(), state_root=root / "state")
+            register_lisp_family(host, {"lisp": [brain]})
+
+            with self.assertRaisesRegex(ExpertError, "trace entries must be strings"):
+                make_lisp_expert_handler(host, "zara:expert/lisp")(
+                    expert_operation="structural.check",
+                    arguments=["(x)"],
+                )
+
+    def test_registered_host_result_rejects_stringifiable_object_before_hashing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            brain = root / "expert.pl"
+            brain.write_text("% canonical symbolic fixture\n", encoding="utf-8")
+            host = ExpertHost(ObjectResultBackend(), state_root=root / "state")
+            register_lisp_family(host, {"lisp": [brain]})
+
+            with self.assertRaisesRegex(ExpertError, "result entries must be strings"):
+                make_lisp_expert_handler(host, "zara:expert/lisp")(
+                    expert_operation="structural.check",
+                    arguments=["(x)"],
+                )
 
 
 if __name__ == "__main__":

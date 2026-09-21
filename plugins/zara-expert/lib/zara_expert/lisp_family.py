@@ -219,8 +219,8 @@ def _core_operation_arguments(
     return [*public_arguments, dict(_RESULT_VARIABLE)]
 
 
-def _content_addressed_evidence_ref(item: Any) -> str:
-    encoded = str(item).encode("utf-8", errors="strict")
+def _content_addressed_evidence_ref(item: str) -> str:
+    encoded = item.encode("utf-8", errors="strict")
     digest = hashlib.sha256(encoded).hexdigest()
     return f"evidence:lisp:sha256:{digest}"
 
@@ -234,6 +234,8 @@ def _core_evidence_refs(result: Mapping[str, Any]) -> list[str]:
     if len(raw_trace) > _MAX_CORE_EVIDENCE_REFS:
         raise ExpertError(f"Lisp expert trace exceeds {_MAX_CORE_EVIDENCE_REFS} entries")
     if raw_trace:
+        if any(not isinstance(item, str) for item in raw_trace):
+            raise ExpertError("Lisp expert trace entries must be strings")
         return [_content_addressed_evidence_ref(item) for item in raw_trace]
 
     raw_results = result.get("results", ())
@@ -241,6 +243,8 @@ def _core_evidence_refs(result: Mapping[str, Any]) -> list[str]:
         raise ExpertError("Lisp expert results must be a sequence")
     if len(raw_results) > _MAX_CORE_EVIDENCE_REFS:
         raise ExpertError(f"Lisp expert evidence exceeds {_MAX_CORE_EVIDENCE_REFS} entries")
+    if any(not isinstance(item, str) for item in raw_results):
+        raise ExpertError("Lisp expert result entries must be strings")
 
     return [_content_addressed_evidence_ref(item) for item in raw_results]
 
