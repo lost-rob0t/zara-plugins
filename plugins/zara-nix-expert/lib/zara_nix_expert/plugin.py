@@ -26,6 +26,8 @@ MAX_OBJECT_PROPERTIES = 128
 MAX_ARRAY_ITEMS = 256
 MAX_KEY_LENGTH = 128
 MAX_STRING_LENGTH = 4096
+MAX_EVIDENCE_REFS = 32
+MAX_EVIDENCE_REF_LENGTH = 128
 MAX_GENERATION = 2147483647
 REQUEST_ID_RE = re.compile(r"^[!-~]{1,128}$")
 ACTIVATION_ID_RE = re.compile(r"^act:[a-f0-9]{32}$")
@@ -243,8 +245,14 @@ def _validate_result_payload(result: Mapping[str, object]) -> tuple[Mapping[str,
     evidence_refs = result.get("evidence_refs")
     if not isinstance(evidence_refs, (list, tuple)):
         raise NixExpertAdapterError("invalid-expert-evidence")
+    if len(evidence_refs) > MAX_EVIDENCE_REFS:
+        raise NixExpertAdapterError("invalid-expert-evidence")
     for evidence_ref in evidence_refs:
-        if type(evidence_ref) is not str or not evidence_ref or len(evidence_ref) > MAX_STRING_LENGTH:
+        if (
+            type(evidence_ref) is not str
+            or not evidence_ref
+            or len(evidence_ref) > MAX_EVIDENCE_REF_LENGTH
+        ):
             raise NixExpertAdapterError("invalid-expert-evidence")
     return data, evidence_refs
 
