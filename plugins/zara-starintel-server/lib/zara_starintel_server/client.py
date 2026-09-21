@@ -113,7 +113,7 @@ class StarIntelClient:
     ) -> dict[str, str]:
         result = {
             "Accept": "application/json",
-            "User-Agent": "Zara-StarIntel-Server/0.1.0",
+            "User-Agent": "Zara-StarIntel-Server/0.2.0",
             "X-Request-Timeout-Ms": str(
                 max(1, int(self.config.timeout_seconds * 1000))
             ),
