@@ -41,6 +41,13 @@ _CLOSED_OPERATION_PROJECTION_EXPERTS = frozenset(
         "zara:expert/kotlin",
     }
 )
+_STYLE_EXPLANATION_PROJECTION_EXPERTS = frozenset(
+    {
+        "zara:expert/prolog",
+        "zara:expert/python",
+        "zara:expert/nim",
+    }
+)
 VerifiedOutcomeResolver = Callable[..., Mapping[str, Any] | None]
 
 
@@ -126,9 +133,9 @@ def _closed_operation_data(
 
     The Dotfiles language brains return bounded Prolog terms as inert strings.
     Keep those terms as provenance-bearing symbolic evidence while mapping them
-    into the closed ZARA-EXPERT/1 operation schemas consumed by the standalone
-    JS/TS/Java/Kotlin packages. No source term is executed or reinterpreted as
-    capability authority here.
+    into the closed ZARA-EXPERT/1 operation schemas consumed by language expert
+    packages. No source term is executed or reinterpreted as capability
+    authority here.
     """
 
     terms = _symbolic_terms(result)
@@ -285,7 +292,11 @@ def make_language_expert_handler(
         )
         evidence_refs = _evidence_refs(result)
         verdict = result["verdict"]
-        if canonical_id in _CLOSED_OPERATION_PROJECTION_EXPERTS:
+        use_closed_projection = canonical_id in _CLOSED_OPERATION_PROJECTION_EXPERTS or (
+            canonical_id in _STYLE_EXPLANATION_PROJECTION_EXPERTS
+            and expert_operation in {"style.rules", "explain"}
+        )
+        if use_closed_projection:
             data = (
                 _closed_operation_data(expert_operation, result)
                 if verdict == "succeeded"
@@ -301,7 +312,7 @@ def make_language_expert_handler(
             # may promote a supported operation back to succeeded.
             verdict = "blocked"
             if canonical_id in _CLOSED_OPERATION_PROJECTION_EXPERTS:
-                # Standalone language packages intentionally require non-success
+                # Closed language packages intentionally require non-success
                 # projections to carry no data. Keep hashed evidence references
                 # for diagnosis, but never let a blocked symbolic verifier leak
                 # provider-shaped or stale result payload through the adapter.
