@@ -38,7 +38,7 @@ class ZaraStarIntelServerPlugin(ServicePlugin):
         name="zara-starintel-server",
         version=PLUGIN_VERSION,
         api_version="1",
-        description="StarIntel API plus the agentic StarKB service expert",
+        description="Agentic StarKB expert plus bounded live StarIntel Server API access",
     )
 
     def __init__(self) -> None:
