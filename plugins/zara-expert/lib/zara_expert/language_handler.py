@@ -35,13 +35,17 @@ _REQUIRED_POSTCONDITIONS = {
 }
 _CLOSED_OPERATION_PROJECTION_EXPERTS = frozenset(
     {
-        "zara:expert/prolog",
-        "zara:expert/python",
-        "zara:expert/nim",
         "zara:expert/javascript",
         "zara:expert/typescript",
         "zara:expert/java",
         "zara:expert/kotlin",
+    }
+)
+_STYLE_EXPLANATION_PROJECTION_EXPERTS = frozenset(
+    {
+        "zara:expert/prolog",
+        "zara:expert/python",
+        "zara:expert/nim",
     }
 )
 VerifiedOutcomeResolver = Callable[..., Mapping[str, Any] | None]
@@ -288,7 +292,11 @@ def make_language_expert_handler(
         )
         evidence_refs = _evidence_refs(result)
         verdict = result["verdict"]
-        if canonical_id in _CLOSED_OPERATION_PROJECTION_EXPERTS:
+        use_closed_projection = canonical_id in _CLOSED_OPERATION_PROJECTION_EXPERTS or (
+            canonical_id in _STYLE_EXPLANATION_PROJECTION_EXPERTS
+            and expert_operation in {"style.rules", "explain"}
+        )
+        if use_closed_projection:
             data = (
                 _closed_operation_data(expert_operation, result)
                 if verdict == "succeeded"
