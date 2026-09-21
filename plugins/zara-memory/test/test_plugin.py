@@ -59,7 +59,7 @@ class MemoryPluginTests(unittest.TestCase):
         self.assertFalse(status["configured"])
         self.assertEqual(status["error"], "symbolic-memory-backend-not-configured")
         self.assertEqual(status["supported_scopes"], ["global", "machine", "project", "session", "user"])
-        self.assertEqual(status["native_supported_scopes"], ["global", "project", "session"])
+        self.assertEqual(status["native_supported_scopes"], ["global", "project", "session", "user"])
 
     def test_native_tools_are_fail_closed_and_write_requires_core_approval(self):
         tools = {tool.name: tool for tool in ZaraMemoryPlugin().tools()}
@@ -94,17 +94,13 @@ class MemoryPluginTests(unittest.TestCase):
             database = Path(temporary) / "memory.db"
             plugin = ZaraMemoryPlugin()
             plugin.start(Runtime({
-                "plugins": {
-                    "zara-memory": {
-                        "symbolic_memory": {
+                "symbolic_memory": {
                             "executable": "symbolic-memory-mcp",
                             "database": str(database),
                             "principal": "zara-local",
                             "session_id": "session-1",
                             "project_remote": "https://git.example/repo.git",
-                            "capabilities": ["memory_read", "memory_write_project"],
-                        }
-                    }
+                            "capabilities": ["memory_read", "memory_write_project", "memory_write_user"],
                 }
             }))
             status = json.loads(plugin.status())
@@ -115,13 +111,13 @@ class MemoryPluginTests(unittest.TestCase):
     def test_missing_native_executable_degrades_honestly(self, _which):
         plugin = ZaraMemoryPlugin()
         plugin.start(Runtime({
-            "plugins": {"zara-memory": {"symbolic_memory": {
+            "symbolic_memory": {
                 "executable": "symbolic-memory-mcp",
                 "database": "/var/lib/zara/memory.db",
                 "principal": "zara-local",
                 "session_id": "s1",
                 "capabilities": ["memory_read"],
-            }}}
+            }
         }))
         status = json.loads(plugin.status())
         self.assertFalse(status["configured"])
@@ -131,13 +127,13 @@ class MemoryPluginTests(unittest.TestCase):
         plugin = ZaraMemoryPlugin()
         with self.assertRaisesRegex(ValueError, "Nix store"):
             plugin.start(Runtime({
-                "plugins": {"zara-memory": {"symbolic_memory": {
+                "symbolic_memory": {
                     "executable": "/bin/true",
                     "database": "/nix/store/deadbeef-memory.db",
                     "principal": "zara-local",
                     "session_id": "s1",
                     "capabilities": ["memory_read"],
-                }}}
+                }
             }))
 
 
