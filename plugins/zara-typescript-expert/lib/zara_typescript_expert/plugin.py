@@ -346,7 +346,13 @@ class ZaraTypeScriptExpertPlugin(ServicePlugin):
 
     @staticmethod
     def _json(value: object) -> str:
-        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return json.dumps(
+            value,
+            allow_nan=False,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
 
     @staticmethod
     def _decode_input(input_json: str) -> dict[str, Any]:
@@ -461,7 +467,10 @@ class ZaraTypeScriptExpertPlugin(ServicePlugin):
             registry_generation=registry_generation,
             runtime_generation=runtime_generation,
         )
-        encoded = self._json(dict(result))
+        try:
+            encoded = self._json(dict(result))
+        except (TypeError, ValueError, RecursionError) as error:
+            raise TypeScriptExpertAdapterError("invalid-expert-result-json") from error
         if len(encoded.encode("utf-8")) > MAX_OUTPUT_BYTES:
             raise TypeScriptExpertAdapterError("expert-result-too-large")
         return encoded
