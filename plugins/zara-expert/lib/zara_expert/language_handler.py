@@ -48,6 +48,8 @@ VerifiedOutcomeResolver = Callable[..., Mapping[str, Any] | None]
 
 
 def _canonical_expert_id(expert_id: str) -> str:
+    if type(expert_id) is not str:
+        raise ExpertError(f"unknown language expert: {expert_id!r}")
     if expert_id in _EXPERT_IDS:
         return expert_id
     if expert_id in _EXPERT_KEYS:
@@ -55,7 +57,19 @@ def _canonical_expert_id(expert_id: str) -> str:
     raise ExpertError(f"unknown language expert: {expert_id!r}")
 
 
+def _valid_operation_input(field_type: str, value: Any) -> bool:
+    if field_type in {"string", "reference"}:
+        return type(value) is str
+    if field_type == "object":
+        return isinstance(value, Mapping)
+    raise ExpertError(f"unsupported language expert input schema type: {field_type!r}")
+
+
 def _operation_arguments(expert_operation: str, payload: dict[str, Any]) -> list[Any]:
+    if type(expert_operation) is not str:
+        raise ExpertError(
+            f"unsupported language expert operation: {expert_operation!r}"
+        )
     schemas = language_expert_schemas()
     schema = schemas.get(expert_operation)
     if schema is None:
@@ -77,6 +91,15 @@ def _operation_arguments(expert_operation: str, payload: dict[str, Any]) -> list
         raise ExpertError(
             f"missing required input field for {expert_operation!r}: {missing[0]!r}"
         )
+    for field in fields:
+        name = field["name"]
+        if name not in payload:
+            continue
+        if not _valid_operation_input(field["type"], payload[name]):
+            raise ExpertError(
+                f"invalid input field type for {expert_operation!r}: "
+                f"{name!r} must be {field['type']!r}"
+            )
 
     # Registered language predicates reserve their final argument for this
     # adapter-created result variable. User payloads are inert ground values and
@@ -265,6 +288,10 @@ def make_language_expert_handler(
 
     def handler(*, expert_operation: str, **payload: Any) -> dict[str, Any]:
         if expert_operation == "repair.apply":
+            # Validate the published operation envelope before returning the
+            # canonical blocked-effect result. Malformed provider/parser-shaped
+            # payloads never get normalized into a valid-looking blocked call.
+            _operation_arguments(expert_operation, payload)
             # Core validates the public repair.apply schema before dispatch. The
             # plugin still refuses to write: actual mutation must cross Zara's
             # typed capability/approval/effect path and then fresh verification.
