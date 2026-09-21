@@ -92,6 +92,7 @@ class _Runtime:
         return {
             "protocol": self.module.PROTOCOL,
             "request_id": request["request_id"],
+            "invocation_id": "inv:" + ("0" * 32),
             "activation_id": request["activation_id"],
             "expert_id": self.module.EXPERT_ID,
             "expert_version": self.module.PLUGIN_VERSION,
