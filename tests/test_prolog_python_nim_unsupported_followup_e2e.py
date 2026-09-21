@@ -214,6 +214,7 @@ class PrologPythonNimUnsupportedFollowUpE2ETests(unittest.TestCase):
                 projection_generation=3,
                 runtime_generation=3,
                 turn_id="turn:unsupported",
+                # Execution outcome remains canonical; the dialogue act carries unsupported semantics.
                 outcome="unknown",
                 project_id=_PROJECT_B,
                 project_generation=2,
