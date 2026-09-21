@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import math
+import re
 import subprocess
 from datetime import date
 from pathlib import Path
@@ -106,6 +107,17 @@ class EmacsClient:
         if not isinstance(result, dict):
             raise EmacsError("Emacs bridge returned malformed result")
         return result
+
+    def _command_adapter(self, adapter: str, arguments: dict | None = None) -> dict:
+        payload = {"adapter": adapter}
+        payload.update(dict(arguments or {}))
+        return self._bridge("command.invoke", payload)
+
+    @staticmethod
+    def _bounded_limit(limit: int, *, maximum: int) -> int:
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= maximum:
+            raise EmacsError(f"limit must be an integer between 1 and {maximum}")
+        return limit
 
     @staticmethod
     def _single_line(name: str, value: str, *, maximum: int) -> str:
@@ -458,6 +470,51 @@ class EmacsClient:
         )
         result = self._eval_json(expression)
         return {"operation": "append_shared_memory", **result, "acknowledged": True}
+
+    def todo_list(self, state: str = "active", limit: int = 100) -> dict:
+        if state not in {"active", "open", "done", "all"}:
+            raise EmacsError("todo list state must be active, open, done, or all")
+        limit = self._bounded_limit(limit, maximum=500)
+        result = self._command_adapter(
+            "org.todo.list",
+            {"state": state, "limit": limit},
+        )
+        return {"operation": "todo_list", **result}
+
+    def todo_capture(self, title: str, scheduled: str = "") -> dict:
+        title = self._single_line("title", title, maximum=512)
+        if scheduled:
+            scheduled = self._single_line("scheduled", scheduled, maximum=32)
+            if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}(?:[ T][0-9]{2}:[0-9]{2})?", scheduled):
+                raise EmacsError("scheduled must be YYYY-MM-DD or YYYY-MM-DD HH:MM")
+        result = self._command_adapter(
+            "org.todo.capture",
+            {"title": title, "scheduled": scheduled},
+        )
+        return {"operation": "todo_capture", **result, "acknowledged": True}
+
+    def todo_state(self, todo_id: str, state: str) -> dict:
+        todo_id = self._single_line("todo_id", todo_id, maximum=128)
+        if state not in {"TODO", "NEXT", "WAIT", "DONE", "CANCELLED"}:
+            raise EmacsError("todo state must be TODO, NEXT, WAIT, DONE, or CANCELLED")
+        result = self._command_adapter(
+            "org.todo.state",
+            {"id": todo_id, "state": state},
+        )
+        return {"operation": "todo_state", **result, "acknowledged": True}
+
+    def todo_snapshot(self) -> dict:
+        result = self._command_adapter("org.todo.snapshot")
+        return {"operation": "todo_snapshot", **result, "acknowledged": True}
+
+    def roam_search(self, query: str, limit: int = 50) -> dict:
+        query = self._single_line("query", query, maximum=256)
+        limit = self._bounded_limit(limit, maximum=200)
+        result = self._command_adapter(
+            "org.roam.search",
+            {"query": query, "limit": limit},
+        )
+        return {"operation": "roam_search", **result}
 
     def describe_session(self) -> dict:
         return self._bridge("session.describe")
