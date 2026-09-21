@@ -1,0 +1,97 @@
+name: Prolog Python Nim Cancelled Replay E2E
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/zara-prolog-expert/**'
+      - 'plugins/zara-python-expert/**'
+      - 'plugins/zara-nim-expert/**'
+      - 'plugins/zara-expert/**'
+      - 'tests/test_prolog_python_nim_cancelled_replay_e2e.py'
+      - 'tests/test_prolog_python_nim_inflight_cancellation_e2e.py'
+      - 'tests/test_prolog_python_nim_surface_parity_e2e.py'
+      - '.github/workflows/prolog-python-nim-cancelled-replay-e2e.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prolog-python-nim-cancelled-replay-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cancelled-replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Fetch exact current Dotfiles brains
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=3309c54ecb5f65c29374de6c60d2135a9ea2f94b
+          rm -rf .ci/dotfiles-prolog-python-nim-cancelled-replay
+          git init .ci/dotfiles-prolog-python-nim-cancelled-replay
+          git -C .ci/dotfiles-prolog-python-nim-cancelled-replay remote add origin https://github.com/lost-rob0t/dotfiles.git
+          git -C .ci/dotfiles-prolog-python-nim-cancelled-replay config core.sparseCheckout true
+          mkdir -p .ci/dotfiles-prolog-python-nim-cancelled-replay/.git/info
+          printf '%s\n' \
+            '/.zara/experts/prolog/' \
+            '/.zara/experts/python/' \
+            '/.zara/experts/nim/' \
+            '/.zara/experts/language/' \
+            > .ci/dotfiles-prolog-python-nim-cancelled-replay/.git/info/sparse-checkout
+          git -C .ci/dotfiles-prolog-python-nim-cancelled-replay fetch --depth=1 origin "$revision"
+          git -C .ci/dotfiles-prolog-python-nim-cancelled-replay checkout --detach FETCH_HEAD
+          test "$(git -C .ci/dotfiles-prolog-python-nim-cancelled-replay rev-parse HEAD)" = "$revision"
+
+      - name: Fetch exact current Zara Core cancellation and replay contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=970a4ea15ee2946c52ef2a486631d73cc6c450df
+          rm -rf .ci/zara-core-prolog-python-nim-cancelled-replay
+          git init .ci/zara-core-prolog-python-nim-cancelled-replay
+          git -C .ci/zara-core-prolog-python-nim-cancelled-replay remote add origin https://github.com/lost-rob0t/zara.git
+          git -C .ci/zara-core-prolog-python-nim-cancelled-replay config core.sparseCheckout true
+          mkdir -p .ci/zara-core-prolog-python-nim-cancelled-replay/.git/info
+          printf '%s\n' '/zara/' '/modules/' '/android/' > .ci/zara-core-prolog-python-nim-cancelled-replay/.git/info/sparse-checkout
+          git -C .ci/zara-core-prolog-python-nim-cancelled-replay fetch --depth=1 origin "$revision"
+          git -C .ci/zara-core-prolog-python-nim-cancelled-replay checkout --detach FETCH_HEAD
+          test "$(git -C .ci/zara-core-prolog-python-nim-cancelled-replay rev-parse HEAD)" = "$revision"
+
+      - name: Install symbolic runtime and network audit tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends swi-prolog-nox strace
+          python3 -m pip install 'numpy>=1.26' 'soundfile>=0.12' 'pykka>=3.1' 'langchain-core>=0.2'
+
+      - name: Prove cancellation survives restart without late evidence or model fallback
+        env:
+          ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles-prolog-python-nim-cancelled-replay
+          ZARA_CORE_ROOT: ${{ github.workspace }}/.ci/zara-core-prolog-python-nim-cancelled-replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          trace="$RUNNER_TEMP/prolog-python-nim-cancelled-replay-network.trace"
+          env \
+            -u OPENAI_API_KEY \
+            -u ANTHROPIC_API_KEY \
+            -u OPENROUTER_API_KEY \
+            -u GOOGLE_API_KEY \
+            -u GEMINI_API_KEY \
+            -u GROQ_API_KEY \
+            -u ZAI_API_KEY \
+            -u AZURE_OPENAI_API_KEY \
+            -u HF_TOKEN \
+            strace -f -e trace=network -o "$trace" \
+            python3 -m unittest discover -s tests -t . -p 'test_prolog_python_nim_cancelled_replay_e2e.py'
+          if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
+            echo 'unexpected IPv4/IPv6 network syscall during cancelled replay E2E' >&2
+            cat "$trace" >&2
+            exit 1
+          fi
