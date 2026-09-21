@@ -23,10 +23,27 @@ MAX_TIMEOUT_MS = 3000
 MAX_RESULTS = 32
 MAX_GENERATION = 2_147_483_647
 MAX_EVIDENCE_REFS = 32
+MAX_STRING_LENGTH = 4096
 REQUEST_ID_RE = re.compile(r"^[!-~]{1,128}$")
 ACTIVATION_ID_RE = re.compile(r"^act:[a-f0-9]{32}$")
 INVOCATION_ID_RE = re.compile(r"^inv:[a-f0-9]{32}$")
 RESULT_VERDICTS = frozenset({"succeeded", "failed", "unknown", "blocked", "unsupported", "cancelled", "error"})
+RESULT_ERROR_CODES = frozenset({
+    "invalid_input",
+    "ambiguity",
+    "unsupported_operation",
+    "unsupported_backend",
+    "incompatible_protocol",
+    "denied",
+    "approval_required",
+    "stale_generation",
+    "unavailable",
+    "deadline_exceeded",
+    "budget_exceeded",
+    "cancelled",
+    "interrupted",
+    "unknown_external_outcome",
+})
 RESULT_FIELDS = frozenset({
     "protocol", "request_id", "invocation_id", "activation_id", "expert_id",
     "expert_version", "manifest_digest", "expert_operation",
@@ -166,9 +183,24 @@ def _validate_output(operation: str, verdict: str, data: object) -> None:
             raise PrologExpertAdapterError("invalid-expert-output")
 
 
-def _validate_result(result: Mapping[str, object], *, request_id: str, activation_id: str, operation: str, registry_generation: int, runtime_generation: int) -> None:
+def _validate_result_metadata(result: Mapping[str, object]) -> None:
     if any(type(field) is not str or field not in RESULT_FIELDS for field in result):
         raise PrologExpertAdapterError("unknown-expert-result-field")
+    error_code = result.get("error_code")
+    if error_code is not None and (
+        type(error_code) is not str or error_code not in RESULT_ERROR_CODES
+    ):
+        raise PrologExpertAdapterError("invalid-expert-error-code")
+    error_message = result.get("error_message", "")
+    if type(error_message) is not str or len(error_message) > MAX_STRING_LENGTH:
+        raise PrologExpertAdapterError("invalid-expert-error-message")
+    replayed = result.get("replayed", False)
+    if type(replayed) is not bool:
+        raise PrologExpertAdapterError("invalid-expert-replayed")
+
+
+def _validate_result(result: Mapping[str, object], *, request_id: str, activation_id: str, operation: str, registry_generation: int, runtime_generation: int) -> None:
+    _validate_result_metadata(result)
     invocation_id = result.get("invocation_id")
     if type(invocation_id) is not str or INVOCATION_ID_RE.fullmatch(invocation_id) is None:
         raise PrologExpertAdapterError("invalid-expert-invocation-id")

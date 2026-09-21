@@ -49,7 +49,7 @@ class FakeRuntime:
     def invoke_capability(self, _handle, request):
         self.requests.append(request)
         runtime_generation=request["expected_runtime_generation"] - 1 if self.stale else request["expected_runtime_generation"]
-        return {"protocol":"ZARA-EXPERT/1","request_id":request["request_id"],"activation_id":request["activation_id"],"expert_id":request["expert_id"],"expert_version":self.module.PLUGIN_VERSION,"manifest_digest":self.module.MANIFEST_DIGEST,"expert_operation":request["expert_operation"],"resolved_registry_generation":request["expected_registry_generation"],"resolved_runtime_generation":runtime_generation,"verdict":"succeeded","data":{"result":{}},"evidence_refs":["fixture:source"],"usage":{"model_calls":self.model_calls},"effect_receipts":self.receipts}
+        return {"protocol":"ZARA-EXPERT/1","request_id":request["request_id"],"invocation_id":"inv:" + "0" * 32,"activation_id":request["activation_id"],"expert_id":request["expert_id"],"expert_version":self.module.PLUGIN_VERSION,"manifest_digest":self.module.MANIFEST_DIGEST,"expert_operation":request["expert_operation"],"resolved_registry_generation":request["expected_registry_generation"],"resolved_runtime_generation":runtime_generation,"verdict":"succeeded","data":{"result":{}},"evidence_refs":["fixture:source"],"usage":{"model_calls":self.model_calls},"effect_receipts":self.receipts}
 
 
 class ExpertFactory4PackageContractTests(unittest.TestCase):
