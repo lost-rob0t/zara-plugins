@@ -248,7 +248,7 @@ def _validate_result(
     ):
         raise KotlinExpertAdapterError("stale-expert-result")
     verdict = result.get("verdict")
-    if verdict not in RESULT_VERDICTS:
+    if type(verdict) is not str or verdict not in RESULT_VERDICTS:
         raise KotlinExpertAdapterError("invalid-expert-verdict")
     usage = result.get("usage")
     model_calls = usage.get("model_calls") if isinstance(usage, Mapping) else None
@@ -359,7 +359,7 @@ class ZaraKotlinExpertPlugin(ServicePlugin):
         expected_runtime_generation: int,
         input_json: str = "{}",
     ) -> str:
-        if expert_operation not in ALLOWED_OPERATIONS:
+        if type(expert_operation) is not str or expert_operation not in ALLOWED_OPERATIONS:
             raise KotlinExpertAdapterError("unsupported-expert-operation")
         if not isinstance(request_id, str) or REQUEST_ID_RE.fullmatch(request_id) is None:
             raise KotlinExpertAdapterError("invalid-request-id")
