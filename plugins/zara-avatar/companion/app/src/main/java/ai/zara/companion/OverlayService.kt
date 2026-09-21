@@ -18,8 +18,10 @@ import java.io.File
 import java.io.FileInputStream
 
 class OverlayService : Service() {
+    private data class OverlayCommand(val action: String, val value: String?, val bpm: Int)
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val mailbox = Channel<Pair<String, String?>>(16)
+    private val mailbox = Channel<OverlayCommand>(16)
     private var web: WebView? = null
     private var params: WindowManager.LayoutParams? = null
     private var edit = false
@@ -50,8 +52,8 @@ class OverlayService : Service() {
         try { startForeground(1, notification) }
         catch (_: RuntimeException) { fail("Foreground service unavailable."); return }
         scope.launch {
-            for ((action, value) in mailbox) {
-                try { execute(action, value) }
+            for (command in mailbox) {
+                try { execute(command) }
                 catch (e: CancellationException) { throw e }
                 catch (_: RuntimeException) { fail("Overlay operation failed. Reopen Companion to retry.") }
             }
@@ -75,13 +77,23 @@ class OverlayService : Service() {
             if (web == null) { stopSelf(); return START_NOT_STICKY }
             while (mailbox.tryReceive().isSuccess) { }
             js(JSONObject().put("type", "stop"))
-        } else if (!mailbox.trySend((intent.action ?: "show") to intent.getStringExtra("value")).isSuccess) {
-            Toast.makeText(this, "Companion is busy; command rejected.", Toast.LENGTH_SHORT).show()
+        } else {
+            val bpm = intent.getIntExtra("bpm", 120)
+            if (bpm !in 40..200) {
+                prefs.edit().putString("status", "Dance BPM rejected outside 40..200.").apply()
+                return START_NOT_STICKY
+            }
+            val command = OverlayCommand(intent.action ?: "show", intent.getStringExtra("value"), bpm)
+            if (!mailbox.trySend(command).isSuccess) {
+                Toast.makeText(this, "Companion is busy; command rejected.", Toast.LENGTH_SHORT).show()
+            }
         }
         return START_NOT_STICKY
     }
 
-    private fun execute(action: String, value: String?) {
+    private fun execute(command: OverlayCommand) {
+        val action = command.action
+        val value = command.value
         if (web == null) {
             if (action != "show") {
                 Toast.makeText(this, "Show Companion first, then choose an animation.", Toast.LENGTH_SHORT).show()
@@ -92,7 +104,8 @@ class OverlayService : Service() {
         when (action) {
             "show" -> updateActive()
             "motion" -> if (value in listOf("wave", "nod", "shake", "dance_bounce", "dance_sway", "dance_step")) {
-                js(JSONObject().put("type", "motion").put("name", value).put("loop", value!!.startsWith("dance_")))
+                js(JSONObject().put("type", "motion").put("name", value)
+                    .put("loop", value!!.startsWith("dance_")).put("bpm", command.bpm))
             }
             "emotion" -> if (value in listOf("neutral", "happy", "sad", "angry", "relaxed", "surprised", "excited")) {
                 js(JSONObject().put("type", "emotion").put("name", value))
