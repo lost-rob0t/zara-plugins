@@ -46,7 +46,7 @@ class FakeRuntime:
             "resolved_registry_generation": request["expected_registry_generation"],
             "resolved_runtime_generation": runtime_generation,
             "verdict": "succeeded",
-            "data": {"ok": True},
+            "data": {"result": {}},
             "usage": {"model_calls": self.model_calls},
             "effect_receipts": self.receipts,
         }
