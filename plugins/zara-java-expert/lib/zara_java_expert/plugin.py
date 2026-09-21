@@ -28,26 +28,99 @@ MAX_STRING_LENGTH = 4096
 MAX_GENERATION = 2_147_483_647
 REQUEST_ID_RE = re.compile(r"^[!-~]{1,128}$")
 ACTIVATION_ID_RE = re.compile(r"^act:[a-f0-9]{32}$")
-RESULT_VERDICTS = frozenset({"succeeded", "failed", "unknown", "blocked", "unsupported", "cancelled", "error"})
+RESULT_VERDICTS = frozenset(
+    {"succeeded", "failed", "unknown", "blocked", "unsupported", "cancelled", "error"}
+)
 OPERATION_FIELDS: dict[str, tuple[dict[str, object], ...]] = {
-    "match": ({"name":"path","type":"string","required":True},{"name":"source_generation","type":"reference","required":True}),
-    "inspect": ({"name":"source","type":"string","required":True},{"name":"source_generation","type":"reference","required":True}),
-    "diagnose": ({"name":"source","type":"string","required":True},{"name":"source_generation","type":"reference","required":True}),
-    "repair.preview": ({"name":"source","type":"string","required":True},{"name":"source_generation","type":"reference","required":True},{"name":"diagnostic_ref","type":"reference","required":True}),
-    "repair.verify": ({"name":"original_source","type":"string","required":True},{"name":"candidate_source","type":"string","required":True},{"name":"source_generation","type":"reference","required":True}),
-    "style.rules": ({"name":"source","type":"string","required":True},{"name":"project_style","type":"reference","required":True}),
-    "explain": ({"name":"decision_ref","type":"reference","required":True},{"name":"source_generation","type":"reference","required":True}),
+    "match": (
+        {"name": "path", "type": "string", "required": True},
+        {"name": "source_generation", "type": "reference", "required": True},
+    ),
+    "inspect": (
+        {"name": "source", "type": "string", "required": True},
+        {"name": "source_generation", "type": "reference", "required": True},
+    ),
+    "diagnose": (
+        {"name": "source", "type": "string", "required": True},
+        {"name": "source_generation", "type": "reference", "required": True},
+    ),
+    "repair.preview": (
+        {"name": "source", "type": "string", "required": True},
+        {"name": "source_generation", "type": "reference", "required": True},
+        {"name": "diagnostic_ref", "type": "reference", "required": True},
+    ),
+    "repair.verify": (
+        {"name": "original_source", "type": "string", "required": True},
+        {"name": "candidate_source", "type": "string", "required": True},
+        {"name": "source_generation", "type": "reference", "required": True},
+    ),
+    "style.rules": (
+        {"name": "source", "type": "string", "required": True},
+        {"name": "project_style", "type": "reference", "required": True},
+    ),
+    "explain": (
+        {"name": "decision_ref", "type": "reference", "required": True},
+        {"name": "source_generation", "type": "reference", "required": True},
+    ),
+}
+OPERATION_OUTPUT_FIELDS: dict[str, tuple[dict[str, object], ...]] = {
+    "match": (
+        {"name": "applicable", "type": "boolean", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
+    ),
+    "inspect": (
+        {"name": "result", "type": "object", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
+    ),
+    "diagnose": (
+        {"name": "diagnostics", "type": "list", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
+    ),
+    "repair.preview": (
+        {"name": "repair", "type": "object", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
+    ),
+    "repair.verify": (
+        {"name": "verified", "type": "boolean", "required": True},
+        {"name": "postcondition_evidence", "type": "object", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
+    ),
+    "style.rules": (
+        {"name": "style_rules", "type": "list", "required": True},
+        {"name": "style_provenance", "type": "list", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
+    ),
+    "explain": (
+        {"name": "explanation", "type": "object", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
+    ),
 }
 ALLOWED_OPERATIONS = frozenset(OPERATION_FIELDS)
 LANGUAGE_BOUNDARIES = {
     "language": "java",
     "extensions": (".java",),
-    "evidence_topics": ("syntax", "jvm", "gradle", "android-project-metadata", "diagnostics", "style", "repair-verification"),
+    "evidence_topics": (
+        "syntax",
+        "jvm",
+        "gradle",
+        "android-project-metadata",
+        "diagnostics",
+        "style",
+        "repair-verification",
+    ),
     "project_metadata_policy": "observation_only",
     "jvm_project_metadata": True,
     "gradle_project_metadata": True,
     "android_project_metadata": True,
 }
+
 
 class JavaExpertAdapterError(RuntimeError):
     """Fail closed: this adapter never falls back to a provider or model."""
@@ -102,12 +175,66 @@ def _validate_operation_input(operation: str, payload: Mapping[str, object]) -> 
             raise JavaExpertAdapterError("invalid-operation-input")
 
 
+def _validate_output_field(field: Mapping[str, object], value: object) -> None:
+    kind = field["type"]
+    valid = (
+        type(value) is bool
+        if kind == "boolean"
+        else isinstance(value, Mapping)
+        if kind == "object"
+        else isinstance(value, list)
+        if kind == "list"
+        else False
+    )
+    if not valid:
+        raise JavaExpertAdapterError("invalid-expert-output")
+
+
+def _validate_operation_output(operation: str, verdict: str, data: object) -> None:
+    if not isinstance(data, Mapping):
+        raise JavaExpertAdapterError("invalid-expert-output")
+    if verdict != "succeeded":
+        if data:
+            raise JavaExpertAdapterError("invalid-expert-output")
+        return
+    declared = {field["name"]: field for field in OPERATION_OUTPUT_FIELDS[operation]}
+    if set(data) - set(declared):
+        raise JavaExpertAdapterError("invalid-expert-output")
+    for name, field in declared.items():
+        if field["required"] and name not in data:
+            raise JavaExpertAdapterError("invalid-expert-output")
+        if name in data:
+            _validate_output_field(field, data[name])
+
+
 def _operation_descriptor(operation: str) -> dict[str, object]:
-    return {"operation_id": operation, "input_schema": {"fields": [dict(field) for field in OPERATION_FIELDS[operation]]}, "output_schema": {"fields": []}}
+    return {
+        "operation_id": operation,
+        "input_schema": {"fields": [dict(field) for field in OPERATION_FIELDS[operation]]},
+        "output_schema": {
+            "fields": [dict(field) for field in OPERATION_OUTPUT_FIELDS[operation]]
+        },
+    }
 
 
-def _validate_result(result: Mapping[str, object], *, request_id: str, activation_id: str, expert_operation: str, registry_generation: int, runtime_generation: int) -> None:
-    expected = {"protocol":PROTOCOL,"request_id":request_id,"activation_id":activation_id,"expert_id":EXPERT_ID,"expert_version":PLUGIN_VERSION,"manifest_digest":MANIFEST_DIGEST,"expert_operation":expert_operation}
+def _validate_result(
+    result: Mapping[str, object],
+    *,
+    request_id: str,
+    activation_id: str,
+    expert_operation: str,
+    registry_generation: int,
+    runtime_generation: int,
+) -> None:
+    expected = {
+        "protocol": PROTOCOL,
+        "request_id": request_id,
+        "activation_id": activation_id,
+        "expert_id": EXPERT_ID,
+        "expert_version": PLUGIN_VERSION,
+        "manifest_digest": MANIFEST_DIGEST,
+        "expert_operation": expert_operation,
+    }
     if any(result.get(key) != value for key, value in expected.items()):
         raise JavaExpertAdapterError("expert-result-identity-mismatch")
     resolved_registry_generation = result.get("resolved_registry_generation")
@@ -119,7 +246,8 @@ def _validate_result(result: Mapping[str, object], *, request_id: str, activatio
         or resolved_runtime_generation != runtime_generation
     ):
         raise JavaExpertAdapterError("stale-expert-result")
-    if result.get("verdict") not in RESULT_VERDICTS:
+    verdict = result.get("verdict")
+    if verdict not in RESULT_VERDICTS:
         raise JavaExpertAdapterError("invalid-expert-verdict")
     usage = result.get("usage")
     model_calls = usage.get("model_calls") if isinstance(usage, Mapping) else None
@@ -130,10 +258,16 @@ def _validate_result(result: Mapping[str, object], *, request_id: str, activatio
         raise JavaExpertAdapterError("read-only-effect-proof-missing")
     if receipts:
         raise JavaExpertAdapterError("read-only-effect-leak")
+    _validate_operation_output(expert_operation, verdict, result.get("data"))
 
 
 class ZaraJavaExpertPlugin(ServicePlugin):
-    metadata = PluginMetadata(name=PACKAGE_NAMESPACE, version=PLUGIN_VERSION, api_version="1", description="Pure-symbolic JavaExpert adapter over the canonical Zara language host")
+    metadata = PluginMetadata(
+        name=PACKAGE_NAMESPACE,
+        version=PLUGIN_VERSION,
+        api_version="1",
+        description="Pure-symbolic JavaExpert adapter over the canonical Zara language host",
+    )
 
     def __init__(self) -> None:
         self._runtime: Any | None = None
@@ -164,17 +298,63 @@ class ZaraJavaExpertPlugin(ServicePlugin):
         return value
 
     def descriptor(self) -> str:
-        return self._json({"protocol":PROTOCOL,"expert_id":EXPERT_ID,"expert_version":PLUGIN_VERSION,"package_namespace":PACKAGE_NAMESPACE,"manifest_digest":MANIFEST_DIGEST,"name":EXPERT_NAME,"description":"Pure-symbolic JavaExpert adapter over the canonical Zara language host","source_reference":SOURCE_REFERENCE,"reasoning_kind":"symbolic","operations":[_operation_descriptor(op) for op in sorted(ALLOWED_OPERATIONS)],"applicability":{"keywords":["java","javac","jvm","gradle","android"]},"required_capabilities":[HOST_CAPABILITY],"possible_effects":["none"],"supported_engines":["swipl"],"supported_platforms":["desktop","server","android"],"fallback_policy":"fail_closed","delegation_policy":"never","resource_limits":{"timeout_ms":MAX_TIMEOUT_MS,"max_results":MAX_RESULTS,"max_output_bytes":MAX_OUTPUT_BYTES,"max_model_calls":0},"registry_generation":1,"availability":"unavailable","unavailable_reason":"canonical-source-or-host-not-activated"})
+        return self._json(
+            {
+                "protocol": PROTOCOL,
+                "expert_id": EXPERT_ID,
+                "expert_version": PLUGIN_VERSION,
+                "package_namespace": PACKAGE_NAMESPACE,
+                "manifest_digest": MANIFEST_DIGEST,
+                "name": EXPERT_NAME,
+                "description": "Pure-symbolic JavaExpert adapter over the canonical Zara language host",
+                "source_reference": SOURCE_REFERENCE,
+                "reasoning_kind": "symbolic",
+                "operations": [
+                    _operation_descriptor(operation)
+                    for operation in sorted(ALLOWED_OPERATIONS)
+                ],
+                "applicability": {
+                    "keywords": ["java", "javac", "jvm", "gradle", "android"]
+                },
+                "required_capabilities": [HOST_CAPABILITY],
+                "possible_effects": ["none"],
+                "supported_engines": ["swipl"],
+                "supported_platforms": ["desktop", "server", "android"],
+                "fallback_policy": "fail_closed",
+                "delegation_policy": "never",
+                "resource_limits": {
+                    "timeout_ms": MAX_TIMEOUT_MS,
+                    "max_results": MAX_RESULTS,
+                    "max_output_bytes": MAX_OUTPUT_BYTES,
+                    "max_model_calls": 0,
+                },
+                "registry_generation": 1,
+                "availability": "unavailable",
+                "unavailable_reason": "canonical-source-or-host-not-activated",
+            }
+        )
 
-    def invoke(self, request_id: str, activation_id: str, expert_operation: str, expected_registry_generation: int, expected_runtime_generation: int, input_json: str = "{}") -> str:
+    def invoke(
+        self,
+        request_id: str,
+        activation_id: str,
+        expert_operation: str,
+        expected_registry_generation: int,
+        expected_runtime_generation: int,
+        input_json: str = "{}",
+    ) -> str:
         if expert_operation not in ALLOWED_OPERATIONS:
             raise JavaExpertAdapterError("unsupported-expert-operation")
         if not isinstance(request_id, str) or REQUEST_ID_RE.fullmatch(request_id) is None:
             raise JavaExpertAdapterError("invalid-request-id")
         if not isinstance(activation_id, str) or ACTIVATION_ID_RE.fullmatch(activation_id) is None:
             raise JavaExpertAdapterError("invalid-activation-id")
-        registry_generation = _validate_generation(expected_registry_generation, "registry-generation")
-        runtime_generation = _validate_generation(expected_runtime_generation, "runtime-generation")
+        registry_generation = _validate_generation(
+            expected_registry_generation, "registry-generation"
+        )
+        runtime_generation = _validate_generation(
+            expected_runtime_generation, "runtime-generation"
+        )
         payload = self._decode_input(input_json)
         _validate_operation_input(expert_operation, payload)
         runtime = self._runtime
@@ -182,7 +362,23 @@ class ZaraJavaExpertPlugin(ServicePlugin):
         invoker = getattr(runtime, "invoke_capability", None)
         if not callable(resolver) or not callable(invoker):
             raise JavaExpertAdapterError("expert-host-composition-unavailable")
-        request = {"protocol":PROTOCOL,"request_id":request_id,"operation":"expert.invoke","activation_id":activation_id,"expert_id":EXPERT_ID,"expert_operation":expert_operation,"expected_registry_generation":registry_generation,"expected_runtime_generation":runtime_generation,"input":payload,"limits":{"timeout_ms":MAX_TIMEOUT_MS,"max_results":MAX_RESULTS,"max_output_bytes":MAX_OUTPUT_BYTES,"max_model_calls":0}}
+        request = {
+            "protocol": PROTOCOL,
+            "request_id": request_id,
+            "operation": "expert.invoke",
+            "activation_id": activation_id,
+            "expert_id": EXPERT_ID,
+            "expert_operation": expert_operation,
+            "expected_registry_generation": registry_generation,
+            "expected_runtime_generation": runtime_generation,
+            "input": payload,
+            "limits": {
+                "timeout_ms": MAX_TIMEOUT_MS,
+                "max_results": MAX_RESULTS,
+                "max_output_bytes": MAX_OUTPUT_BYTES,
+                "max_model_calls": 0,
+            },
+        }
         try:
             result = invoker(resolver(HOST_CAPABILITY), request)
         except JavaExpertAdapterError:
@@ -191,7 +387,14 @@ class ZaraJavaExpertPlugin(ServicePlugin):
             raise JavaExpertAdapterError("expert-host-invocation-failed") from error
         if not isinstance(result, Mapping):
             raise JavaExpertAdapterError("invalid-expert-result")
-        _validate_result(result, request_id=request_id, activation_id=activation_id, expert_operation=expert_operation, registry_generation=registry_generation, runtime_generation=runtime_generation)
+        _validate_result(
+            result,
+            request_id=request_id,
+            activation_id=activation_id,
+            expert_operation=expert_operation,
+            registry_generation=registry_generation,
+            runtime_generation=runtime_generation,
+        )
         encoded = self._json(dict(result))
         if len(encoded.encode("utf-8")) > MAX_OUTPUT_BYTES:
             raise JavaExpertAdapterError("expert-result-too-large")
