@@ -181,6 +181,74 @@ class LanguageHandlerTests(unittest.TestCase):
             )
         self.assertEqual(self.backend.calls, [])
 
+    def test_lane3_malformed_identity_and_operation_shapes_fail_closed_before_backend(self):
+        for malformed_expert_id in ([], {}, {"prolog"}):
+            with self.subTest(expert_id=repr(malformed_expert_id)):
+                with self.assertRaisesRegex(ExpertError, "unknown language expert"):
+                    make_language_expert_handler(self.host, malformed_expert_id)
+        self.assertEqual(self.backend.calls, [])
+
+        register_language_family(self.host, {"prolog": [self._brain("prolog-shape")]})
+        handler = make_language_expert_handler(self.host, "zara:expert/prolog")
+        for malformed_operation in ([], {}, {"inspect"}):
+            with self.subTest(operation=repr(malformed_operation)):
+                with self.assertRaisesRegex(
+                    ExpertError,
+                    "unsupported language expert operation",
+                ):
+                    handler(
+                        expert_operation=malformed_operation,
+                        source="fact(a).",
+                        source_generation="generation-shape",
+                    )
+        self.assertEqual(self.backend.calls, [])
+
+    def test_lane3_declared_input_types_fail_closed_before_backend(self):
+        register_language_family(
+            self.host,
+            {
+                "prolog": [self._brain("prolog-input-types")],
+                "python": [self._brain("python-input-types")],
+                "nim": [self._brain("nim-input-types")],
+            },
+        )
+        cases = (
+            (
+                "zara:expert/prolog",
+                "inspect",
+                {"source": [], "source_generation": "generation-prolog"},
+            ),
+            (
+                "zara:expert/python",
+                "match",
+                {"path": "module.py", "source_generation": {}},
+            ),
+            (
+                "zara:expert/nim",
+                "repair.preview",
+                {
+                    "source": "proc main() = discard",
+                    "source_generation": "generation-nim",
+                    "diagnostic_ref": [],
+                },
+            ),
+            (
+                "zara:expert/nim",
+                "repair.apply",
+                {
+                    "repair": [],
+                    "expected_preimage": "sha256:fixture",
+                    "source_generation": "generation-nim",
+                },
+            ),
+        )
+        for expert_id, operation, payload in cases:
+            with self.subTest(expert_id=expert_id, operation=operation):
+                handler = make_language_expert_handler(self.host, expert_id)
+                with self.assertRaisesRegex(ExpertError, "invalid input field type"):
+                    handler(expert_operation=operation, **payload)
+        self.assertEqual(self.backend.calls, [])
+
     def test_unknown_expert_fails_closed(self):
         with self.assertRaisesRegex(ExpertError, "unknown language expert"):
             make_language_expert_handler(self.host, "zara:expert/rust")
