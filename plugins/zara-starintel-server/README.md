@@ -1,6 +1,6 @@
 # zara-starintel-server
 
-`zara-starintel-server` gives Zara access to the complete HTTP surface exposed by a StarIntel Server. It uses the server's live discovery documents instead of freezing one client version into the plugin:
+`zara-starintel-server` is now both the bounded StarIntel HTTP integration and the **StarKB** service expert (`zara:expert/star-kb`). StarKB turns live StarIntel discovery into a bounded agent loop: observe capabilities, plan against the current operation manifest, explain the selected operations, and execute admitted steps without inventing routes. The raw HTTP surface remains available underneath it.\n\nIt uses the server's live discovery documents instead of freezing one client version into the plugin:
 
 - `GET /api/v1/capabilities`
 - `GET /client-manifest.json`
