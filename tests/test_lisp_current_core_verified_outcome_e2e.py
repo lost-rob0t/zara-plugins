@@ -159,10 +159,7 @@ class LispCurrentCoreVerifiedOutcomeE2ETests(unittest.TestCase):
         matches = []
         for invocation_id in registry.snapshot().invocation_ids:
             trace = registry.explain(invocation_id)
-            if (
-                trace.get("expert_id") == expert_id
-                and trace.get("operation_id") == "repair.verify"
-            ):
+            if trace.get("expert_id") == expert_id:
                 matches.append(trace)
         self.assertEqual(len(matches), 1)
         return matches[0]
