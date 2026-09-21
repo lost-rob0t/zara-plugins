@@ -107,6 +107,7 @@ RESULT_FIELDS = frozenset(
         "replayed",
     }
 )
+USAGE_FIELDS = frozenset({"model_calls"})
 
 
 class NixExpertAdapterError(RuntimeError):
@@ -248,6 +249,18 @@ def _validate_result_payload(result: Mapping[str, object]) -> tuple[Mapping[str,
     return data, evidence_refs
 
 
+def _validate_result_usage(result: Mapping[str, object]) -> None:
+    usage = result.get("usage")
+    if type(usage) is not dict:
+        raise NixExpertAdapterError("invalid-expert-usage")
+    for field in usage:
+        if type(field) is not str or field not in USAGE_FIELDS:
+            raise NixExpertAdapterError("unknown-expert-usage-field")
+    model_calls = usage.get("model_calls")
+    if type(model_calls) is not int or model_calls != 0:
+        raise NixExpertAdapterError("zero-model-proof-missing")
+
+
 def _validate_result_metadata(result: Mapping[str, object]) -> None:
     for field in result:
         if type(field) is not str or field not in RESULT_FIELDS:
@@ -309,10 +322,7 @@ def _validate_result(
     if type(verdict) is not str or verdict not in RESULT_VERDICTS:
         raise NixExpertAdapterError("invalid-expert-verdict")
     data, evidence_refs = _validate_result_payload(result)
-    usage = result.get("usage")
-    model_calls = usage.get("model_calls") if isinstance(usage, Mapping) else None
-    if type(model_calls) is not int or model_calls != 0:
-        raise NixExpertAdapterError("zero-model-proof-missing")
+    _validate_result_usage(result)
     receipts = result.get("effect_receipts")
     if not isinstance(receipts, (list, tuple)):
         raise NixExpertAdapterError("read-only-effect-proof-missing")
