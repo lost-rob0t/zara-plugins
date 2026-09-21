@@ -43,7 +43,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          revision=20e16c4fb084df4b01a17c06cd0e11ef5df2fb62
+          revision=078156f9dd2f6ec3c15516d29f4af7be32c9b386
           root=.ci/dotfiles-js-ts-java-kotlin-conversation
           rm -rf "$root"
           git init "$root"
