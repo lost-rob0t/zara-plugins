@@ -105,6 +105,8 @@ class LispOutputSchemaFenceTests(unittest.TestCase):
         self.assertEqual(budget.model_calls_used, 0)
 
     def test_core_lisp_accepts_empty_canonical_cancelled_output_without_widening_schema(self):
+        # Cancellation is a fence: Core must be able to discard late predicate
+        # output entirely without the adapter demanding that stale output back.
         node, registry, budget = self.invoke(
             {},
             status="cancelled",
