@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from .plugin import (
+    MAX_GENERATION,
     MAX_OUTPUT_BYTES,
     MAX_RESULTS,
     MAX_TIMEOUT_MS,
@@ -16,6 +17,12 @@ from .plugin import (
 _FIELD_TYPES: dict[str, type[object]] = {
     "string": str,
 }
+
+
+def _validate_expected_generation(value: object, field: str) -> int:
+    if type(value) is not int or not 0 <= value <= MAX_GENERATION:
+        raise BashExpertAdapterError(f"invalid-{field}")
+    return value
 
 
 def _validate_operation_payload(operation: str, payload: Mapping[str, Any]) -> None:
@@ -52,21 +59,27 @@ class ZaraBashExpertBoundaryPlugin(ZaraBashExpertPlugin):
         request_id: str,
         activation_id: str,
         expert_operation: str,
-        expected_registry_generation: int | float,
-        expected_runtime_generation: int | float,
+        expected_registry_generation: int,
+        expected_runtime_generation: int,
         input_json: str = "{}",
         timeout_ms: int | float = MAX_TIMEOUT_MS,
         max_results: int | float = MAX_RESULTS,
         max_output_bytes: int | float = MAX_OUTPUT_BYTES,
     ) -> str:
+        registry_generation = _validate_expected_generation(
+            expected_registry_generation, "registry-generation"
+        )
+        runtime_generation = _validate_expected_generation(
+            expected_runtime_generation, "runtime-generation"
+        )
         payload = self._decode_input(input_json)
         _validate_operation_payload(expert_operation, payload)
         return super().invoke(
             request_id,
             activation_id,
             expert_operation,
-            expected_registry_generation,
-            expected_runtime_generation,
+            registry_generation,
+            runtime_generation,
             input_json,
             timeout_ms,
             max_results,
