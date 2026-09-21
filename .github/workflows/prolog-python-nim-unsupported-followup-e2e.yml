@@ -1,6 +1,7 @@
 name: Prolog Python Nim Unsupported Follow-up E2E
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - 'plugins/zara-prolog-expert/**'
