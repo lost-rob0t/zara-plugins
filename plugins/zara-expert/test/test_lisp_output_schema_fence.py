@@ -120,30 +120,36 @@ class LispOutputSchemaFenceTests(unittest.TestCase):
         self.assertEqual(registry.calls[0][3].max_model_calls, 0)
         self.assertEqual(budget.model_calls_used, 0)
 
-        with self.assertRaisesRegex(CompositionError, "invalid-expert-output"):
-            self.invoke(
-                {"renderer_fallback": "provider"},
-                status="cancelled",
-                evidence_refs=(),
-            )
-
-    def test_core_lisp_rejects_cancelled_results_with_late_top_level_evidence(self):
-        # A cancelled Core projection is terminal. Late backend evidence must not
-        # survive cancellation even when data/effects were already discarded.
-        for evidence_refs in (
-            ("evidence:lisp:late",),
-            "evidence:lisp:late",
-        ):
-            with self.subTest(evidence_refs=evidence_refs):
+    def test_core_lisp_rejects_cancelled_results_with_late_output(self):
+        # The cancelled projection is terminal regardless of whether late output
+        # still fits an otherwise valid Lisp operation schema.
+        leak_cases = (
+            (canonical_result_data(), ()),
+            ({}, ("evidence:lisp:late",)),
+            ({"renderer_fallback": "provider"}, ()),
+        )
+        for data, evidence_refs in leak_cases:
+            with self.subTest(data=data, evidence_refs=evidence_refs):
                 with self.assertRaisesRegex(
                     CompositionError,
                     "cancelled-expert-output-leak",
                 ):
                     self.invoke(
-                        {},
+                        data,
                         status="cancelled",
                         evidence_refs=evidence_refs,
                     )
+
+    def test_core_lisp_rejects_malformed_top_level_evidence_before_projection(self):
+        with self.assertRaisesRegex(
+            CompositionError,
+            "evidence_refs must be a sequence",
+        ):
+            self.invoke(
+                {},
+                status="cancelled",
+                evidence_refs="evidence:lisp:late",
+            )
 
 
 if __name__ == "__main__":
