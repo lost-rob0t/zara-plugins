@@ -26,6 +26,7 @@ MAX_INPUT_KEYS = 32
 MAX_INPUT_LIST = 64
 MAX_STRING_LENGTH = 4096
 MAX_GENERATION = 2_147_483_647
+MAX_RESULT_NODES = 65_536
 REQUEST_ID_RE = re.compile(r"^[!-~]{1,128}$")
 ACTIVATION_ID_RE = re.compile(r"^act:[a-f0-9]{32}$")
 RESULT_VERDICTS = frozenset(
@@ -207,6 +208,63 @@ def _validate_operation_output(operation: str, verdict: str, data: object) -> No
             _validate_output_field(field, data[name])
 
 
+def _validate_result_data_tree(data: Mapping[str, object]) -> None:
+    stack: list[tuple[bool, object]] = [(False, data)]
+    active_containers: set[int] = set()
+    nodes = 0
+    while stack:
+        exiting, current = stack.pop()
+        if exiting:
+            active_containers.remove(id(current))
+            continue
+
+        nodes += 1
+        if nodes > MAX_RESULT_NODES:
+            raise TypeScriptExpertAdapterError("invalid-expert-data-json")
+
+        if isinstance(current, dict):
+            container_id = id(current)
+            if container_id in active_containers:
+                raise TypeScriptExpertAdapterError("invalid-expert-data-json")
+            active_containers.add(container_id)
+            stack.append((True, current))
+            for key, child in current.items():
+                if type(key) is not str:
+                    raise TypeScriptExpertAdapterError("invalid-expert-data-json")
+                stack.append((False, child))
+        elif isinstance(current, (list, tuple)):
+            container_id = id(current)
+            if container_id in active_containers:
+                raise TypeScriptExpertAdapterError("invalid-expert-data-json")
+            active_containers.add(container_id)
+            stack.append((True, current))
+            stack.extend((False, child) for child in current)
+        elif type(current) is float:
+            if not math.isfinite(current):
+                raise TypeScriptExpertAdapterError("invalid-expert-data-json")
+        elif current is None or type(current) in (str, int, bool):
+            continue
+        else:
+            raise TypeScriptExpertAdapterError("invalid-expert-data-json")
+
+
+def _validate_result_payload(
+    result: Mapping[str, object],
+) -> tuple[Mapping[str, object], list[str] | tuple[str, ...]]:
+    data = result.get("data")
+    if not isinstance(data, Mapping):
+        raise TypeScriptExpertAdapterError("invalid-expert-data")
+    _validate_result_data_tree(data)
+
+    evidence_refs = result.get("evidence_refs")
+    if not isinstance(evidence_refs, (list, tuple)):
+        raise TypeScriptExpertAdapterError("invalid-expert-evidence")
+    for evidence_ref in evidence_refs:
+        if type(evidence_ref) is not str or not evidence_ref or len(evidence_ref) > MAX_STRING_LENGTH:
+            raise TypeScriptExpertAdapterError("invalid-expert-evidence")
+    return data, evidence_refs
+
+
 def _operation_descriptor(operation: str) -> dict[str, object]:
     return {
         "operation_id": operation,
@@ -249,6 +307,7 @@ def _validate_result(
     verdict = result.get("verdict")
     if verdict not in RESULT_VERDICTS:
         raise TypeScriptExpertAdapterError("invalid-expert-verdict")
+    data, evidence_refs = _validate_result_payload(result)
     usage = result.get("usage")
     model_calls = usage.get("model_calls") if isinstance(usage, Mapping) else None
     if type(model_calls) is not int or model_calls != 0:
@@ -258,14 +317,9 @@ def _validate_result(
         raise TypeScriptExpertAdapterError("read-only-effect-proof-missing")
     if receipts:
         raise TypeScriptExpertAdapterError("read-only-effect-leak")
-    if verdict == "cancelled":
-        data = result.get("data")
-        evidence_refs = result.get("evidence_refs")
-        if not isinstance(data, Mapping) or data:
-            raise TypeScriptExpertAdapterError("cancelled-expert-output-leak")
-        if not isinstance(evidence_refs, (list, tuple)) or evidence_refs:
-            raise TypeScriptExpertAdapterError("cancelled-expert-output-leak")
-    _validate_operation_output(expert_operation, verdict, result.get("data"))
+    if verdict == "cancelled" and (data or evidence_refs):
+        raise TypeScriptExpertAdapterError("cancelled-expert-output-leak")
+    _validate_operation_output(expert_operation, verdict, data)
 
 
 class ZaraTypeScriptExpertPlugin(ServicePlugin):
