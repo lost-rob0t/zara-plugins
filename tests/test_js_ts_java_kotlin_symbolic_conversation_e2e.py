@@ -16,7 +16,7 @@ from tests import test_js_ts_java_kotlin_composition_fences_e2e as composition
 from zara_expert.language_family import matching_experts
 
 
-CURRENT_DOTFILES = "20e16c4fb084df4b01a17c06cd0e11ef5df2fb62"
+CURRENT_DOTFILES = "078156f9dd2f6ec3c15516d29f4af7be32c9b386"
 CURRENT_ZARA_CORE = "dc74a41b216388662e55412e1e09a1c8c2fad5a7"
 SUMMARY = "JavaScript, TypeScript, Java, and Kotlin inspection complete."
 WORKSPACE = composition.WORKSPACE_ID
