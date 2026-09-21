@@ -214,7 +214,7 @@ class PrologPythonNimUnsupportedFollowUpE2ETests(unittest.TestCase):
                 projection_generation=3,
                 runtime_generation=3,
                 turn_id="turn:unsupported",
-                outcome="unsupported",
+                outcome="unknown",
                 project_id=_PROJECT_B,
                 project_generation=2,
                 dialogue_act="unsupported",
@@ -234,6 +234,7 @@ class PrologPythonNimUnsupportedFollowUpE2ETests(unittest.TestCase):
             expected_generation=recovered.projection_generation,
         )
         unsupported.assert_pure_symbolic()
+        self.assertEqual(unsupported.outcome, "unknown")
         self.assertEqual(unsupported.expert_evidence, [])
         self.assertFalse(unsupported.providers_enabled)
         self.assertEqual(unsupported.max_model_calls, 0)
@@ -268,6 +269,7 @@ class PrologPythonNimUnsupportedFollowUpE2ETests(unittest.TestCase):
         self.assertIsNotNone(final_projection)
         assert final_projection is not None
         final_projection.assert_pure_symbolic()
+        self.assertEqual(final_projection.outcome, "unknown")
         self.assertEqual(final_projection.project_id, _PROJECT_B)
         self.assertEqual(final_projection.dialogue_act, "unsupported")
         self.assertEqual(final_projection.expert_evidence, [])
