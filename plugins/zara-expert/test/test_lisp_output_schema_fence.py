@@ -13,6 +13,11 @@ from zara_expert.composition import CompositionError, InvocationFence, MetaExper
 CANONICAL_EVIDENCE_REF = f"evidence:lisp:sha256:{'0' * 64}"
 
 
+class CanonicalLookingEvidence:
+    def __str__(self):
+        return CANONICAL_EVIDENCE_REF
+
+
 class RecordingCoreRegistry:
     def __init__(self, result):
         self.result = result
@@ -113,6 +118,16 @@ class LispOutputSchemaFenceTests(unittest.TestCase):
             with self.subTest(evidence_refs=evidence_refs):
                 with self.assertRaisesRegex(CompositionError, "invalid-expert-output"):
                     self.invoke(canonical_result_data(), evidence_refs=evidence_refs)
+
+    def test_core_lisp_rejects_non_string_evidence_before_canonicalization(self):
+        with self.assertRaisesRegex(
+            CompositionError,
+            "evidence_refs must contain strings",
+        ):
+            self.invoke(
+                canonical_result_data(),
+                evidence_refs=(CanonicalLookingEvidence(),),
+            )
 
     def test_core_lisp_accepts_declared_read_only_output_shape_at_zero_models(self):
         node, registry, budget = self.invoke(canonical_result_data())
