@@ -10,6 +10,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REQUEST_ID = "req-operation-verdict-shapes"
 ACTIVATION_ID = "act:" + ("e" * 32)
+INVOCATION_ID = "inv:" + ("f" * 32)
 EXPERT_OPERATION = "inspect"
 EXPECTED_GENERATION = 1
 
@@ -72,6 +73,7 @@ def _result(module, *, verdict: object) -> dict[str, object]:
     return {
         "protocol": module.PROTOCOL,
         "request_id": REQUEST_ID,
+        "invocation_id": INVOCATION_ID,
         "activation_id": ACTIVATION_ID,
         "expert_id": module.EXPERT_ID,
         "expert_version": module.PLUGIN_VERSION,
