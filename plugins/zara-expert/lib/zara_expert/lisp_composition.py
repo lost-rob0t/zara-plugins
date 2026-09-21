@@ -121,7 +121,28 @@ def _validated_lisp_payload(
             raise CompositionError(
                 f"Lisp repair.apply input is missing required fields: {sorted(missing)!r}"
             )
-        return dict(input_data)
+
+        repair = input_data["repair"]
+        if not isinstance(repair, dict):
+            raise CompositionError("Lisp repair.apply repair must be an object")
+
+        expected_preimage = input_data["expected_preimage"]
+        if not isinstance(expected_preimage, str):
+            raise CompositionError(
+                "Lisp repair.apply expected_preimage must be a string"
+            )
+
+        source_generation = input_data["source_generation"]
+        if not isinstance(source_generation, str) or not source_generation:
+            raise CompositionError(
+                "Lisp repair.apply source generation must be a non-empty reference"
+            )
+
+        return {
+            "repair": dict(repair),
+            "expected_preimage": expected_preimage,
+            "source_generation": source_generation,
+        }
 
     allowed_input_keys = (
         _REPAIR_VERIFY_INPUT_KEYS

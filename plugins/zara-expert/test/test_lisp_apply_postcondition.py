@@ -121,6 +121,72 @@ class LispApplyPostconditionTests(unittest.TestCase):
             effect_receipts=(self.receipt,),
         )
 
+    def test_core_apply_rejects_schema_invalid_payload_before_activation(self):
+        cases = (
+            (
+                {
+                    "repair": [],
+                    "expected_preimage": "(print 1",
+                    "source_generation": "project:4",
+                },
+                "repair must be an object",
+            ),
+            (
+                {
+                    "repair": {"replacement": "(print 1)"},
+                    "expected_preimage": 7,
+                    "source_generation": "project:4",
+                },
+                "expected_preimage must be a string",
+            ),
+            (
+                {
+                    "repair": {"replacement": "(print 1)"},
+                    "expected_preimage": "(print 1",
+                    "source_generation": 4,
+                },
+                "source generation must be a non-empty reference",
+            ),
+            (
+                {
+                    "repair": {"replacement": "(print 1)"},
+                    "expected_preimage": "(print 1",
+                    "source_generation": "",
+                },
+                "source generation must be a non-empty reference",
+            ),
+        )
+        for payload, message in cases:
+            with self.subTest(payload=payload):
+                expert_id = "zara:expert/common-lisp"
+                handle = SimpleNamespace(expert_id=expert_id, workspace="project")
+                registry = RecordingCoreRegistry(self.successful_result())
+                activations = []
+
+                def activation_for(requested_expert_id, _fence):
+                    activations.append(requested_expert_id)
+                    return handle
+
+                invoker = CoreLispFamilyCompositionInvoker(
+                    registry,
+                    activation_for=activation_for,
+                    limits_factory=CoreLimits,
+                )
+                budget = SharedSymbolicBudget(max_invocations=1, max_model_calls=0)
+
+                with self.assertRaisesRegex(CompositionError, message):
+                    MetaExpertComposer(invoker).invoke(
+                        expert_id,
+                        "repair.apply",
+                        payload,
+                        budget=budget,
+                        fence=current_fence(),
+                    )
+
+                self.assertEqual(activations, [])
+                self.assertEqual(registry.calls, [])
+                self.assertEqual(budget.model_calls_used, 0)
+
     def test_core_apply_success_requires_and_preserves_fresh_postcondition_evidence(self):
         node, registry, budget = invoke_apply(self.successful_result())
 
