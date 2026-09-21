@@ -294,16 +294,15 @@ def make_language_expert_handler(
         else:
             data = {"result": result}
         if expert_operation == "repair.verify" and verdict == "succeeded":
-            # Predicate completion only proves the symbolic verifier ran. The
-            # canonical Nix/Bash brains intentionally report verified(false)
-            # until Zara's effect/verification authority has produced a fresh
-            # parser/compiler/eval/check postcondition. Default to BLOCKED and
-            # permit promotion only from an exact canonical receipt lookup.
+            # Predicate completion only proves the symbolic verifier ran. A
+            # successful query does not mean the candidate passed its required
+            # postcondition. Preserve the existing fail-closed verdict for every
+            # language family; only the canonical verified-outcome path below
+            # may promote a supported operation back to succeeded.
+            verdict = "blocked"
             required_postcondition = _pending_postcondition(canonical_id, result)
             candidate_source = payload.get("candidate_source")
             source_generation = payload.get("source_generation")
-            if canonical_id in _REQUIRED_POSTCONDITIONS:
-                verdict = "blocked"
             if (
                 required_postcondition is not None
                 and verified_outcome_resolver is not None
