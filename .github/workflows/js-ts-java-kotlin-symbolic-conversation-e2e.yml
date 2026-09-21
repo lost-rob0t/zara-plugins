@@ -1,0 +1,112 @@
+name: JS TS Java Kotlin Symbolic Conversation E2E
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/zara-javascript-expert/**'
+      - 'plugins/zara-typescript-expert/**'
+      - 'plugins/zara-java-expert/**'
+      - 'plugins/zara-kotlin-expert/**'
+      - 'plugins/zara-expert/**'
+      - 'tests/test_js_ts_java_kotlin_composition_fences_e2e.py'
+      - 'tests/test_js_ts_java_kotlin_symbolic_conversation_e2e.py'
+      - '.github/workflows/js-ts-java-kotlin-symbolic-conversation-e2e.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'plugins/zara-javascript-expert/**'
+      - 'plugins/zara-typescript-expert/**'
+      - 'plugins/zara-java-expert/**'
+      - 'plugins/zara-kotlin-expert/**'
+      - 'plugins/zara-expert/**'
+      - 'tests/test_js_ts_java_kotlin_composition_fences_e2e.py'
+      - 'tests/test_js_ts_java_kotlin_symbolic_conversation_e2e.py'
+      - '.github/workflows/js-ts-java-kotlin-symbolic-conversation-e2e.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: js-ts-java-kotlin-symbolic-conversation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  canonical-symbolic-conversation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Fetch exact current Dotfiles brains
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=078156f9dd2f6ec3c15516d29f4af7be32c9b386
+          root=.ci/dotfiles-js-ts-java-kotlin-conversation
+          rm -rf "$root"
+          git init "$root"
+          git -C "$root" remote add origin https://github.com/lost-rob0t/dotfiles.git
+          git -C "$root" config core.sparseCheckout true
+          mkdir -p "$root/.git/info"
+          printf '%s\n' \
+            '/.zara/experts/javascript/' \
+            '/.zara/experts/typescript/' \
+            '/.zara/experts/java/' \
+            '/.zara/experts/kotlin/' \
+            '/.zara/experts/language/' \
+            > "$root/.git/info/sparse-checkout"
+          git -C "$root" fetch --depth=1 origin "$revision"
+          git -C "$root" checkout --detach FETCH_HEAD
+          test "$(git -C "$root" rev-parse HEAD)" = "$revision"
+
+      - name: Fetch exact current Zara Core conversation revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=dc74a41b216388662e55412e1e09a1c8c2fad5a7
+          root=.ci/zara-core-js-ts-java-kotlin-conversation
+          rm -rf "$root"
+          git init "$root"
+          git -C "$root" remote add origin https://github.com/lost-rob0t/zara.git
+          git -C "$root" config core.sparseCheckout true
+          mkdir -p "$root/.git/info"
+          printf '%s\n' '/zara/' '/modules/' > "$root/.git/info/sparse-checkout"
+          git -C "$root" fetch --depth=1 origin "$revision"
+          git -C "$root" checkout --detach FETCH_HEAD
+          test "$(git -C "$root" rev-parse HEAD)" = "$revision"
+
+      - name: Install symbolic runtime and network audit tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends swi-prolog-nox strace
+          python3 -m pip install 'pykka>=3.1' 'langchain-core>=0.2'
+
+      - name: Prove four-language chain feeds durable pure-symbolic conversation
+        env:
+          ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles-js-ts-java-kotlin-conversation
+          ZARA_CURRENT_CORE_ROOT: ${{ github.workspace }}/.ci/zara-core-js-ts-java-kotlin-conversation
+        shell: bash
+        run: |
+          set -euo pipefail
+          trace="$RUNNER_TEMP/js-ts-java-kotlin-symbolic-conversation-network.trace"
+          env \
+            -u OPENAI_API_KEY \
+            -u ANTHROPIC_API_KEY \
+            -u OPENROUTER_API_KEY \
+            -u GOOGLE_API_KEY \
+            -u GEMINI_API_KEY \
+            -u GROQ_API_KEY \
+            -u ZAI_API_KEY \
+            -u AZURE_OPENAI_API_KEY \
+            -u HF_TOKEN \
+            strace -f -e trace=network -o "$trace" \
+            python3 -m unittest discover -s tests -t . -p 'test_js_ts_java_kotlin_symbolic_conversation_e2e.py'
+          if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
+            echo 'unexpected IPv4/IPv6 network syscall during symbolic conversation E2E' >&2
+            cat "$trace" >&2
+            exit 1
+          fi
