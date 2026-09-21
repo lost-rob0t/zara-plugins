@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from tests import test_js_ts_java_kotlin_composition_fences_e2e as composition
+from zara_expert.language_family import matching_experts
 
 
 CURRENT_DOTFILES = "20e16c4fb084df4b01a17c06cd0e11ef5df2fb62"
@@ -130,7 +131,7 @@ class JsTsJavaKotlinSymbolicConversationE2ETests(
             "Main.kt": "zara:expert/kotlin",
         }
         for path, expert_id in routing.items():
-            self.assertEqual(composition.matching_experts(path), (expert_id,))
+            self.assertEqual(matching_experts(path), (expert_id,))
         java_source = self.sources["java"][0].read_text(encoding="utf-8")
         kotlin_source = self.sources["kotlin"][0].read_text(encoding="utf-8")
         self.assertIn("project_metadata_role(observation_only).", java_source)
