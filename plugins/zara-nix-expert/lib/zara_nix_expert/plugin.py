@@ -251,6 +251,8 @@ def _validate_result_payload(result: Mapping[str, object]) -> tuple[Mapping[str,
 
 def _validate_result_usage(result: Mapping[str, object]) -> None:
     usage = result.get("usage")
+    if usage is None:
+        raise NixExpertAdapterError("zero-model-proof-missing")
     if type(usage) is not dict:
         raise NixExpertAdapterError("invalid-expert-usage")
     for field in usage:
