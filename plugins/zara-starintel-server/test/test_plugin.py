@@ -119,9 +119,13 @@ class ZaraStarIntelServerPluginTest(unittest.TestCase):
                 "starintel_api_operations",
                 "starintel_call_operation",
                 "starintel_api_request",
+                "star_funds_status",
+                "star_funds_research",
+                "star_funds_paper_attempt",
             ],
         )
-        self.assertIn("destructive", tools[-1].description.lower())
+        self.assertIn("destructive", tools[4].description.lower())
+        self.assertIn("paper", tools[-1].description.lower())
 
     def test_start_loads_secret_safe_configuration(self):
         environment = {
@@ -240,3 +244,60 @@ class ZaraStarIntelServerPluginTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_star_funds_tools_reuse_manifest_client_and_never_call_live(self):
+        plugin = ZaraStarIntelServerPlugin()
+        client = FakeClient()
+        plugin._client = client
+
+        json.loads(plugin.star_funds_status())
+        json.loads(plugin.star_funds_research_opportunities(top=200))
+        json.loads(
+            plugin.star_funds_paper_attempt(
+                ticker="KXTEST",
+                word="test",
+                minimum_mentions=5,
+                side="YES",
+                limit_price=0.42,
+                max_size=3,
+                minimum_volume=100,
+                maximum_spread=0.05,
+            )
+        )
+
+        self.assertEqual(client.calls[0][1], "star-funds.status.get")
+        self.assertEqual(
+            client.calls[1],
+            (
+                "call_operation",
+                "star-funds.tasks.call",
+                {"task": "research-opportunities"},
+                None,
+                {"top": 100},
+                None,
+            ),
+        )
+        self.assertEqual(client.calls[2][1], "star-funds.tasks.call")
+        self.assertEqual(
+            client.calls[2][2],
+            {"task": "kalshi-paper-attempt"},
+        )
+        self.assertEqual(client.calls[2][4]["side"], "yes")
+        self.assertNotIn("live", json.dumps(client.calls).lower())
+
+
+    def test_star_funds_paper_attempt_rejects_invalid_side_locally(self):
+        plugin = ZaraStarIntelServerPlugin()
+        plugin._client = FakeClient()
+        with self.assertRaisesRegex(StarIntelError, "side"):
+            plugin.star_funds_paper_attempt(
+                ticker="KXTEST",
+                word="test",
+                minimum_mentions=1,
+                side="buy",
+                limit_price=0.4,
+                max_size=1,
+                minimum_volume=1,
+                maximum_spread=0.1,
+            )
