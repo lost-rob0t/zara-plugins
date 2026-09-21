@@ -198,7 +198,7 @@ jobs:
           test "$(sha256sum candidate/zara-companion-debug.apk | awk '{print $1}')" = "$(awk '{print $1}' candidate/SHA256SUMS)"
           mkdir -p release
           cp candidate/zara-companion-debug.apk release/zara-companion-latest.apk
-          cp candidate/SHA256SUMS release/zara-companion-latest.apk.sha256
+          (cd release && sha256sum zara-companion-latest.apk > zara-companion-latest.apk.sha256)
           {
             echo "source_sha=$GITHUB_SHA"
             echo "version_name=0.1.0-alpha.3"
