@@ -48,11 +48,11 @@ jobs:
           git -C .ci/dotfiles-js-ts-java-kotlin-root-cancel checkout --detach FETCH_HEAD
           test "$(git -C .ci/dotfiles-js-ts-java-kotlin-root-cancel rev-parse HEAD)" = "$revision"
 
-      - name: Fetch exact upstream Zara Core root-cancellation fix
+      - name: Fetch exact merged Zara Core root-cancellation fix
         shell: bash
         run: |
           set -euo pipefail
-          revision=f92a4a199958fdc0dcba3818483952bb52e84f55
+          revision=8177460982f94a5a60cf454c2fd4f9beae867a95
           rm -rf .ci/zara-core-js-ts-java-kotlin-root-cancel
           git init .ci/zara-core-js-ts-java-kotlin-root-cancel
           git -C .ci/zara-core-js-ts-java-kotlin-root-cancel remote add origin https://github.com/lost-rob0t/zara.git
