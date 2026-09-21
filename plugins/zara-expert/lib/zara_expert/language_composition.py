@@ -19,6 +19,10 @@ _TYPED_EXPERT_IDS = frozenset(
         "zara:expert/prolog",
         "zara:expert/python",
         "zara:expert/nim",
+        "zara:expert/javascript",
+        "zara:expert/typescript",
+        "zara:expert/java",
+        "zara:expert/kotlin",
     }
 )
 
@@ -113,10 +117,10 @@ def _validated_core_result(
         route="Zara Core ZARA-EXPERT/1",
     )
 
-    # Prolog/Python/Nim publish closed operation data plus canonical top-level
-    # evidence refs. Do not reinterpret an operation-specific `result` field as
-    # transport metadata for those adapters. Older language packages still use
-    # the historical nested envelope until their own migration lands.
+    # Migrated language adapters publish closed operation data plus canonical
+    # top-level evidence refs. Do not reinterpret an operation-specific `result`
+    # field as transport metadata for those adapters. Older language packages
+    # still use the historical nested envelope until their own migration lands.
     if expert_id not in _TYPED_EXPERT_IDS:
         nested = data.get("result")
         if nested is not None:
