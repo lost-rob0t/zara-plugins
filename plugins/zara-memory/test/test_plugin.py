@@ -63,9 +63,20 @@ class MemoryPluginTests(unittest.TestCase):
 
     def test_native_tools_are_fail_closed_and_write_requires_core_approval(self):
         tools = {tool.name: tool for tool in ZaraMemoryPlugin().tools()}
-        self.assertEqual(set(tools), {"memory.status", "memory.remember", "memory.get"})
+        self.assertEqual(
+            set(tools),
+            {
+                "memory.status",
+                "memory.remember",
+                "memory.get",
+                "memory.preference.observe",
+                "memory.preference.patterns",
+            },
+        )
         self.assertIs(tools["memory.remember"].metadata["zara_requires_approval"], True)
         self.assertFalse(bool((tools["memory.get"].metadata or {}).get("zara_requires_approval", False)))
+        self.assertFalse(bool((tools["memory.preference.observe"].metadata or {}).get("zara_requires_approval", False)))
+        self.assertFalse(bool((tools["memory.preference.patterns"].metadata or {}).get("zara_requires_approval", False)))
         with self.assertRaisesRegex(RuntimeError, "backend-not-configured"):
             ZaraMemoryPlugin().remember("hello")
 
