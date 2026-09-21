@@ -41,13 +41,6 @@ def _invalid(detail: str) -> None:
     raise CompositionError(f"invalid-expert-output: {detail}")
 
 
-def _validate_evidence_refs(value: Any) -> None:
-    if not isinstance(value, (list, tuple)):
-        _invalid("Lisp data.evidence_refs must be a sequence")
-    if any(not isinstance(item, str) or not item for item in value):
-        _invalid("Lisp data.evidence_refs must contain non-empty references")
-
-
 def _is_content_addressed_lisp_evidence(reference: str) -> bool:
     if not reference.startswith(_CONTENT_ADDRESSED_EVIDENCE_PREFIX):
         return False
@@ -83,6 +76,13 @@ def _validate_projected_evidence(operation: str, evidence: Any) -> None:
         ):
             continue
         _invalid(f"noncanonical Lisp projected evidence reference: {reference!r}")
+
+
+def _validate_evidence_refs(value: Any, operation: str) -> None:
+    try:
+        _validate_projected_evidence(operation, value)
+    except CompositionError as exc:
+        _invalid(f"Lisp data.evidence_refs is invalid: {exc}")
 
 
 def _validate_repair_apply_postcondition(
@@ -193,7 +193,7 @@ def _validate_predicate_output(
         _invalid("Lisp predicate output requires result object")
 
     if "evidence_refs" in data:
-        _validate_evidence_refs(data["evidence_refs"])
+        _validate_evidence_refs(data["evidence_refs"], operation)
 
     if operation != "repair.verify":
         return
