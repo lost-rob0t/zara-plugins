@@ -164,7 +164,7 @@ def _operation_descriptor(operation: str) -> dict[str, object]:
 
 
 class ZaraNimExpertPlugin(ServicePlugin):
-    metadata = PluginMetadata(name=PACKAGE_NAMESPACE, version=PLUGIN_VERSION, api_version="1", description="Pure-symbolic NimExpert adapter over Zara's canonical expert host")
+    metadata = PluginMetadata(name=PACKAGE_NAMESPACE, version=PLUGIN_VERSION, api_version="1", description="Pure-symbolic NimExpert adapter over the canonical Zara expert host")
 
     def __init__(self) -> None:
         self._runtime: Any | None = None
