@@ -6,7 +6,13 @@ from typing import Any
 
 from . import lisp_composition as _base
 from .composition import CompositionError, InvocationResult
-from .lisp_family import _REQUIRED_POSTCONDITIONS, _verified_postcondition_ref
+from .lisp_family import (
+    _MAX_CORE_EVIDENCE_REFS,
+    _REQUIRED_POSTCONDITIONS,
+    _VERIFIED_OUTCOME_REF_RE,
+    _VERIFIED_POSTCONDITION_PREFIX,
+    _verified_postcondition_ref,
+)
 
 
 _BaseCoreLispFamilyCompositionInvoker = _base.CoreLispFamilyCompositionInvoker
@@ -28,17 +34,58 @@ _VERIFY_OUTPUT_FIELDS = frozenset(
         "postcondition_evidence",
     }
 )
+_CONTENT_ADDRESSED_EVIDENCE_PREFIX = "evidence:lisp:sha256:"
+_CORE_LISP_EVIDENCE_REF = "ev:core:lisp"
 
 
 def _invalid(detail: str) -> None:
     raise CompositionError(f"invalid-expert-output: {detail}")
 
 
-def _validate_evidence_refs(value: Any) -> None:
-    if not isinstance(value, (list, tuple)):
-        _invalid("Lisp data.evidence_refs must be a sequence")
-    if any(not isinstance(item, str) or not item for item in value):
-        _invalid("Lisp data.evidence_refs must contain non-empty references")
+def _is_content_addressed_lisp_evidence(reference: str) -> bool:
+    if not reference.startswith(_CONTENT_ADDRESSED_EVIDENCE_PREFIX):
+        return False
+    digest = reference[len(_CONTENT_ADDRESSED_EVIDENCE_PREFIX) :]
+    return len(digest) == 64 and all(character in "0123456789abcdef" for character in digest)
+
+
+def _validate_projected_evidence(operation: str, evidence: Any) -> None:
+    """Admit only canonical Lisp lineage into durable/public projection.
+
+    Core owns invocation/effect authority. The adapter therefore never repairs or
+    reinterprets raw trace strings returned by Core. If Core omits canonical
+    evidence and only exposes nested trace text, composition fails closed instead
+    of projecting strings that could look like provider, tool, or receipt
+    authority while the shared model budget is zero.
+    """
+
+    if not isinstance(evidence, (list, tuple)):
+        _invalid("Lisp projected evidence must be a sequence")
+    if len(evidence) > _MAX_CORE_EVIDENCE_REFS:
+        _invalid(f"Lisp projected evidence exceeds {_MAX_CORE_EVIDENCE_REFS} references")
+
+    allow_verified_postcondition = operation in {"repair.verify", "repair.apply"}
+    for reference in evidence:
+        if not isinstance(reference, str) or not reference:
+            _invalid("Lisp projected evidence must contain non-empty references")
+        if reference == _CORE_LISP_EVIDENCE_REF:
+            continue
+        if _is_content_addressed_lisp_evidence(reference):
+            continue
+        if (
+            allow_verified_postcondition
+            and reference.startswith(_VERIFIED_POSTCONDITION_PREFIX)
+            and _VERIFIED_OUTCOME_REF_RE.fullmatch(reference) is not None
+        ):
+            continue
+        _invalid(f"noncanonical Lisp projected evidence reference: {reference!r}")
+
+
+def _validate_evidence_refs(value: Any, operation: str) -> None:
+    try:
+        _validate_projected_evidence(operation, value)
+    except CompositionError as exc:
+        _invalid(f"Lisp data.evidence_refs is invalid: {exc}")
 
 
 def _validate_repair_apply_postcondition(
@@ -124,14 +171,18 @@ def _validate_predicate_output(
             raise CompositionError("cancelled-expert-output-leak")
         return
 
+    # repair.apply has a stronger dialect-specific verified-outcome contract.
+    # Let that contract reject a malformed receipt first, then apply the generic
+    # evidence grammar in the Core wrapper. This preserves a precise fail-closed
+    # reason without admitting the bad evidence into projection.
+    if operation == "repair.apply":
+        return
+
+    _validate_projected_evidence(operation, result.evidence)
+
     # Dialect repair.preview is a local delegation envelope, not a Core/host
     # predicate result. The canonical generic Lisp child owns the parser output.
     if operation == "repair.preview" and expert_id in _DIALECT_REPAIR_EXPERTS:
-        return
-    if operation == "repair.apply":
-        # The existing Core adapter owns canonical effect-receipt admission and
-        # the base fresh-generation postcondition checks. Dialect-specific
-        # generation/digest/receipt binding is layered by the Core wrapper below.
         return
 
     if not isinstance(data, Mapping):
@@ -147,7 +198,7 @@ def _validate_predicate_output(
         _invalid("Lisp predicate output requires result object")
 
     if "evidence_refs" in data:
-        _validate_evidence_refs(data["evidence_refs"])
+        _validate_evidence_refs(data["evidence_refs"], operation)
 
     if operation != "repair.verify":
         return
@@ -181,6 +232,7 @@ class CoreLispFamilyCompositionInvoker(_BaseCoreLispFamilyCompositionInvoker):
         _validate_predicate_output(expert_id, operation, result)
         if operation == "repair.apply":
             _validate_repair_apply_postcondition(expert_id, input_data, result)
+            _validate_projected_evidence(operation, result.evidence)
         return result
 
 
