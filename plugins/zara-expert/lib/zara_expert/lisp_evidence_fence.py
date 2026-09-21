@@ -107,6 +107,30 @@ def _strict_family_pending_postcondition(
     return expected
 
 
+def _guard_repair_verify_input_identity(
+    expert_operation: Any,
+    arguments: Any,
+    source_generation: Any,
+) -> None:
+    """Keep receipt-binding inputs canonical before registered-host dispatch.
+
+    `repair.verify` binds fresh postcondition evidence to the exact candidate
+    source bytes and source generation. Python container/string subclasses are
+    not canonical ZARA-EXPERT/1 wire values and can override iteration, encoding,
+    or comparison behavior. Reject them before they can influence the host query
+    or candidate digest. This is a type/authority fence, not Lisp parser logic.
+    """
+
+    if expert_operation != "repair.verify":
+        return
+    if arguments is not None and type(arguments) is not list:
+        raise ExpertError("Lisp expert arguments must be a list of ground strings")
+    if arguments is not None and any(type(item) is not str for item in arguments):
+        raise ExpertError("Lisp expert arguments must contain ground strings")
+    if source_generation is not None and type(source_generation) is not str:
+        raise ExpertError("Lisp expert source_generation must be a string")
+
+
 def install_lisp_evidence_type_fence() -> None:
     """Install narrow pre-normalization fences on the existing Lisp adapters.
 
@@ -114,8 +138,9 @@ def install_lisp_evidence_type_fence() -> None:
     safe only after provenance has already been established. At the Core/plugin
     boundary an arbitrary object could otherwise stringify to a canonical-looking
     evidence reference. The verified-outcome path has the same rule for symbolic
-    result terms: only strings may request a postcondition receipt. Keep existing
-    composition/runtime ownership intact and do not duplicate parser semantics.
+    result terms and receipt-binding inputs: only canonical built-in strings/lists
+    may influence verified success. Keep existing composition/runtime ownership
+    intact and do not duplicate parser semantics.
     """
 
     if getattr(_base, "_LISP_EVIDENCE_TYPE_FENCE_INSTALLED", False):
@@ -123,6 +148,7 @@ def install_lisp_evidence_type_fence() -> None:
 
     original_handler = _base._handler_outcome_to_invocation_result
     original_core = _base._validated_core_result
+    original_make_handler = _family.make_lisp_expert_handler
 
     def fenced_handler(expert_id: str, operation: str, outcome: Any):
         _guard_handler_outcome(outcome)
@@ -132,10 +158,46 @@ def install_lisp_evidence_type_fence() -> None:
         _guard_core_outcome(outcome)
         return original_core(expert_id, operation, input_data, outcome)
 
+    def fenced_make_handler(
+        host: Any,
+        expert_id: str,
+        *,
+        verified_outcome_resolver: _family.VerifiedOutcomeResolver | None = None,
+    ):
+        handler = original_make_handler(
+            host,
+            expert_id,
+            verified_outcome_resolver=verified_outcome_resolver,
+        )
+
+        def fenced_invocation(
+            *,
+            expert_operation: str,
+            arguments: list[Any] | None = None,
+            repair: dict[str, Any] | None = None,
+            expected_preimage: str | None = None,
+            source_generation: str | None = None,
+        ) -> dict[str, Any]:
+            _guard_repair_verify_input_identity(
+                expert_operation,
+                arguments,
+                source_generation,
+            )
+            return handler(
+                expert_operation=expert_operation,
+                arguments=arguments,
+                repair=repair,
+                expected_preimage=expected_preimage,
+                source_generation=source_generation,
+            )
+
+        return fenced_invocation
+
     _base._handler_outcome_to_invocation_result = fenced_handler
     _base._validated_core_result = fenced_core
     _family._core_evidence_refs = _strict_family_core_evidence_refs
     _family._pending_postcondition = _strict_family_pending_postcondition
+    _family.make_lisp_expert_handler = fenced_make_handler
     _base._LISP_EVIDENCE_TYPE_FENCE_INSTALLED = True
 
 
