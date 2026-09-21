@@ -295,11 +295,12 @@ class JsTsJavaKotlinRegisteredHostAllOperationsE2ETests(unittest.TestCase):
         java_rules = "\n".join(map(str, projections["java"]["style_rules"]))
         kotlin_rules = "\n".join(map(str, projections["kotlin"]["style_rules"]))
         self.assertIn("no_implicit_typescript_semantics", js_rules)
-        self.assertIn("preserve_type_annotations", ts_rules)
-        self.assertIn("project_metadata_observation_only", java_rules)
-        self.assertIn("project_metadata_observation_only", kotlin_rules)
-        self.assertNotIn("coroutines", java_rules)
-        self.assertIn("coroutines", kotlin_rules)
+        self.assertIn("explicit_type_only_imports", ts_rules)
+        for jvm_rules in (java_rules, kotlin_rules):
+            self.assertIn("gradle_jvm_metadata_observation_only", jvm_rules)
+            self.assertIn("android_metadata_observation_only", jvm_rules)
+        self.assertNotIn("coroutine", java_rules)
+        self.assertIn("coroutine_structure_preserved", kotlin_rules)
 
         for language in ("java", "kotlin"):
             provenance = "\n".join(map(str, projections[language]["style_provenance"]))
