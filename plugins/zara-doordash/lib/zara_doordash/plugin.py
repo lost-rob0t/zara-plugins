@@ -27,12 +27,11 @@ class ZaraDoorDashPlugin(ServicePlugin):
     def __init__(self) -> None:
         self.domain = DoorDashDomain()
         self.runtime = None
-        self.browser_handle = None
-        self.preference_observe_handle = None
-        self.preference_patterns_handle = None
         self.learning_enabled = True
         self.preference_min_observations = 2
         self.preference_limit = 10
+        self.preference_min_confidence = 0.5
+        self.policy_source = "default"
 
     def start(self, runtime) -> None:
         self.runtime = runtime
@@ -61,15 +60,25 @@ class ZaraDoorDashPlugin(ServicePlugin):
             1,
             100,
         )
-        self.browser_handle = self._resolve("browser.tab.open")
-        self.preference_observe_handle = self._resolve("memory.preference.observe")
-        self.preference_patterns_handle = self._resolve("memory.preference.patterns")
+        self.preference_min_confidence = self._number(
+            section.get("preference_min_confidence", 0.5),
+            "preference_min_confidence",
+            0.0,
+            1.0,
+        )
+        provider = section.get("commerce_provider", "doordash")
+        confirmation = section.get("commerce_confirmation", "always")
+        if provider != "doordash":
+            raise DoorDashError("commerce_provider must be doordash")
+        if confirmation != "always":
+            raise DoorDashError("commerce_confirmation must remain always")
+        source = section.get("policy_source", "default")
+        if not isinstance(source, str) or not source:
+            raise DoorDashError("policy_source must be a non-empty string")
+        self.policy_source = source
 
     def stop(self) -> None:
         self.runtime = None
-        self.browser_handle = None
-        self.preference_observe_handle = None
-        self.preference_patterns_handle = None
 
     def status(self) -> str:
         return self._json(
@@ -78,11 +87,15 @@ class ZaraDoorDashPlugin(ServicePlugin):
                 "provider": "doordash",
                 "checkout_mode": "consumer_handoff",
                 "consumer_checkout_api": "not_publicly_available",
-                "browser_handoff": self.browser_handle is not None,
+                "browser_handoff": self._resolve("browser.tab.open") is not None,
+                "policy_source": self.policy_source,
                 "preference_learning": {
                     "enabled": self.learning_enabled,
-                    "observe_available": self.preference_observe_handle is not None,
-                    "patterns_available": self.preference_patterns_handle is not None,
+                    "observe_available": self._resolve("memory.preference.observe") is not None,
+                    "patterns_available": self._resolve("memory.preference.patterns") is not None,
+                    "min_observations": self.preference_min_observations,
+                    "max_patterns": self.preference_limit,
+                    "min_confidence": self.preference_min_confidence,
                 },
                 "purchase_completed": False,
             }
@@ -118,11 +131,12 @@ class ZaraDoorDashPlugin(ServicePlugin):
             context=context,
         )
         browser = {"status": "unavailable", "reason": "browser-capability-unavailable"}
-        if self.browser_handle is not None and self.runtime is not None:
+        browser_handle = self._resolve("browser.tab.open")
+        if browser_handle is not None and self.runtime is not None:
             try:
                 browser = self._result_mapping(
                     self.runtime.invoke_capability(
-                        self.browser_handle,
+                        browser_handle,
                         {"url": plan["url"]},
                     )
                 )
@@ -134,11 +148,13 @@ class ZaraDoorDashPlugin(ServicePlugin):
                 }
 
         learning: dict[str, object] = {
-            "status": "disabled" if not self.learning_enabled else "unavailable"
+            "status": "disabled" if not self.learning_enabled else "not_observed"
         }
+        preference_observe_handle = self._resolve("memory.preference.observe")
         if (
             self.learning_enabled
-            and self.preference_observe_handle is not None
+            and plan["status"] == "handoff_opened"
+            and preference_observe_handle is not None
             and self.runtime is not None
         ):
             observation = self.domain.preference_observation(
@@ -149,7 +165,7 @@ class ZaraDoorDashPlugin(ServicePlugin):
             try:
                 learning = self._result_mapping(
                     self.runtime.invoke_capability(
-                        self.preference_observe_handle,
+                        preference_observe_handle,
                         observation,
                     )
                 )
@@ -171,7 +187,8 @@ class ZaraDoorDashPlugin(ServicePlugin):
         min_observations: int | None = None,
         limit: int | None = None,
     ) -> str:
-        if self.preference_patterns_handle is None or self.runtime is None:
+        preference_patterns_handle = self._resolve("memory.preference.patterns")
+        if preference_patterns_handle is None or self.runtime is None:
             return self._json(
                 {
                     "status": "unavailable",
@@ -182,12 +199,18 @@ class ZaraDoorDashPlugin(ServicePlugin):
         minimum = (
             self.preference_min_observations
             if min_observations is None
-            else self._integer(min_observations, "min_observations", 1, 1000)
+            else max(
+                self.preference_min_observations,
+                self._integer(min_observations, "min_observations", 1, 1000),
+            )
         )
         maximum = (
             self.preference_limit
             if limit is None
-            else self._integer(limit, "limit", 1, 100)
+            else min(
+                self.preference_limit,
+                self._integer(limit, "limit", 1, 100),
+            )
         )
         request = {
             "domain": "food",
@@ -197,14 +220,22 @@ class ZaraDoorDashPlugin(ServicePlugin):
             "limit": maximum,
         }
         try:
-            return self._json(
-                self._result_mapping(
-                    self.runtime.invoke_capability(
-                        self.preference_patterns_handle,
-                        request,
-                    )
+            result = self._result_mapping(
+                self.runtime.invoke_capability(
+                    preference_patterns_handle,
+                    request,
                 )
             )
+            patterns = result.get("patterns", [])
+            if not isinstance(patterns, list):
+                raise DoorDashError("preference patterns must be a list")
+            result["patterns"] = [
+                pattern
+                for pattern in patterns
+                if isinstance(pattern, Mapping)
+                and self._pattern_confidence(pattern) >= self.preference_min_confidence
+            ]
+            return self._json(result)
         except Exception as error:
             return self._json(
                 {
@@ -277,15 +308,18 @@ class ZaraDoorDashPlugin(ServicePlugin):
 
     @staticmethod
     def _section(configuration: object) -> Mapping[str, object]:
+        if configuration is None:
+            return {}
         if not isinstance(configuration, Mapping):
-            return {}
-        plugins = configuration.get("plugins", {})
-        if not isinstance(plugins, Mapping):
-            return {}
-        section = plugins.get("zara-doordash", {})
-        if not isinstance(section, Mapping):
-            raise DoorDashError("plugins.zara-doordash must be a table")
-        return section
+            raise DoorDashError("zara-doordash configuration must be a table")
+        return configuration
+
+    @staticmethod
+    def _pattern_confidence(pattern: Mapping[str, object]) -> float:
+        value = pattern.get("confidence", pattern.get("preference_ratio", 0.0))
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return 0.0
+        return float(value)
 
     @staticmethod
     def _boolean(value: object, name: str) -> bool:
@@ -302,6 +336,20 @@ class ZaraDoorDashPlugin(ServicePlugin):
     ) -> int:
         if isinstance(value, bool) or not isinstance(value, int):
             raise DoorDashError(f"{name} must be an integer")
+        if not minimum <= value <= maximum:
+            raise DoorDashError(f"{name} is out of range")
+        return value
+
+    @staticmethod
+    def _number(
+        value: object,
+        name: str,
+        minimum: float,
+        maximum: float,
+    ) -> float:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise DoorDashError(f"{name} must be a number")
+        value = float(value)
         if not minimum <= value <= maximum:
             raise DoorDashError(f"{name} is out of range")
         return value
