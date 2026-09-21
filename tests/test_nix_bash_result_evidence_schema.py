@@ -10,6 +10,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REQUEST_ID = "req-result-evidence-schema"
 ACTIVATION_ID = "act:" + ("d" * 32)
+INVOCATION_ID = "inv:" + ("c" * 32)
 EXPERT_OPERATION = "parse"
 EXPECTED_GENERATION = 1
 
@@ -78,7 +79,7 @@ def _result(*, expert_id: str, manifest_digest: str) -> dict[str, object]:
     return {
         "protocol": "ZARA-EXPERT/1",
         "request_id": REQUEST_ID,
-        "invocation_id": "inv:result-evidence-schema",
+        "invocation_id": INVOCATION_ID,
         "activation_id": ACTIVATION_ID,
         "expert_id": expert_id,
         "expert_version": "0.1.0",
