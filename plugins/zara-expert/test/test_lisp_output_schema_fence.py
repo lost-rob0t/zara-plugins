@@ -127,6 +127,24 @@ class LispOutputSchemaFenceTests(unittest.TestCase):
                 evidence_refs=(),
             )
 
+    def test_core_lisp_rejects_cancelled_results_with_late_top_level_evidence(self):
+        # A cancelled Core projection is terminal. Late backend evidence must not
+        # survive cancellation even when data/effects were already discarded.
+        for evidence_refs in (
+            ("evidence:lisp:late",),
+            "evidence:lisp:late",
+        ):
+            with self.subTest(evidence_refs=evidence_refs):
+                with self.assertRaisesRegex(
+                    CompositionError,
+                    "cancelled-expert-output-leak",
+                ):
+                    self.invoke(
+                        {},
+                        status="cancelled",
+                        evidence_refs=evidence_refs,
+                    )
+
 
 if __name__ == "__main__":
     unittest.main()
