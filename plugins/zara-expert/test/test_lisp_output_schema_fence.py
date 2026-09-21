@@ -129,6 +129,16 @@ class LispOutputSchemaFenceTests(unittest.TestCase):
                 evidence_refs=(CanonicalLookingEvidence(),),
             )
 
+    def test_core_lisp_rejects_non_string_trace_before_evidence_fallback(self):
+        malformed = canonical_result_data()
+        malformed["result"]["trace"] = [CanonicalLookingEvidence()]
+
+        with self.assertRaisesRegex(
+            CompositionError,
+            "host trace must contain strings",
+        ):
+            self.invoke(malformed, evidence_refs=())
+
     def test_core_lisp_accepts_declared_read_only_output_shape_at_zero_models(self):
         node, registry, budget = self.invoke(canonical_result_data())
 
