@@ -148,6 +148,28 @@ class NixExpertPluginTests(unittest.TestCase):
         self.assertEqual(runtime.resolved, [])
         self.assertEqual(runtime.requests, [])
 
+    def test_operation_input_schema_rejects_malformed_payload_before_host(self) -> None:
+        runtime = FakeRuntime()
+        plugin = ZaraNixExpertPlugin()
+        plugin.start(runtime)
+
+        cases = (
+            ("inspect_flake", "{}", "missing-operation-input"),
+            (
+                "parse",
+                '{"source":"{}","provider_fallback":true}',
+                "unknown-operation-input",
+            ),
+            ("parse", '{"source":7}', "invalid-operation-input"),
+        )
+        for operation, payload, error in cases:
+            with self.subTest(operation=operation, error=error):
+                with self.assertRaisesRegex(NixExpertAdapterError, error):
+                    invoke(plugin, operation, payload)
+
+        self.assertEqual(runtime.resolved, [])
+        self.assertEqual(runtime.requests, [])
+
     def test_invalid_generation_or_limit_is_rejected_before_host(self) -> None:
         runtime = FakeRuntime()
         plugin = ZaraNixExpertPlugin()
