@@ -10,6 +10,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REQUEST_ID = "req-generation-type"
 ACTIVATION_ID = "act:" + ("c" * 32)
+INVOCATION_ID = "inv:" + ("d" * 32)
 EXPERT_OPERATION = "parse"
 EXPECTED_GENERATION = 1
 
@@ -84,7 +85,7 @@ def _result(
     return {
         "protocol": "ZARA-EXPERT/1",
         "request_id": REQUEST_ID,
-        "invocation_id": "inv:generation-type",
+        "invocation_id": INVOCATION_ID,
         "activation_id": ACTIVATION_ID,
         "expert_id": expert_id,
         "expert_version": "0.1.0",
