@@ -110,7 +110,14 @@ def _validate_result(result: Mapping[str, object], *, request_id: str, activatio
     expected = {"protocol":PROTOCOL,"request_id":request_id,"activation_id":activation_id,"expert_id":EXPERT_ID,"expert_version":PLUGIN_VERSION,"manifest_digest":MANIFEST_DIGEST,"expert_operation":expert_operation}
     if any(result.get(key) != value for key, value in expected.items()):
         raise TypeScriptExpertAdapterError("expert-result-identity-mismatch")
-    if result.get("resolved_registry_generation") != registry_generation or result.get("resolved_runtime_generation") != runtime_generation:
+    resolved_registry_generation = result.get("resolved_registry_generation")
+    resolved_runtime_generation = result.get("resolved_runtime_generation")
+    if (
+        type(resolved_registry_generation) is not int
+        or resolved_registry_generation != registry_generation
+        or type(resolved_runtime_generation) is not int
+        or resolved_runtime_generation != runtime_generation
+    ):
         raise TypeScriptExpertAdapterError("stale-expert-result")
     if result.get("verdict") not in RESULT_VERDICTS:
         raise TypeScriptExpertAdapterError("invalid-expert-verdict")

@@ -211,9 +211,13 @@ def _validate_result(
     for key, value in expected.items():
         if result.get(key) != value:
             raise JavaScriptExpertAdapterError("expert-result-identity-mismatch")
+    resolved_registry_generation = result.get("resolved_registry_generation")
+    resolved_runtime_generation = result.get("resolved_runtime_generation")
     if (
-        result.get("resolved_registry_generation") != registry_generation
-        or result.get("resolved_runtime_generation") != runtime_generation
+        type(resolved_registry_generation) is not int
+        or resolved_registry_generation != registry_generation
+        or type(resolved_runtime_generation) is not int
+        or resolved_runtime_generation != runtime_generation
     ):
         raise JavaScriptExpertAdapterError("stale-expert-result")
     if result.get("verdict") not in RESULT_VERDICTS:
