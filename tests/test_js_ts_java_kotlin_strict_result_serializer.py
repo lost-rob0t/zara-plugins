@@ -76,9 +76,9 @@ CASES = (
 
 
 class _Runtime:
-    def __init__(self, module, usage_extra: object | None = None):
+    def __init__(self, module, metadata_extra: object | None = None):
         self.module = module
-        self.usage_extra = usage_extra
+        self.metadata_extra = metadata_extra
         self.requests: list[dict[str, object]] = []
 
     def resolve_capability(self, capability: str) -> str:
@@ -88,10 +88,7 @@ class _Runtime:
 
     def invoke_capability(self, _handle: str, request: dict[str, object]):
         self.requests.append(request)
-        usage: dict[str, object] = {"model_calls": 0}
-        if self.usage_extra is not None:
-            usage["serializer_probe"] = self.usage_extra
-        return {
+        result: dict[str, object] = {
             "protocol": self.module.PROTOCOL,
             "request_id": request["request_id"],
             "activation_id": request["activation_id"],
@@ -104,13 +101,16 @@ class _Runtime:
             "verdict": "succeeded",
             "data": {"result": {}},
             "evidence_refs": [],
-            "usage": usage,
+            "usage": {"model_calls": 0},
             "effect_receipts": [],
         }
+        if self.metadata_extra is not None:
+            result["invocation_id"] = self.metadata_extra
+        return result
 
 
-def _invoke(module, usage_extra: object | None = None) -> tuple[str, _Runtime]:
-    runtime = _Runtime(module, usage_extra)
+def _invoke(module, metadata_extra: object | None = None) -> tuple[str, _Runtime]:
+    runtime = _Runtime(module, metadata_extra)
     plugin = module.create_plugin()
     plugin.start(runtime)
     encoded = plugin.invoke(
