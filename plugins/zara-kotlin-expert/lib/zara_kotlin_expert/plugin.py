@@ -31,6 +31,7 @@ MAX_EVIDENCE_REFS = 32
 MAX_EVIDENCE_REF_LENGTH = 128
 REQUEST_ID_RE = re.compile(r"^[!-~]{1,128}$")
 ACTIVATION_ID_RE = re.compile(r"^act:[a-f0-9]{32}$")
+INVOCATION_ID_RE = re.compile(r"^inv:[a-f0-9]{32}$")
 RESULT_VERDICTS = frozenset(
     {"succeeded", "failed", "unknown", "blocked", "unsupported", "cancelled", "error"}
 )
@@ -365,6 +366,9 @@ def _validate_result(
     runtime_generation: int,
 ) -> None:
     _validate_result_metadata(result)
+    invocation_id = result.get("invocation_id")
+    if type(invocation_id) is not str or INVOCATION_ID_RE.fullmatch(invocation_id) is None:
+        raise KotlinExpertAdapterError("invalid-expert-invocation-id")
     expected = {
         "protocol": PROTOCOL,
         "request_id": request_id,
