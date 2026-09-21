@@ -26,6 +26,8 @@ MAX_OBJECT_PROPERTIES = 128
 MAX_ARRAY_ITEMS = 256
 MAX_KEY_LENGTH = 128
 MAX_STRING_LENGTH = 4096
+MAX_EVIDENCE_REFS = 32
+MAX_EVIDENCE_REF_LENGTH = 128
 MAX_GENERATION = 2147483647
 REQUEST_ID_RE = re.compile(r"^[!-~]{1,128}$")
 ACTIVATION_ID_RE = re.compile(r"^act:[a-f0-9]{32}$")
@@ -106,6 +108,7 @@ RESULT_FIELDS = frozenset(
         "replayed",
     }
 )
+USAGE_FIELDS = frozenset({"model_calls"})
 
 
 class BashExpertAdapterError(RuntimeError):
@@ -241,10 +244,30 @@ def _validate_result_payload(result: Mapping[str, object]) -> tuple[Mapping[str,
     evidence_refs = result.get("evidence_refs")
     if not isinstance(evidence_refs, (list, tuple)):
         raise BashExpertAdapterError("invalid-expert-evidence")
+    if len(evidence_refs) > MAX_EVIDENCE_REFS:
+        raise BashExpertAdapterError("invalid-expert-evidence")
     for evidence_ref in evidence_refs:
-        if type(evidence_ref) is not str or not evidence_ref or len(evidence_ref) > MAX_STRING_LENGTH:
+        if (
+            type(evidence_ref) is not str
+            or not evidence_ref
+            or len(evidence_ref) > MAX_EVIDENCE_REF_LENGTH
+        ):
             raise BashExpertAdapterError("invalid-expert-evidence")
     return data, evidence_refs
+
+
+def _validate_result_usage(result: Mapping[str, object]) -> None:
+    usage = result.get("usage")
+    if usage is None:
+        raise BashExpertAdapterError("zero-model-proof-missing")
+    if type(usage) is not dict:
+        raise BashExpertAdapterError("invalid-expert-usage")
+    for field in usage:
+        if type(field) is not str or field not in USAGE_FIELDS:
+            raise BashExpertAdapterError("unknown-expert-usage-field")
+    model_calls = usage.get("model_calls")
+    if type(model_calls) is not int or model_calls != 0:
+        raise BashExpertAdapterError("zero-model-proof-missing")
 
 
 def _validate_result_metadata(result: Mapping[str, object]) -> None:
@@ -308,12 +331,9 @@ def _validate_result(
     if type(verdict) is not str or verdict not in RESULT_VERDICTS:
         raise BashExpertAdapterError("invalid-expert-verdict")
     data, evidence_refs = _validate_result_payload(result)
-    usage = result.get("usage")
-    model_calls = usage.get("model_calls") if isinstance(usage, Mapping) else None
-    if type(model_calls) is not int or model_calls != 0:
-        raise BashExpertAdapterError("zero-model-proof-missing")
+    _validate_result_usage(result)
     receipts = result.get("effect_receipts")
-    if not isinstance(receipts, (list, tuple)):
+    if type(receipts) is not list:
         raise BashExpertAdapterError("read-only-effect-proof-missing")
     if receipts:
         raise BashExpertAdapterError("read-only-effect-leak")
@@ -467,7 +487,7 @@ class ZaraBashExpertPlugin(ServicePlugin):
         except Exception as error:
             raise BashExpertAdapterError("expert-host-invocation-failed") from error
 
-        if not isinstance(result, Mapping):
+        if type(result) is not dict:
             raise BashExpertAdapterError("invalid-expert-result")
         _validate_result(
             result,

@@ -26,11 +26,55 @@ MAX_INPUT_KEYS = 32
 MAX_INPUT_LIST = 64
 MAX_STRING_LENGTH = 4096
 MAX_GENERATION = 2_147_483_647
+MAX_RESULT_NODES = 65_536
+MAX_EVIDENCE_REFS = 32
+MAX_EVIDENCE_REF_LENGTH = 128
 REQUEST_ID_RE = re.compile(r"^[!-~]{1,128}$")
 ACTIVATION_ID_RE = re.compile(r"^act:[a-f0-9]{32}$")
 RESULT_VERDICTS = frozenset(
     {"succeeded", "failed", "unknown", "blocked", "unsupported", "cancelled", "error"}
 )
+RESULT_ERROR_CODES = frozenset(
+    {
+        "invalid_input",
+        "ambiguity",
+        "unsupported_operation",
+        "unsupported_backend",
+        "incompatible_protocol",
+        "denied",
+        "approval_required",
+        "stale_generation",
+        "unavailable",
+        "deadline_exceeded",
+        "budget_exceeded",
+        "cancelled",
+        "interrupted",
+        "unknown_external_outcome",
+    }
+)
+RESULT_FIELDS = frozenset(
+    {
+        "protocol",
+        "request_id",
+        "invocation_id",
+        "activation_id",
+        "expert_id",
+        "expert_version",
+        "manifest_digest",
+        "expert_operation",
+        "resolved_registry_generation",
+        "resolved_runtime_generation",
+        "verdict",
+        "data",
+        "evidence_refs",
+        "usage",
+        "effect_receipts",
+        "error_code",
+        "error_message",
+        "replayed",
+    }
+)
+USAGE_FIELDS = frozenset({"model_calls"})
 OPERATION_FIELDS: dict[str, tuple[dict[str, object], ...]] = {
     "match": (
         {"name": "path", "type": "string", "required": True},
@@ -207,6 +251,99 @@ def _validate_operation_output(operation: str, verdict: str, data: object) -> No
             _validate_output_field(field, data[name])
 
 
+def _validate_result_data_tree(data: Mapping[str, object]) -> None:
+    stack: list[tuple[bool, object]] = [(False, data)]
+    active_containers: set[int] = set()
+    nodes = 0
+    while stack:
+        exiting, current = stack.pop()
+        if exiting:
+            active_containers.remove(id(current))
+            continue
+
+        nodes += 1
+        if nodes > MAX_RESULT_NODES:
+            raise JavaExpertAdapterError("invalid-expert-data-json")
+
+        if isinstance(current, dict):
+            container_id = id(current)
+            if container_id in active_containers:
+                raise JavaExpertAdapterError("invalid-expert-data-json")
+            active_containers.add(container_id)
+            stack.append((True, current))
+            for key, child in current.items():
+                if type(key) is not str:
+                    raise JavaExpertAdapterError("invalid-expert-data-json")
+                stack.append((False, child))
+        elif isinstance(current, (list, tuple)):
+            container_id = id(current)
+            if container_id in active_containers:
+                raise JavaExpertAdapterError("invalid-expert-data-json")
+            active_containers.add(container_id)
+            stack.append((True, current))
+            stack.extend((False, child) for child in current)
+        elif type(current) is float:
+            if not math.isfinite(current):
+                raise JavaExpertAdapterError("invalid-expert-data-json")
+        elif current is None or type(current) in (str, int, bool):
+            continue
+        else:
+            raise JavaExpertAdapterError("invalid-expert-data-json")
+
+
+def _validate_result_payload(
+    result: Mapping[str, object],
+) -> tuple[Mapping[str, object], list[str] | tuple[str, ...]]:
+    data = result.get("data")
+    if not isinstance(data, Mapping):
+        raise JavaExpertAdapterError("invalid-expert-data")
+    _validate_result_data_tree(data)
+
+    evidence_refs = result.get("evidence_refs")
+    if not isinstance(evidence_refs, (list, tuple)):
+        raise JavaExpertAdapterError("invalid-expert-evidence")
+    if len(evidence_refs) > MAX_EVIDENCE_REFS:
+        raise JavaExpertAdapterError("invalid-expert-evidence")
+    for evidence_ref in evidence_refs:
+        if type(evidence_ref) is not str or not evidence_ref or len(evidence_ref) > MAX_EVIDENCE_REF_LENGTH:
+            raise JavaExpertAdapterError("invalid-expert-evidence")
+    return data, evidence_refs
+
+
+def _validate_result_usage(result: Mapping[str, object]) -> None:
+    usage = result.get("usage")
+    if usage is None:
+        raise JavaExpertAdapterError("zero-model-proof-missing")
+    if type(usage) is not dict:
+        raise JavaExpertAdapterError("invalid-expert-usage")
+    for field in usage:
+        if type(field) is not str or field not in USAGE_FIELDS:
+            raise JavaExpertAdapterError("unknown-expert-usage-field")
+    model_calls = usage.get("model_calls")
+    if type(model_calls) is not int or model_calls != 0:
+        raise JavaExpertAdapterError("zero-model-proof-missing")
+
+
+def _validate_result_metadata(result: Mapping[str, object]) -> None:
+    for field in result:
+        if type(field) is not str or field not in RESULT_FIELDS:
+            raise JavaExpertAdapterError("unknown-expert-result-field")
+
+    error_code = result.get("error_code")
+    if error_code is not None and (
+        type(error_code) is not str or error_code not in RESULT_ERROR_CODES
+    ):
+        raise JavaExpertAdapterError("invalid-expert-error-code")
+
+    error_message = result.get("error_message", "")
+    if type(error_message) is not str or len(error_message) > MAX_STRING_LENGTH:
+        raise JavaExpertAdapterError("invalid-expert-error-message")
+
+    replayed = result.get("replayed", False)
+    if type(replayed) is not bool:
+        raise JavaExpertAdapterError("invalid-expert-replayed")
+
+
 def _operation_descriptor(operation: str) -> dict[str, object]:
     return {
         "operation_id": operation,
@@ -226,6 +363,7 @@ def _validate_result(
     registry_generation: int,
     runtime_generation: int,
 ) -> None:
+    _validate_result_metadata(result)
     expected = {
         "protocol": PROTOCOL,
         "request_id": request_id,
@@ -249,10 +387,7 @@ def _validate_result(
     verdict = result.get("verdict")
     if type(verdict) is not str or verdict not in RESULT_VERDICTS:
         raise JavaExpertAdapterError("invalid-expert-verdict")
-    usage = result.get("usage")
-    model_calls = usage.get("model_calls") if isinstance(usage, Mapping) else None
-    if type(model_calls) is not int or model_calls != 0:
-        raise JavaExpertAdapterError("zero-model-proof-missing")
+    _validate_result_usage(result)
     receipts = result.get("effect_receipts")
     if not isinstance(receipts, (list, tuple)):
         raise JavaExpertAdapterError("read-only-effect-proof-missing")
@@ -266,6 +401,7 @@ def _validate_result(
         if not isinstance(evidence_refs, (list, tuple)) or evidence_refs:
             raise JavaExpertAdapterError("cancelled-expert-output-leak")
     _validate_operation_output(expert_operation, verdict, result.get("data"))
+    _validate_result_payload(result)
 
 
 class ZaraJavaExpertPlugin(ServicePlugin):
@@ -287,7 +423,13 @@ class ZaraJavaExpertPlugin(ServicePlugin):
 
     @staticmethod
     def _json(value: object) -> str:
-        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return json.dumps(
+            value,
+            allow_nan=False,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
 
     @staticmethod
     def _decode_input(input_json: str) -> dict[str, Any]:
@@ -402,7 +544,10 @@ class ZaraJavaExpertPlugin(ServicePlugin):
             registry_generation=registry_generation,
             runtime_generation=runtime_generation,
         )
-        encoded = self._json(dict(result))
+        try:
+            encoded = self._json(dict(result))
+        except (TypeError, ValueError, RecursionError) as error:
+            raise JavaExpertAdapterError("invalid-expert-result-json") from error
         if len(encoded.encode("utf-8")) > MAX_OUTPUT_BYTES:
             raise JavaExpertAdapterError("expert-result-too-large")
         return encoded

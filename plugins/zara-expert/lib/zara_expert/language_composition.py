@@ -25,6 +25,13 @@ _TYPED_EXPERT_IDS = frozenset(
         "zara:expert/kotlin",
     }
 )
+_PRIMARY_TYPED_REPLAY_EXPERT_IDS = frozenset(
+    {
+        "zara:expert/prolog",
+        "zara:expert/python",
+        "zara:expert/nim",
+    }
+)
 
 
 def _validated_language_payload(
@@ -44,10 +51,34 @@ def _validated_language_payload(
     return payload
 
 
-def _validated_evidence_refs(raw: Any, *, source: str) -> tuple[str, ...]:
+def _validated_evidence_refs(
+    raw: Any,
+    *,
+    source: str,
+    require_exact_strings: bool = False,
+) -> tuple[str, ...]:
     if isinstance(raw, (str, bytes)) or not isinstance(raw, (list, tuple)):
         raise CompositionError(f"{source} evidence_refs must be a sequence")
-    return tuple(str(item) for item in raw)
+    if require_exact_strings and any(type(item) is not str for item in raw):
+        raise CompositionError(f"{source} evidence_refs must contain exact strings")
+    return tuple(raw) if require_exact_strings else tuple(str(item) for item in raw)
+
+
+def _validated_zero_model_usage(
+    raw: Any,
+    *,
+    source: str,
+    require_closed_envelope: bool,
+) -> None:
+    if not isinstance(raw, Mapping):
+        raise CompositionError(f"{source} is missing usage ledger")
+    if require_closed_envelope:
+        unknown = tuple(key for key in raw if key != "model_calls")
+        if unknown:
+            raise CompositionError(f"{source} usage ledger contains unsupported fields")
+    model_calls = raw.get("model_calls")
+    if type(model_calls) is not int or model_calls != 0:
+        raise CompositionError(f"{source} attempted model use")
 
 
 def _typed_explanation(
@@ -72,9 +103,20 @@ def _typed_explanation(
     if isinstance(raw_terms, (str, bytes)) or not isinstance(raw_terms, (list, tuple)):
         raise CompositionError("typed language explanation terms must be a sequence")
 
-    rendered = tuple(str(item) for item in raw_trace) or tuple(
-        str(item) for item in raw_terms
-    )
+    if expert_id in _PRIMARY_TYPED_REPLAY_EXPERT_IDS:
+        if any(type(item) is not str for item in raw_trace):
+            raise CompositionError(
+                "typed language explanation trace must contain exact strings"
+            )
+        if any(type(item) is not str for item in raw_terms):
+            raise CompositionError(
+                "typed language explanation terms must contain exact strings"
+            )
+        rendered = tuple(raw_trace) or tuple(raw_terms)
+    else:
+        rendered = tuple(str(item) for item in raw_trace) or tuple(
+            str(item) for item in raw_terms
+        )
     if rendered:
         explanation = f"{explanation}: {' | '.join(rendered)}"
     return explanation
@@ -85,12 +127,11 @@ def _validated_core_result(
     operation: str,
     outcome: Any,
 ) -> InvocationResult:
-    usage = getattr(outcome, "usage", None)
-    if not isinstance(usage, Mapping):
-        raise CompositionError("Core expert result is missing usage ledger")
-    model_calls = usage.get("model_calls")
-    if type(model_calls) is not int or model_calls != 0:
-        raise CompositionError("Core language expert attempted model use")
+    _validated_zero_model_usage(
+        getattr(outcome, "usage", None),
+        source="Core language expert result",
+        require_closed_envelope=expert_id in _PRIMARY_TYPED_REPLAY_EXPERT_IDS,
+    )
 
     effect_receipts = getattr(outcome, "effect_receipts", None)
     if not isinstance(effect_receipts, (list, tuple)) or effect_receipts:
@@ -108,6 +149,7 @@ def _validated_core_result(
     evidence = _validated_evidence_refs(
         getattr(outcome, "evidence_refs", None),
         source="Core language expert",
+        require_exact_strings=expert_id in _PRIMARY_TYPED_REPLAY_EXPERT_IDS,
     )
     explanation = _typed_explanation(
         expert_id,
@@ -204,12 +246,11 @@ class LanguageFamilyCompositionInvoker:
         if not isinstance(outcome, Mapping):
             raise CompositionError("language expert handler returned non-object result")
 
-        usage = outcome.get("usage")
-        if not isinstance(usage, Mapping):
-            raise CompositionError("language expert result is missing usage ledger")
-        model_calls = usage.get("model_calls")
-        if type(model_calls) is not int or model_calls != 0:
-            raise CompositionError("language expert attempted model use")
+        _validated_zero_model_usage(
+            outcome.get("usage"),
+            source="language expert result",
+            require_closed_envelope=expert_id in _PRIMARY_TYPED_REPLAY_EXPERT_IDS,
+        )
 
         effect_receipts = outcome.get("effect_receipts")
         if not isinstance(effect_receipts, (list, tuple)) or effect_receipts:
@@ -226,6 +267,7 @@ class LanguageFamilyCompositionInvoker:
         evidence = _validated_evidence_refs(
             outcome.get("evidence_refs"),
             source="language expert",
+            require_exact_strings=expert_id in _PRIMARY_TYPED_REPLAY_EXPERT_IDS,
         )
         explanation = _typed_explanation(
             expert_id,
