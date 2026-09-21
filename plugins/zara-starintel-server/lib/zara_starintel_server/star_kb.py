@@ -192,7 +192,10 @@ def _positive_int(value: int, *, name: str, maximum: int) -> int:
 
 
 def _tokens(value: object) -> frozenset[str]:
-    return frozenset(TOKEN_RE.findall(str(value).lower()))
+    text = str(value).lower()
+    tokens = set(TOKEN_RE.findall(text))
+    tokens.update(re.findall(r"[a-z0-9]+", text))
+    return frozenset(tokens)
 
 
 def _operation_id(operation: Mapping[str, Any]) -> str:
