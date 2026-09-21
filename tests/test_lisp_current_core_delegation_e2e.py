@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DOTFILES_ROOT = os.environ.get("ZARA_DOTFILES_ROOT")
 ZARA_CORE_ROOT = os.environ.get("ZARA_CORE_ROOT")
 EXPECTED_DOTFILES_COMMIT = "fe8f7fa3c42803e0e505dcb6f7e4600d27649d9e"
-EXPECTED_ZARA_CORE_COMMIT = "f7810b0cba602b1e00597d04dd419d30ac0ef949"
+EXPECTED_ZARA_CORE_COMMIT = "0561fdbeadde3c2d7ed4ac94c5427f0c10421dac"
 ZARA_EXPERT_LIB = REPO_ROOT / "plugins" / "zara-expert" / "lib"
 
 if ZARA_CORE_ROOT:
