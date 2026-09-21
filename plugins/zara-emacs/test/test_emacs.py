@@ -361,5 +361,67 @@ class EmacsClientTest(unittest.TestCase):
             client.describe_session()
 
 
+    def test_todo_tools_use_fixed_command_adapters_and_hide_payload(self):
+        client, runner = self.client(
+            [
+                bridge_result("command.invoke", {"rows": [], "count": 0}),
+                bridge_result("command.invoke", {"id": "todo-1", "state": "TODO"}),
+                bridge_result("command.invoke", {"id": "todo-1", "state": "NEXT"}),
+                bridge_result("command.invoke", {"path": "/tmp/mara-todos.pl", "count": 1}),
+                bridge_result("command.invoke", {"rows": [], "count": 0}),
+            ]
+        )
+
+        self.assertEqual(client.todo_list("active", 25)["count"], 0)
+        payload = bridge_payload(runner, 0)
+        self.assertEqual(payload["operation"], "command.invoke")
+        self.assertEqual(payload["args"]["adapter"], "org.todo.list")
+        self.assertEqual(payload["args"]["state"], "active")
+        self.assertEqual(payload["args"]["limit"], 25)
+
+        title = 'Ship "Mara" TODO bridge'
+        created = client.todo_capture(title, "2026-09-23 08:00")
+        self.assertEqual(created["id"], "todo-1")
+        payload = bridge_payload(runner, 1)
+        self.assertEqual(payload["args"]["adapter"], "org.todo.capture")
+        self.assertEqual(payload["args"]["title"], title)
+        self.assertEqual(payload["args"]["scheduled"], "2026-09-23 08:00")
+        self.assertNotIn(title, runner.calls[1][0][-1])
+
+        changed = client.todo_state("todo-1", "NEXT")
+        self.assertEqual(changed["state"], "NEXT")
+        payload = bridge_payload(runner, 2)
+        self.assertEqual(payload["args"]["adapter"], "org.todo.state")
+
+        snapshot = client.todo_snapshot()
+        self.assertEqual(snapshot["count"], 1)
+        self.assertEqual(
+            bridge_payload(runner, 3)["args"]["adapter"],
+            "org.todo.snapshot",
+        )
+
+        self.assertEqual(client.roam_search("symbolic memory", 20)["count"], 0)
+        payload = bridge_payload(runner, 4)
+        self.assertEqual(payload["args"]["adapter"], "org.roam.search")
+        self.assertEqual(payload["args"]["query"], "symbolic memory")
+        self.assertNotIn("symbolic memory", runner.calls[4][0][-1])
+
+    def test_todo_and_roam_validation_fails_before_emacs(self):
+        client, runner = self.client([])
+
+        with self.assertRaisesRegex(EmacsError, "todo state"):
+            client.todo_state("todo-1", "PWNED")
+        with self.assertRaisesRegex(EmacsError, "todo list state"):
+            client.todo_list("everything-now", 10)
+        with self.assertRaisesRegex(EmacsError, "scheduled"):
+            client.todo_capture("task", "next someday")
+        with self.assertRaisesRegex(EmacsError, "between 1 and 200"):
+            client.roam_search("x", 201)
+        with self.assertRaisesRegex(EmacsError, "single line"):
+            client.roam_search("bad\nquery", 10)
+
+        self.assertEqual(runner.calls, [])
+
+
 if __name__ == "__main__":
     unittest.main()
