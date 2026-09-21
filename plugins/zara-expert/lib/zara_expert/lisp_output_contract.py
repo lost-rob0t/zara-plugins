@@ -62,6 +62,14 @@ def _validate_predicate_output(
     if unknown:
         _invalid(f"unsupported Lisp output fields: {sorted(unknown)!r}")
 
+    # Zara Core cancellation is a terminal fence, not a predicate result. A
+    # cancelled child must be allowed to return its canonical empty projection
+    # so late backend output cannot be resurrected merely to satisfy a schema.
+    # Keep this narrow: cancellation carrying any undeclared data was rejected
+    # above, and every non-cancelled predicate still requires its result object.
+    if result.status == "cancelled" and not data:
+        return
+
     nested = data.get("result")
     if not isinstance(nested, Mapping):
         _invalid("Lisp predicate output requires result object")
