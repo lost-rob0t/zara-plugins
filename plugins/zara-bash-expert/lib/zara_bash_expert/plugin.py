@@ -160,9 +160,17 @@ def _validate_result(
     for field, expected in expected_identity.items():
         if result.get(field) != expected:
             raise BashExpertAdapterError("expert-result-identity-mismatch")
-    if result.get("resolved_registry_generation") != registry_generation:
+    resolved_registry_generation = result.get("resolved_registry_generation")
+    if (
+        type(resolved_registry_generation) is not int
+        or resolved_registry_generation != registry_generation
+    ):
         raise BashExpertAdapterError("stale-expert-result")
-    if result.get("resolved_runtime_generation") != runtime_generation:
+    resolved_runtime_generation = result.get("resolved_runtime_generation")
+    if (
+        type(resolved_runtime_generation) is not int
+        or resolved_runtime_generation != runtime_generation
+    ):
         raise BashExpertAdapterError("stale-expert-result")
     if result.get("verdict") not in RESULT_VERDICTS:
         raise BashExpertAdapterError("invalid-expert-verdict")
