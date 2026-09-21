@@ -21,7 +21,17 @@ class CompanionActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var importButton: Button
     private lateinit var sampleButton: Button
+    private lateinit var genreButton: Button
+    private lateinit var tempoButton: Button
     private var importing = false
+    private val danceGenres = DanceGenre.entries
+    private val danceTempos = intArrayOf(80, 100, 120, 140, 160)
+    private var danceGenreIndex = 0
+    private var danceTempoIndex = 2
+    private var lastDance: DanceChoice? = null
+    private val dancePreferences by lazy {
+        DancePreferenceStore(getSharedPreferences("companion", MODE_PRIVATE))
+    }
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -62,6 +72,29 @@ class CompanionActivity : Activity() {
         button("Move avatar: toggle drag / click-through") { command("edit") }
         button("Avatar size: small / medium / large") { command("size") }
         button("Idle / stop dancing and talking") { command("stop") }
+        genreButton = button("Music genre: " + currentGenre().label) {
+            danceGenreIndex = (danceGenreIndex + 1) % danceGenres.size
+            genreButton.text = "Music genre: " + currentGenre().label
+            lastDance = null
+        }
+        tempoButton = button("Tempo: " + currentBpm() + " BPM") {
+            danceTempoIndex = (danceTempoIndex + 1) % danceTempos.size
+            tempoButton.text = "Tempo: " + currentBpm() + " BPM"
+            lastDance = null
+        }
+        button("Dance to genre + tempo") { danceWithMusic() }
+        button("Like this move") {
+            lastDance?.let { choice ->
+                dancePreferences.feedback(choice, liked = true)
+                status.text = "Learned +2 for " + choice.motion + " in " +
+                    choice.genre.label + " / " + choice.band.name.lowercase() + "."
+            } ?: run { status.text = "Start Dance to genre + tempo first." }
+        }
+        button("Skip / teach another move") {
+            val previous = lastDance
+            if (previous != null) dancePreferences.feedback(previous, liked = false)
+            danceWithMusic(previous?.motion)
+        }
         for ((name, label) in listOf("wave" to "Wave", "nod" to "Nod", "shake" to "Shake head",
             "dance_bounce" to "Dance: bounce", "dance_sway" to "Dance: sway", "dance_step" to "Dance: step")) {
             button(label) { command("motion", name) }
@@ -83,11 +116,24 @@ class CompanionActivity : Activity() {
             getSharedPreferences("companion", MODE_PRIVATE).getString("status", "")
     }
 
-    private fun command(action: String, value: String? = null) {
+    private fun currentGenre(): DanceGenre = danceGenres[danceGenreIndex]
+
+    private fun currentBpm(): Int = danceTempos[danceTempoIndex]
+
+    private fun danceWithMusic(exclude: String? = null) {
+        val choice = dancePreferences.choose(currentGenre(), currentBpm(), exclude)
+        lastDance = choice
+        command("motion", choice.motion, choice.bpm)
+        status.text = "Dancing " + choice.motion + " at " + choice.bpm + " BPM for " +
+            choice.genre.label + " (learned score " + dancePreferences.score(choice) + ")."
+    }
+
+    private fun command(action: String, value: String? = null, bpm: Int? = null) {
         if (!Settings.canDrawOverlays(this) || !File(filesDir, "avatar.vrm").isFile) {
             Toast.makeText(this, "Allow overlay and import a VRM first.", Toast.LENGTH_SHORT).show(); return
         }
         val intent = Intent(this, OverlayService::class.java).setAction(action).putExtra("value", value)
+        if (bpm != null) intent.putExtra("bpm", bpm)
         try { startForegroundService(intent) }
         catch (_: RuntimeException) { status.text = "Android could not start the overlay. Check permissions and retry." }
     }
