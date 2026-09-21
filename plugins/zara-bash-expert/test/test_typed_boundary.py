@@ -22,6 +22,7 @@ class RecordingRuntime:
     def __init__(self) -> None:
         self.resolved: list[str] = []
         self.requests: list[dict[str, object]] = []
+        self.result_mutation: dict[str, object] = {}
 
     def resolve_capability(self, capability: str):
         self.resolved.append(capability)
@@ -29,7 +30,7 @@ class RecordingRuntime:
 
     def invoke_capability(self, _handle, request):
         self.requests.append(request)
-        return {
+        result = {
             "protocol": request["protocol"],
             "request_id": request["request_id"],
             "invocation_id": "inv:bash-boundary",
@@ -46,6 +47,8 @@ class RecordingRuntime:
             "usage": {"model_calls": 0},
             "effect_receipts": [],
         }
+        result.update(self.result_mutation)
+        return result
 
 
 class BashExpertTypedBoundaryTests(unittest.TestCase):
@@ -94,6 +97,25 @@ class BashExpertTypedBoundaryTests(unittest.TestCase):
                     self.invoke("inspect_startup", {"path": path})
         self.assertEqual(self.runtime.resolved, [])
         self.assertEqual(self.runtime.requests, [])
+
+    def test_rejects_forged_generation_types_from_canonical_host(self) -> None:
+        cases = (
+            ("resolved_registry_generation", True),
+            ("resolved_registry_generation", 1.0),
+            ("resolved_runtime_generation", True),
+            ("resolved_runtime_generation", 1.0),
+        )
+        for field, value in cases:
+            with self.subTest(field=field, value=value):
+                self.runtime.result_mutation = {field: value}
+                with self.assertRaisesRegex(BashExpertAdapterError, "stale-expert-result"):
+                    self.invoke("inspect_startup", {"path": ".bashrc"})
+                request = self.runtime.requests[-1]
+                self.assertIs(type(request["expected_registry_generation"]), int)
+                self.assertIs(type(request["expected_runtime_generation"]), int)
+                self.assertEqual(request["limits"]["max_model_calls"], 0)
+        self.assertEqual(self.runtime.resolved, ["expert.invoke"] * len(cases))
+        self.assertEqual(len(self.runtime.requests), len(cases))
 
     def test_valid_typed_input_reaches_canonical_host_with_zero_model_limit(self) -> None:
         result = json.loads(self.invoke("inspect_startup", {"path": ".bashrc"}))
