@@ -101,7 +101,7 @@ class LanguageHandlerTests(unittest.TestCase):
         self.assertEqual(outcome["usage"], {"model_calls": 0})
         self.assertEqual(outcome["effect_receipts"], [])
         self.assertEqual(outcome["evidence_refs"], [])
-        self.assertEqual(outcome["data"]["result"]["evidence"], [])
+        self.assertEqual(outcome["data"], {})
         self.assertEqual(len(backend.calls), 1)
 
     def test_style_rules_preserve_project_style_and_private_result_variable(self):

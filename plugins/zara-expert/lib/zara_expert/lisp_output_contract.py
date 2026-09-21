@@ -44,6 +44,18 @@ def _validate_predicate_output(
     operation: str,
     result: InvocationResult,
 ) -> None:
+    data = result.data
+
+    # Cancellation is a terminal generation fence. Core has already discarded
+    # late effect receipts before producing InvocationResult; the adapter must
+    # also refuse to project any late data or evidence from the cancelled child.
+    # Keep this independent of operation shape so repair.apply and dialect
+    # delegation cannot become cancellation escape hatches.
+    if result.status == "cancelled":
+        if not isinstance(data, Mapping) or data or result.evidence:
+            raise CompositionError("cancelled-expert-output-leak")
+        return
+
     # Dialect repair.preview is a local delegation envelope, not a Core/host
     # predicate result. The canonical generic Lisp child owns the parser output.
     if operation == "repair.preview" and expert_id in _DIALECT_REPAIR_EXPERTS:
@@ -53,7 +65,6 @@ def _validate_predicate_output(
         # and fresh postcondition contract. Do not invent a second effect schema.
         return
 
-    data = result.data
     if not isinstance(data, Mapping):
         _invalid("Lisp result data must be an object")
 
@@ -61,14 +72,6 @@ def _validate_predicate_output(
     unknown = set(data) - allowed
     if unknown:
         _invalid(f"unsupported Lisp output fields: {sorted(unknown)!r}")
-
-    # Zara Core cancellation is a terminal fence, not a predicate result. A
-    # cancelled child must be allowed to return its canonical empty projection
-    # so late backend output cannot be resurrected merely to satisfy a schema.
-    # Keep this narrow: cancellation carrying any undeclared data was rejected
-    # above, and every non-cancelled predicate still requires its result object.
-    if result.status == "cancelled" and not data:
-        return
 
     nested = data.get("result")
     if not isinstance(nested, Mapping):
