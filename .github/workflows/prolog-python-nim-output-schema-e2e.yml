@@ -30,5 +30,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Prove public style and explanation output schemas
+      - name: Prove public operation output schemas
         run: python plugins/zara-expert/test/test_language_output_schema_contract.py
+      - name: Prove typed composition consumers use canonical output envelopes
+        run: python plugins/zara-expert/test/test_language_typed_composition_contract.py
