@@ -15,13 +15,21 @@ DoorDash's public developer surface does not provide an unrestricted consumer-ca
 
 ```toml
 [plugins.zara-doordash]
-learning_enabled = true
-preference_min_observations = 2
-preference_limit = 10
 max_url_chars = 2048
 ```
 
-No credentials are stored in this plugin configuration.
+Commerce and learning policy is owned by Zara's Prolog configuration, not by model-facing plugin arguments. When the canonical runtime has Prolog available, Core projects these validated facts into the plugin and overrides duplicate TOML policy values:
+
+```prolog
+commerce_provider(doordash).
+commerce_confirmation(always).
+preference_learning(enabled).
+preference_min_observations(2).
+preference_max_patterns(10).
+preference_min_confidence(0.5).
+```
+
+`commerce_confirmation(always)` is the only accepted confirmation mode. Core also injects the least-privilege composition allowlist for `browser.tab.open`, `memory.preference.observe`, and `memory.preference.patterns`. No credentials are stored in this plugin configuration.
 
 ## Verification
 
