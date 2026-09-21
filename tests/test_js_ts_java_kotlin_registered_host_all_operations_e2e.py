@@ -259,11 +259,15 @@ class JsTsJavaKotlinRegisteredHostAllOperationsE2ETests(unittest.TestCase):
                             json.dumps(_payload(language, operation)),
                         )
                     )
-                    self.assertEqual(result["verdict"], "succeeded")
+                    expected_verdict = "blocked" if operation == "repair.verify" else "succeeded"
+                    self.assertEqual(result["verdict"], expected_verdict)
                     self.assertEqual(result["usage"], {"model_calls": 0})
                     self.assertEqual(result["effect_receipts"], [])
                     self.assertTrue(result["evidence_refs"])
                     _assert_declared_output(self, module, operation, result["data"])
+                    if operation == "repair.verify":
+                        self.assertIs(result["data"]["verified"], False)
+                        self.assertIs(result["data"]["postcondition_evidence"]["fresh"], False)
 
             self.assertEqual(runtime.resolved, ["expert.invoke"] * len(module.ALLOWED_OPERATIONS))
             self.assertTrue(
