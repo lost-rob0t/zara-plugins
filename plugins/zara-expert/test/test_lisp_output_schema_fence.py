@@ -36,11 +36,11 @@ def current_fence():
     )
 
 
-def core_result(data):
+def core_result(data, *, status="succeeded", evidence_refs=("evidence:lisp:test",)):
     return SimpleNamespace(
-        verdict=SimpleNamespace(value="succeeded"),
+        verdict=SimpleNamespace(value=status),
         data=data,
-        evidence_refs=("evidence:lisp:test",),
+        evidence_refs=evidence_refs,
         usage={"model_calls": 0},
         effect_receipts=(),
     )
@@ -57,9 +57,11 @@ def canonical_result_data():
 
 
 class LispOutputSchemaFenceTests(unittest.TestCase):
-    def invoke(self, data):
+    def invoke(self, data, *, status="succeeded", evidence_refs=("evidence:lisp:test",)):
         handle = SimpleNamespace(expert_id="zara:expert/lisp", workspace="project")
-        registry = RecordingCoreRegistry(core_result(data))
+        registry = RecordingCoreRegistry(
+            core_result(data, status=status, evidence_refs=evidence_refs)
+        )
         invoker = CoreLispFamilyCompositionInvoker(
             registry,
             activation_for=lambda _expert_id, _fence: handle,
@@ -101,6 +103,27 @@ class LispOutputSchemaFenceTests(unittest.TestCase):
         self.assertEqual(len(registry.calls), 1)
         self.assertEqual(registry.calls[0][3].max_model_calls, 0)
         self.assertEqual(budget.model_calls_used, 0)
+
+    def test_core_lisp_accepts_empty_canonical_cancelled_output_without_widening_schema(self):
+        node, registry, budget = self.invoke(
+            {},
+            status="cancelled",
+            evidence_refs=(),
+        )
+
+        self.assertEqual(node.status, "cancelled")
+        self.assertEqual(node.data, {})
+        self.assertEqual(node.evidence, ())
+        self.assertEqual(len(registry.calls), 1)
+        self.assertEqual(registry.calls[0][3].max_model_calls, 0)
+        self.assertEqual(budget.model_calls_used, 0)
+
+        with self.assertRaisesRegex(CompositionError, "invalid-expert-output"):
+            self.invoke(
+                {"renderer_fallback": "provider"},
+                status="cancelled",
+                evidence_refs=(),
+            )
 
 
 if __name__ == "__main__":
