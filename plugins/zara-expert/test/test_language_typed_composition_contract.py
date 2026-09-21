@@ -18,6 +18,17 @@ EXPERT_IDS = (
     "zara:expert/prolog",
     "zara:expert/python",
     "zara:expert/nim",
+    "zara:expert/javascript",
+    "zara:expert/typescript",
+    "zara:expert/java",
+    "zara:expert/kotlin",
+)
+
+FOUR_LANGUAGE_EXPERT_IDS = (
+    "zara:expert/javascript",
+    "zara:expert/typescript",
+    "zara:expert/java",
+    "zara:expert/kotlin",
 )
 
 
@@ -78,6 +89,44 @@ class TypedLanguageCompositionContractTests(unittest.TestCase):
                 self.assertEqual(result.status, "succeeded")
                 self.assertEqual(result.data, {"diagnostics": [f"diagnostic:{index}"]})
                 self.assertNotIn("result", result.data)
+                self.assertEqual(result.evidence, (evidence_ref,))
+                self.assertEqual(result.model_calls, 0)
+
+    def test_four_language_inspect_result_is_operation_data_not_legacy_transport(self):
+        invoker = LanguageFamilyCompositionInvoker(object())
+
+        for index, expert_id in enumerate(FOUR_LANGUAGE_EXPERT_IDS, start=1):
+            with self.subTest(expert_id=expert_id):
+                evidence_ref = f"evidence:inspect:{index}"
+                operation_result = {
+                    "language": expert_id.rsplit("/", 1)[-1],
+                    "symbols": [f"symbol:{index}"],
+                }
+                fake_handler = lambda **_kwargs: {
+                    "verdict": "succeeded",
+                    "data": {"result": operation_result},
+                    "evidence_refs": [evidence_ref],
+                    "usage": {"model_calls": 0},
+                    "effect_receipts": [],
+                }
+                with patch(
+                    "zara_expert.language_composition.make_language_expert_handler",
+                    return_value=fake_handler,
+                ):
+                    result = invoker(
+                        expert_id,
+                        "inspect",
+                        {
+                            "source": f"symbolic source {index}",
+                            "source_generation": f"generation:{index}",
+                        },
+                        budget=SharedSymbolicBudget(max_model_calls=0),
+                        fence=self._fence(),
+                        parent_path=(),
+                    )
+
+                self.assertEqual(result.status, "succeeded")
+                self.assertEqual(result.data, {"result": operation_result})
                 self.assertEqual(result.evidence, (evidence_ref,))
                 self.assertEqual(result.model_calls, 0)
 
