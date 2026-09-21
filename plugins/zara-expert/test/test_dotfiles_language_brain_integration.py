@@ -82,8 +82,6 @@ class DotfilesLanguageBrainIntegrationTests(unittest.TestCase):
             return data["diagnostics"]
         if operation == "repair.preview":
             return data["repair"]["symbolic_terms"]
-        if operation == "repair.verify":
-            return data["postcondition_evidence"]["symbolic_terms"]
         if operation == "style.rules":
             return data["style_rules"]
         if operation == "explain":
@@ -176,14 +174,15 @@ class DotfilesLanguageBrainIntegrationTests(unittest.TestCase):
         )
         self._assert_zero_model(verified)
         self.assertEqual(verified["verdict"], "blocked")
-        verification_terms = self._symbolic_terms(key, "repair.verify", verified)
-        self.assertTrue(any("verified(false)" in item for item in verification_terms))
-        self.assertTrue(
-            any("fresh_postcondition_required" in item for item in verification_terms)
-        )
         if key in CLOSED_PROJECTION_KEYS:
-            self.assertIs(verified["data"]["verified"], False)
-            self.assertIs(verified["data"]["postcondition_evidence"]["fresh"], False)
+            self.assertEqual(verified["data"], {})
+            self.assertTrue(verified["evidence_refs"])
+        else:
+            verification_terms = self._symbolic_terms(key, "repair.verify", verified)
+            self.assertTrue(any("verified(false)" in item for item in verification_terms))
+            self.assertTrue(
+                any("fresh_postcondition_required" in item for item in verification_terms)
+            )
 
         styled = handler(
             expert_operation="style.rules",
