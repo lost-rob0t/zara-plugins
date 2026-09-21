@@ -164,6 +164,10 @@ def invoke_lisp_operation(
     operation: str,
     arguments: Sequence[Any] | None = None,
 ) -> dict[str, Any]:
+    if type(expert_id) is not str:
+        raise ExpertError("Lisp expert identity must be a string")
+    if type(operation) is not str:
+        raise ExpertError("Lisp expert operation must be a string")
     spec = _SPEC_BY_ID.get(expert_id)
     if spec is None:
         raise ExpertError(f"unknown Lisp expert: {expert_id!r}")
@@ -189,6 +193,8 @@ def _core_operation_arguments(
     expert_operation: str,
     arguments: list[Any] | None,
 ) -> list[Any]:
+    if type(expert_operation) is not str:
+        raise ExpertError("Lisp expert operation must be a string")
     binding = _OPERATION_BINDINGS.get(expert_operation)
     if binding is None:
         raise ExpertError(f"unsupported Lisp expert operation: {expert_operation!r}")
@@ -312,6 +318,8 @@ def make_lisp_expert_handler(
     to the candidate source digest.
     """
 
+    if type(expert_id) is not str:
+        raise ExpertError("Lisp expert identity must be a string")
     spec = _SPEC_BY_ID.get(expert_id)
     if spec is None:
         raise ExpertError(f"unknown Lisp expert: {expert_id!r}")
@@ -326,6 +334,8 @@ def make_lisp_expert_handler(
         expected_preimage: str | None = None,
         source_generation: str | None = None,
     ) -> dict[str, Any]:
+        if type(expert_operation) is not str:
+            raise ExpertError("Lisp expert operation must be a string")
         if expert_operation == "repair.apply":
             return {
                 "verdict": "blocked",
