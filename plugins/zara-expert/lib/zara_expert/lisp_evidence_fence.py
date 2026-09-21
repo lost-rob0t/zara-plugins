@@ -29,6 +29,8 @@ def _require_string_references(value: Any, label: str) -> None:
 
     if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
         return
+    if type(value) not in (list, tuple):
+        raise CompositionError(f"{label} must be a built-in list or tuple")
     if any(type(item) is not str for item in value):
         raise CompositionError(f"{label} must contain strings")
 
@@ -72,6 +74,8 @@ def _strict_family_core_evidence_refs(result: Mapping[str, Any]) -> list[str]:
     raw_trace = result.get("trace", ())
     if isinstance(raw_trace, (str, bytes)) or not isinstance(raw_trace, (list, tuple)):
         raise ExpertError("Lisp expert trace must be a sequence")
+    if type(raw_trace) not in (list, tuple):
+        raise ExpertError("Lisp expert trace must be a built-in list or tuple")
     if len(raw_trace) > _family._MAX_CORE_EVIDENCE_REFS:
         raise ExpertError(
             f"Lisp expert trace exceeds {_family._MAX_CORE_EVIDENCE_REFS} entries"
@@ -84,6 +88,8 @@ def _strict_family_core_evidence_refs(result: Mapping[str, Any]) -> list[str]:
     raw_results = result.get("results", ())
     if isinstance(raw_results, (str, bytes)) or not isinstance(raw_results, (list, tuple)):
         raise ExpertError("Lisp expert results must be a sequence")
+    if type(raw_results) not in (list, tuple):
+        raise ExpertError("Lisp expert results must be a built-in list or tuple")
     if len(raw_results) > _family._MAX_CORE_EVIDENCE_REFS:
         raise ExpertError(
             f"Lisp expert evidence exceeds {_family._MAX_CORE_EVIDENCE_REFS} entries"
@@ -105,6 +111,8 @@ def _strict_family_pending_postcondition(
     raw_results = result.get("results", ())
     if isinstance(raw_results, (str, bytes)) or not isinstance(raw_results, (list, tuple)):
         raise ExpertError("Lisp expert results must be a sequence")
+    if type(raw_results) not in (list, tuple):
+        raise ExpertError("Lisp expert results must be a built-in list or tuple")
     if any(type(item) is not str for item in raw_results):
         raise ExpertError("Lisp expert result entries must be strings")
     if not any("verified(false)" in item for item in raw_results):
