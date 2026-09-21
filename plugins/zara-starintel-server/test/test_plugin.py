@@ -242,10 +242,6 @@ class ZaraStarIntelServerPluginTest(unittest.TestCase):
             )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
     def test_star_funds_tools_reuse_manifest_client_and_never_call_live(self):
         plugin = ZaraStarIntelServerPlugin()
         client = FakeClient()
@@ -301,3 +297,7 @@ if __name__ == "__main__":
                 minimum_volume=1,
                 maximum_spread=0.1,
             )
+
+
+if __name__ == "__main__":
+    unittest.main()
