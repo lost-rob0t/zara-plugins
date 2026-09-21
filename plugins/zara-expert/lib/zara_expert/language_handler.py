@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import re
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from .domain import ExpertError, ExpertHost
@@ -16,6 +18,22 @@ _EXPERT_IDS = frozenset(spec.expert_id for spec in language_family_specs())
 _EXPERT_KEYS = frozenset(spec.key for spec in language_family_specs())
 _RESULT_VARIABLE = {"var": "Result"}
 _MAX_CORE_EVIDENCE_REFS = 32
+_VERIFIED_OUTCOME_REF_RE = re.compile(
+    r"^zara\.verified-outcome/v1:(?:effect|outcome):"
+    r"[A-Za-z0-9][A-Za-z0-9._:/#-]{0,383}$"
+)
+_VERIFIED_POSTCONDITION_PREFIX = "zara.verified-outcome/v1:outcome:postcondition/"
+_REQUIRED_POSTCONDITION_RE = re.compile(
+    r"required_postcondition\(([a-z][a-z0-9_]*)\)"
+)
+_FRESH_POSTCONDITION_RE = re.compile(
+    r"fresh_postcondition_required\(([a-z][a-z0-9_]*)\)"
+)
+_REQUIRED_POSTCONDITIONS = {
+    "zara:expert/nix": "parse_then_eval_or_check",
+    "zara:expert/bash": "parse_and_bash_n",
+}
+VerifiedOutcomeResolver = Callable[..., Mapping[str, Any] | None]
 
 
 def _canonical_expert_id(expert_id: str) -> str:
@@ -72,7 +90,73 @@ def _evidence_refs(result: dict[str, Any]) -> list[str]:
     return refs
 
 
-def make_language_expert_handler(host: ExpertHost, expert_id: str):
+def _pending_postcondition(
+    canonical_id: str,
+    result: Mapping[str, Any],
+) -> str | None:
+    """Return the one canonical pending Nix/Bash postcondition, if explicit."""
+
+    expected = _REQUIRED_POSTCONDITIONS.get(canonical_id)
+    if expected is None:
+        return None
+
+    raw = result.get("evidence", ())
+    if isinstance(raw, (str, bytes)) or not isinstance(raw, (list, tuple)):
+        return None
+    rendered = tuple(str(item) for item in raw)
+    if not any("verified(false)" in item for item in rendered):
+        return None
+
+    required: set[str] = set()
+    fresh: set[str] = set()
+    for item in rendered:
+        required.update(_REQUIRED_POSTCONDITION_RE.findall(item))
+        fresh.update(_FRESH_POSTCONDITION_RE.findall(item))
+    if required != {expected} or fresh != {expected}:
+        return None
+    return expected
+
+
+def _verified_postcondition_ref(
+    receipt: Any,
+    *,
+    expert_id: str,
+    source_generation: str,
+    candidate_sha256: str,
+    required_postcondition: str,
+) -> str | None:
+    """Validate a trusted Core verified-outcome receipt without executing tools."""
+
+    if not isinstance(receipt, Mapping):
+        return None
+    receipt_ref = receipt.get("receipt_ref")
+    if not isinstance(receipt_ref, str):
+        return None
+    if not receipt_ref.startswith(_VERIFIED_POSTCONDITION_PREFIX):
+        return None
+    if _VERIFIED_OUTCOME_REF_RE.fullmatch(receipt_ref) is None:
+        return None
+    if receipt.get("expert_id") != expert_id:
+        return None
+    if receipt.get("source_generation") != source_generation:
+        return None
+    if receipt.get("candidate_sha256") != candidate_sha256:
+        return None
+    if receipt.get("required_postcondition") != required_postcondition:
+        return None
+    if type(receipt.get("verified")) is not bool or receipt["verified"] is not True:
+        return None
+    if type(receipt.get("fresh")) is not bool or receipt["fresh"] is not True:
+        return None
+    return receipt_ref
+
+
+def make_language_expert_handler(
+    host: ExpertHost,
+    expert_id: str,
+    *,
+    verified_outcome_resolver: VerifiedOutcomeResolver | None = None,
+):
     """Return a Core-owned ZARA-EXPERT/1 handler for one language expert.
 
     ``expert_operation`` is trusted host metadata injected by Zara Core. The
@@ -82,9 +166,20 @@ def make_language_expert_handler(host: ExpertHost, expert_id: str):
     expose an exact zero model-call ledger. Filesystem repair remains outside
     this adapter and must cross Zara's typed effect/approval path before fresh
     postcondition verification.
+
+    ``verified_outcome_resolver`` is an optional trusted host seam for reading an
+    already-produced Zara verified-outcome receipt. It is never operation input
+    and does not execute Nix, Bash, tools, effects, providers, or network calls.
+    A Nix/Bash ``repair.verify`` result can become successful only when the
+    symbolic brain explicitly requests its canonical fresh postcondition and the
+    resolver returns a receipt bound to that exact expert, source generation,
+    candidate digest, and postcondition. Missing, stale, malformed, mismatched,
+    or resolver-error evidence fails closed as ``blocked``.
     """
 
     canonical_id = _canonical_expert_id(expert_id)
+    if verified_outcome_resolver is not None and not callable(verified_outcome_resolver):
+        raise TypeError("verified_outcome_resolver must be callable")
 
     def handler(*, expert_operation: str, **payload: Any) -> dict[str, Any]:
         if expert_operation == "repair.apply":
@@ -111,17 +206,61 @@ def make_language_expert_handler(host: ExpertHost, expert_id: str):
         )
         evidence_refs = _evidence_refs(result)
         verdict = result["verdict"]
+        data: dict[str, Any] = {"result": result}
         if expert_operation == "repair.verify" and verdict == "succeeded":
-            # The canonical language brains intentionally return verified(false)
-            # until a fresh parser/compiler/eval/check postcondition is supplied
-            # through Zara's effect/verification authority. Predicate completion
-            # only proves the symbolic verifier ran; it cannot prove the repair.
-            # BLOCKED preserves the bounded evidence explaining the outstanding
-            # postcondition instead of false-greening a repair as successful.
+            # Predicate completion only proves the symbolic verifier ran. The
+            # canonical Nix/Bash brains intentionally report verified(false)
+            # until Zara's effect/verification authority has produced a fresh
+            # parser/compiler/eval/check postcondition. Default to BLOCKED and
+            # permit promotion only from an exact canonical receipt lookup.
             verdict = "blocked"
+            required_postcondition = _pending_postcondition(canonical_id, result)
+            candidate_source = payload.get("candidate_source")
+            source_generation = payload.get("source_generation")
+            if (
+                required_postcondition is not None
+                and verified_outcome_resolver is not None
+                and isinstance(candidate_source, str)
+                and isinstance(source_generation, str)
+                and len(evidence_refs) < _MAX_CORE_EVIDENCE_REFS
+            ):
+                candidate_sha256 = hashlib.sha256(
+                    candidate_source.encode("utf-8", errors="strict")
+                ).hexdigest()
+                try:
+                    receipt = verified_outcome_resolver(
+                        expert_id=canonical_id,
+                        source_generation=source_generation,
+                        candidate_sha256=candidate_sha256,
+                        required_postcondition=required_postcondition,
+                    )
+                except Exception:
+                    receipt = None
+                receipt_ref = _verified_postcondition_ref(
+                    receipt,
+                    expert_id=canonical_id,
+                    source_generation=source_generation,
+                    candidate_sha256=candidate_sha256,
+                    required_postcondition=required_postcondition,
+                )
+                if receipt_ref is not None:
+                    verdict = "succeeded"
+                    evidence_refs.append(receipt_ref)
+                    data.update(
+                        {
+                            "verified": True,
+                            "verified_outcome_ref": receipt_ref,
+                            "postcondition_evidence": {
+                                "receipt_ref": receipt_ref,
+                                "required_postcondition": required_postcondition,
+                                "source_generation": source_generation,
+                                "candidate_sha256": candidate_sha256,
+                            },
+                        }
+                    )
         return {
             "verdict": verdict,
-            "data": {"result": result},
+            "data": data,
             "evidence_refs": evidence_refs,
             "usage": {"model_calls": MAX_MODEL_CALLS},
             "effect_receipts": [],
@@ -130,4 +269,4 @@ def make_language_expert_handler(host: ExpertHost, expert_id: str):
     return handler
 
 
-__all__ = ["make_language_expert_handler"]
+__all__ = ["VerifiedOutcomeResolver", "make_language_expert_handler"]
