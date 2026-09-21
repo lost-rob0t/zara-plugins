@@ -177,8 +177,9 @@ def run(args):
         device.tap('Dance to genre + tempo')
         check('genre/tempo dance keeps companion visible', wait(lambda: bool(device.windows())))
         device.tap('Like this move')
-        learned = device.shell('run-as', PACKAGE, 'cat', 'shared_prefs/companion.xml')
-        check('dance feedback persists locally', 'dance.score.' in learned)
+        def learned_feedback():
+            return 'dance.score.' in device.shell('run-as', PACKAGE, 'cat', 'shared_prefs/companion.xml')
+        check('dance feedback persists locally', wait(learned_feedback))
         device.tap('Skip / teach another move')
         check('learned skip starts another bounded dance', wait(lambda: bool(device.windows())))
         device.tap('Move avatar: toggle drag / click-through')
@@ -200,6 +201,34 @@ def run(args):
     except Exception as error:
         evidence['status'] = 'failed_or_blocked'
         evidence['error'] = type(error).__name__ + ': ' + str(error)[:1200]
+        try:
+            webview = device.shell('dumpsys', 'webviewupdate')
+            evidence['webview_update'] = webview[-6000:]
+            (output / 'webview-update.txt').write_text(webview)
+        except Exception as diagnostic_error:
+            evidence['webview_update_error'] = type(diagnostic_error).__name__
+        try:
+            prefs = device.shell('run-as', PACKAGE, 'cat', 'shared_prefs/companion.xml')
+            evidence['companion_preferences'] = prefs[-6000:]
+            (output / 'companion-preferences.xml').write_text(prefs)
+        except Exception as diagnostic_error:
+            evidence['preferences_error'] = type(diagnostic_error).__name__
+        try:
+            logcat = device.shell('logcat', '-d', '-t', '2000', '-v', 'brief')
+            tokens = ('chromium', 'webview', 'zara companion', 'zaracompanion',
+                      'ai.zara.companion', 'javascript', 'console', 'cr_')
+            relevant = '\n'.join(
+                line for line in logcat.splitlines()
+                if any(token in line.lower() for token in tokens)
+            )
+            (output / 'webview-logcat.txt').write_text(relevant + '\n')
+            evidence['webview_log_tail'] = relevant[-12000:]
+            if relevant:
+                print('--- Companion WebView diagnostics ---')
+                print(relevant[-12000:])
+        except Exception as diagnostic_error:
+            evidence['logcat_error'] = type(diagnostic_error).__name__
+        save()
         raise
     finally:
         save()
