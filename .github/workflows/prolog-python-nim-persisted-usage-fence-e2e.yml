@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          revision=4a7ad7673910e901a09a9e79c81e60bd2aeed8aa
+          revision=2040282332b30c55f3c7071822f20defd7f0afe7
           rm -rf .ci/zara-core-prolog-python-nim-persisted-usage
           git init .ci/zara-core-prolog-python-nim-persisted-usage
           git -C .ci/zara-core-prolog-python-nim-persisted-usage remote add origin https://github.com/lost-rob0t/zara.git
