@@ -333,7 +333,7 @@ def _validate_result(
     data, evidence_refs = _validate_result_payload(result)
     _validate_result_usage(result)
     receipts = result.get("effect_receipts")
-    if not isinstance(receipts, (list, tuple)):
+    if type(receipts) is not list:
         raise BashExpertAdapterError("read-only-effect-proof-missing")
     if receipts:
         raise BashExpertAdapterError("read-only-effect-leak")
