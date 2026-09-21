@@ -26,6 +26,8 @@ MAX_INPUT_LIST = 64
 MAX_STRING_LENGTH = 4096
 MAX_GENERATION = 2_147_483_647
 MAX_RESULT_NODES = 65_536
+MAX_EVIDENCE_REFS = 32
+MAX_EVIDENCE_REF_LENGTH = 128
 REQUEST_ID_RE = re.compile(r"^[!-~]{1,128}$")
 ACTIVATION_ID_RE = re.compile(r"^act:[a-f0-9]{32}$")
 RESULT_VERDICTS = frozenset(
@@ -277,8 +279,10 @@ def _validate_result_payload(
     evidence_refs = result.get("evidence_refs")
     if not isinstance(evidence_refs, (list, tuple)):
         raise JavaScriptExpertAdapterError("invalid-expert-evidence")
+    if len(evidence_refs) > MAX_EVIDENCE_REFS:
+        raise JavaScriptExpertAdapterError("invalid-expert-evidence")
     for evidence_ref in evidence_refs:
-        if type(evidence_ref) is not str or not evidence_ref or len(evidence_ref) > MAX_STRING_LENGTH:
+        if type(evidence_ref) is not str or not evidence_ref or len(evidence_ref) > MAX_EVIDENCE_REF_LENGTH:
             raise JavaScriptExpertAdapterError("invalid-expert-evidence")
     return data, evidence_refs
 
