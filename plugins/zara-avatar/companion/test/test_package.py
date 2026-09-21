@@ -32,7 +32,14 @@ class PackageTests(unittest.TestCase):
             (root / "package.json").write_text(json.dumps({"version": "1.0.0"}))
             packages["node_modules/" + package] = {"version": "1.0.0", "integrity": "sha512-test-fixture-only"}
             for name in names:
-                path = root / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text("fixture")
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                content = "fixture"
+                if name.endswith("GLTFLoader.js"):
+                    content = "export {} from 'three';"
+                elif package == "@pixiv/three-vrm" and name.endswith("three-vrm.module.js"):
+                    content = 'export {} from "three";'
+                path.write_text(content)
         (renderer / "package-lock.json").write_text(json.dumps({"packages": packages}))
         return renderer
 
@@ -42,9 +49,14 @@ class PackageTests(unittest.TestCase):
             STAGE.stage(parent / "output", renderer)
             root = parent / "output/companion"
             html = (root / "index.html").read_text()
-            self.assertIn("script-src 'self' 'sha256-", html)
+            self.assertIn("script-src 'self'", html)
+            self.assertNotIn('type="importmap"', html)
             self.assertNotIn("https://", html)
             self.assertNotIn("unsafe-eval", html)
+            self.assertIn("../../../build/three.module.js",
+                (root / "vendor/three/examples/jsm/loaders/GLTFLoader.js").read_text())
+            self.assertIn("../three/build/three.module.js",
+                (root / "vendor/three-vrm/three-vrm.module.js").read_text())
             self.assertTrue((root / "vendor/three/LICENSE").is_file())
             self.assertTrue((root / "vendor/three-vrm/LICENSE").is_file())
             self.assertEqual(len(json.loads((root / "dependencies.json").read_text())), 7)
