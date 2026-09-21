@@ -6,7 +6,7 @@
 
 The plugin domain represents `session`, `user`, `project`, `machine`, and `global` scopes. The current native symbolic-memory MCP implementation supports only `session`, `project`, and `global`; `user` and `machine` are **not remapped or emulated** and fail as unsupported until the backend implements them.
 
-Transient context is never persisted implicitly. Durable native writes happen only through `memory.remember`, which carries Zara Core's canonical `zara_requires_approval=true` tool metadata. `memory.get` reads one known stable ID and does not mutate state.
+Transient context is never persisted implicitly. General-purpose durable writes still happen only through `memory.remember`, which carries Zara Core's canonical `zara_requires_approval=true` tool metadata. The narrower `memory.preference.observe` surface may persist a bounded low-authority preference observation without a second approval because it cannot grant action authority, spend money, or write arbitrary memory kinds. `memory.get` and `memory.preference.patterns` are read-only.
 
 Host authority is not model-controlled. Principal, session ID, project remote, source class, and capability grants come from plugin configuration and are passed to symbolic-memory as its host-bound environment. They are never accepted as `memory.remember`/`memory.get` tool arguments. The child process receives only a small environment allowlist plus those explicit symbolic-memory settings, so unrelated ambient secrets are not inherited.
 
@@ -32,6 +32,8 @@ The adapter speaks current stateless MCP `2026-07-28` over fixed argv execution 
 - `memory.status` — backend availability plus Zara/native supported scopes.
 - `memory.remember` — approval-gated exact-source durable remember with backend-supported scope, retention, and kind.
 - `memory.get` — authorized read of one known stable memory ID, preserving backend provenance/lifecycle evidence.
+- `memory.preference.observe` — bounded structured preference evidence such as selected/ordered/liked/disliked items with provider, merchant, and contextual dimensions.
+- `memory.preference.patterns` — deterministic ranked patterns derived only from authorized visible preference observations; no model inference is required.
 
 Current symbolic-memory still defers full-corpus search, symbolic-first recall, natural-language forgetting, contradiction/supersession reasoning, and generated-rule activation. `zara-memory` does not recreate those features locally; issue #7 remains open until the backend capabilities exist and are integrated.
 
