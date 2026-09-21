@@ -1,3 +1,4 @@
+import hashlib
 import os
 import shutil
 import subprocess
@@ -39,6 +40,39 @@ def _run(*argv: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
+
+
+class _CanonicalReceiptFixture:
+    """Read-only stand-in for Zara's already-verified outcome lookup authority."""
+
+    def __init__(self) -> None:
+        self.requests: list[dict[str, str]] = []
+
+    def __call__(
+        self,
+        *,
+        expert_id: str,
+        source_generation: str,
+        candidate_sha256: str,
+        required_postcondition: str,
+    ) -> dict[str, object]:
+        request = {
+            "expert_id": expert_id,
+            "source_generation": source_generation,
+            "candidate_sha256": candidate_sha256,
+            "required_postcondition": required_postcondition,
+        }
+        self.requests.append(request)
+        suffix = expert_id.rsplit("/", 1)[-1]
+        return {
+            **request,
+            "receipt_ref": (
+                "zara.verified-outcome/v1:outcome:postcondition/"
+                f"nix-bash-e2e-{suffix}"
+            ),
+            "verified": True,
+            "fresh": True,
+        }
 
 
 @unittest.skipUnless(DOTFILES_ROOT, "canonical Dotfiles checkout not provided")
@@ -126,6 +160,74 @@ class NixBashRepairVerifyE2ETests(unittest.TestCase):
                     self.assertIn(
                         f"required_postcondition({required_postcondition})",
                         evidence,
+                    )
+
+    def test_real_brains_accept_only_host_supplied_bound_verified_outcome(self) -> None:
+        cases = (
+            (
+                "zara:expert/nix",
+                "{ answer = 41; }",
+                "{ answer = 42; }",
+                "parse_then_eval_or_check",
+            ),
+            (
+                "zara:expert/bash",
+                "printf '%s\\n' old",
+                "printf '%s\\n' fixed",
+                "parse_and_bash_n",
+            ),
+        )
+        generation = "generation-repair-verify-receipt-e2e"
+
+        with tempfile.TemporaryDirectory() as temporary:
+            host = ExpertHost(
+                SwiplBackend(),
+                state_root=Path(temporary) / "zara-expert-state",
+            )
+            register_language_family(host, self.sources)
+
+            for expert_id, original, candidate, required_postcondition in cases:
+                with self.subTest(expert_id=expert_id):
+                    resolver = _CanonicalReceiptFixture()
+                    outcome = make_language_expert_handler(
+                        host,
+                        expert_id,
+                        verified_outcome_resolver=resolver,
+                    )(
+                        expert_operation="repair.verify",
+                        original_source=original,
+                        candidate_source=candidate,
+                        source_generation=generation,
+                    )
+
+                    self.assertEqual(outcome["verdict"], "succeeded")
+                    self.assertEqual(outcome["usage"], {"model_calls": 0})
+                    self.assertEqual(outcome["effect_receipts"], [])
+                    self.assertTrue(outcome["data"]["verified"])
+                    receipt_ref = outcome["data"]["verified_outcome_ref"]
+                    self.assertTrue(
+                        receipt_ref.startswith(
+                            "zara.verified-outcome/v1:outcome:postcondition/"
+                        )
+                    )
+                    self.assertIn(receipt_ref, outcome["evidence_refs"])
+
+                    result = outcome["data"]["result"]
+                    self.assertEqual(result["model_calls"], 0)
+                    self.assertEqual(result["effect_receipts"], [])
+                    self.assertIn("verified(false)", "\n".join(result["evidence"]))
+                    self.assertEqual(
+                        resolver.requests,
+                        [
+                            {
+                                "expert_id": expert_id,
+                                "source_generation": generation,
+                                "candidate_sha256": hashlib.sha256(
+                                    candidate.encode("utf-8")
+                                ).hexdigest(),
+                                "required_postcondition": required_postcondition,
+                            }
+                        ],
                     )
 
     def test_real_nix_and_bash_repair_apply_cannot_escape_typed_effect_boundary(self) -> None:
