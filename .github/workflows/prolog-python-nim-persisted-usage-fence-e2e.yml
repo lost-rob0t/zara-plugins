@@ -1,0 +1,74 @@
+name: Prolog Python Nim Persisted Usage Fence E2E
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/zara-prolog-expert/**'
+      - 'plugins/zara-python-expert/**'
+      - 'plugins/zara-nim-expert/**'
+      - 'plugins/zara-expert/**'
+      - 'tests/test_prolog_python_nim_persisted_usage_fence_e2e.py'
+      - '.github/workflows/prolog-python-nim-persisted-usage-fence-e2e.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prolog-python-nim-persisted-usage-fence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  canonical-persisted-usage-fence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Fetch exact current Zara Core conversation contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=4a7ad7673910e901a09a9e79c81e60bd2aeed8aa
+          rm -rf .ci/zara-core-prolog-python-nim-persisted-usage
+          git init .ci/zara-core-prolog-python-nim-persisted-usage
+          git -C .ci/zara-core-prolog-python-nim-persisted-usage remote add origin https://github.com/lost-rob0t/zara.git
+          git -C .ci/zara-core-prolog-python-nim-persisted-usage config core.sparseCheckout true
+          mkdir -p .ci/zara-core-prolog-python-nim-persisted-usage/.git/info
+          printf '%s\n' '/zara/' '/modules/' > .ci/zara-core-prolog-python-nim-persisted-usage/.git/info/sparse-checkout
+          git -C .ci/zara-core-prolog-python-nim-persisted-usage fetch --depth=1 origin "$revision"
+          git -C .ci/zara-core-prolog-python-nim-persisted-usage checkout --detach FETCH_HEAD
+          test "$(git -C .ci/zara-core-prolog-python-nim-persisted-usage rev-parse HEAD)" = "$revision"
+
+      - name: Install canonical conversation dependencies and network audit tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends strace
+          python3 -m pip install 'pykka>=3.1' 'langchain-core>=0.2'
+
+      - name: Prove persisted lane3 provider metadata fails closed
+        env:
+          ZARA_CORE_ROOT: ${{ github.workspace }}/.ci/zara-core-prolog-python-nim-persisted-usage
+        shell: bash
+        run: |
+          set -euo pipefail
+          trace="$RUNNER_TEMP/prolog-python-nim-persisted-usage-network.trace"
+          env \
+            -u OPENAI_API_KEY \
+            -u ANTHROPIC_API_KEY \
+            -u OPENROUTER_API_KEY \
+            -u GOOGLE_API_KEY \
+            -u GEMINI_API_KEY \
+            -u GROQ_API_KEY \
+            -u ZAI_API_KEY \
+            -u AZURE_OPENAI_API_KEY \
+            -u HF_TOKEN \
+            strace -f -e trace=network -o "$trace" \
+            python3 -m unittest discover -s tests -t . -p 'test_prolog_python_nim_persisted_usage_fence_e2e.py'
+          if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
+            echo 'unexpected IPv4/IPv6 network syscall during persisted usage fence E2E' >&2
+            cat "$trace" >&2
+            exit 1
+          fi
