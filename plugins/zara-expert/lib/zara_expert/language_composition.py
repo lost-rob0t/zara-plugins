@@ -25,6 +25,13 @@ _TYPED_EXPERT_IDS = frozenset(
         "zara:expert/kotlin",
     }
 )
+_PRIMARY_TYPED_REPLAY_EXPERT_IDS = frozenset(
+    {
+        "zara:expert/prolog",
+        "zara:expert/python",
+        "zara:expert/nim",
+    }
+)
 
 
 def _validated_language_payload(
@@ -44,10 +51,17 @@ def _validated_language_payload(
     return payload
 
 
-def _validated_evidence_refs(raw: Any, *, source: str) -> tuple[str, ...]:
+def _validated_evidence_refs(
+    raw: Any,
+    *,
+    source: str,
+    require_exact_strings: bool = False,
+) -> tuple[str, ...]:
     if isinstance(raw, (str, bytes)) or not isinstance(raw, (list, tuple)):
         raise CompositionError(f"{source} evidence_refs must be a sequence")
-    return tuple(str(item) for item in raw)
+    if require_exact_strings and any(type(item) is not str for item in raw):
+        raise CompositionError(f"{source} evidence_refs must contain exact strings")
+    return tuple(raw) if require_exact_strings else tuple(str(item) for item in raw)
 
 
 def _typed_explanation(
@@ -72,9 +86,20 @@ def _typed_explanation(
     if isinstance(raw_terms, (str, bytes)) or not isinstance(raw_terms, (list, tuple)):
         raise CompositionError("typed language explanation terms must be a sequence")
 
-    rendered = tuple(str(item) for item in raw_trace) or tuple(
-        str(item) for item in raw_terms
-    )
+    if expert_id in _PRIMARY_TYPED_REPLAY_EXPERT_IDS:
+        if any(type(item) is not str for item in raw_trace):
+            raise CompositionError(
+                "typed language explanation trace must contain exact strings"
+            )
+        if any(type(item) is not str for item in raw_terms):
+            raise CompositionError(
+                "typed language explanation terms must contain exact strings"
+            )
+        rendered = tuple(raw_trace) or tuple(raw_terms)
+    else:
+        rendered = tuple(str(item) for item in raw_trace) or tuple(
+            str(item) for item in raw_terms
+        )
     if rendered:
         explanation = f"{explanation}: {' | '.join(rendered)}"
     return explanation
@@ -108,6 +133,7 @@ def _validated_core_result(
     evidence = _validated_evidence_refs(
         getattr(outcome, "evidence_refs", None),
         source="Core language expert",
+        require_exact_strings=expert_id in _PRIMARY_TYPED_REPLAY_EXPERT_IDS,
     )
     explanation = _typed_explanation(
         expert_id,
@@ -226,6 +252,7 @@ class LanguageFamilyCompositionInvoker:
         evidence = _validated_evidence_refs(
             outcome.get("evidence_refs"),
             source="language expert",
+            require_exact_strings=expert_id in _PRIMARY_TYPED_REPLAY_EXPERT_IDS,
         )
         explanation = _typed_explanation(
             expert_id,
