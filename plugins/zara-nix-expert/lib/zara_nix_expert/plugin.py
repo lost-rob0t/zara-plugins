@@ -174,7 +174,7 @@ def _validate_result(
     ):
         raise NixExpertAdapterError("stale-expert-result")
     verdict = result.get("verdict")
-    if verdict not in RESULT_VERDICTS:
+    if type(verdict) is not str or verdict not in RESULT_VERDICTS:
         raise NixExpertAdapterError("invalid-expert-verdict")
     usage = result.get("usage")
     model_calls = usage.get("model_calls") if isinstance(usage, Mapping) else None
@@ -282,7 +282,7 @@ class ZaraNixExpertPlugin(ServicePlugin):
         max_results: int | float = MAX_RESULTS,
         max_output_bytes: int | float = MAX_OUTPUT_BYTES,
     ) -> str:
-        if expert_operation not in ALLOWED_OPERATIONS:
+        if type(expert_operation) is not str or expert_operation not in ALLOWED_OPERATIONS:
             raise NixExpertAdapterError("unsupported-expert-operation")
         _validate_request_id(request_id)
         _validate_activation_id(activation_id)
