@@ -139,6 +139,31 @@ class ResultEvidenceSchemaTests(unittest.TestCase):
                     "invalid-expert-evidence",
                 )
 
+        invalid_json_data = (
+            ("set", {"value": {"not-json"}}),
+            ("bytes", {"value": b"not-json"}),
+            ("nan", {"value": float("nan")}),
+            ("positive-infinity", {"value": float("inf")}),
+            ("negative-infinity", {"value": float("-inf")}),
+            ("non-string-key", {1: "not-json-object"}),
+        )
+        for case, data in invalid_json_data:
+            with self.subTest(expert_id=module.EXPERT_ID, case=case):
+                self._assert_rejected(
+                    module,
+                    {"data": data},
+                    "invalid-expert-data-json",
+                )
+
+        cyclic: dict[str, object] = {}
+        cyclic["self"] = cyclic
+        with self.subTest(expert_id=module.EXPERT_ID, case="cycle"):
+            self._assert_rejected(
+                module,
+                {"data": cyclic},
+                "invalid-expert-data-json",
+            )
+
     def test_nix_result_data_and_evidence_are_typed(self) -> None:
         self._assert_result_schema(NIX)
 

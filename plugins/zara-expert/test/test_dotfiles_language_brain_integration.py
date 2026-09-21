@@ -208,7 +208,7 @@ class DotfilesLanguageBrainIntegrationTests(unittest.TestCase):
 
         blocked = handler(
             expert_operation="repair.apply",
-            repair="candidate-edit",
+            repair={"kind": "replace", "text": "candidate-edit"},
             expected_preimage=source,
             source_generation=generation,
         )

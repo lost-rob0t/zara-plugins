@@ -21,6 +21,7 @@ MAX_TIMEOUT_MS = 3000
 MAX_RESULTS = 32
 MAX_INPUT_DEPTH = 16
 MAX_INPUT_NODES = 4096
+MAX_RESULT_NODES = 65536
 MAX_OBJECT_PROPERTIES = 128
 MAX_ARRAY_ITEMS = 256
 MAX_KEY_LENGTH = 128
@@ -150,10 +151,51 @@ def _operation_descriptor(operation: str) -> dict[str, object]:
     }
 
 
+def _validate_result_data_tree(data: Mapping[str, object]) -> None:
+    stack: list[tuple[bool, object]] = [(False, data)]
+    active_containers: set[int] = set()
+    nodes = 0
+    while stack:
+        exiting, current = stack.pop()
+        if exiting:
+            active_containers.remove(id(current))
+            continue
+
+        nodes += 1
+        if nodes > MAX_RESULT_NODES:
+            raise BashExpertAdapterError("invalid-expert-data-json")
+
+        if isinstance(current, dict):
+            container_id = id(current)
+            if container_id in active_containers:
+                raise BashExpertAdapterError("invalid-expert-data-json")
+            active_containers.add(container_id)
+            stack.append((True, current))
+            for key, child in current.items():
+                if type(key) is not str:
+                    raise BashExpertAdapterError("invalid-expert-data-json")
+                stack.append((False, child))
+        elif isinstance(current, (list, tuple)):
+            container_id = id(current)
+            if container_id in active_containers:
+                raise BashExpertAdapterError("invalid-expert-data-json")
+            active_containers.add(container_id)
+            stack.append((True, current))
+            stack.extend((False, child) for child in current)
+        elif type(current) is float:
+            if not math.isfinite(current):
+                raise BashExpertAdapterError("invalid-expert-data-json")
+        elif current is None or type(current) in (str, int, bool):
+            continue
+        else:
+            raise BashExpertAdapterError("invalid-expert-data-json")
+
+
 def _validate_result_payload(result: Mapping[str, object]) -> tuple[Mapping[str, object], list[str] | tuple[str, ...]]:
     data = result.get("data")
     if not isinstance(data, Mapping):
         raise BashExpertAdapterError("invalid-expert-data")
+    _validate_result_data_tree(data)
 
     evidence_refs = result.get("evidence_refs")
     if not isinstance(evidence_refs, (list, tuple)):
@@ -237,7 +279,13 @@ class ZaraBashExpertPlugin(ServicePlugin):
 
     @staticmethod
     def _json(value: object) -> str:
-        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return json.dumps(
+            value,
+            allow_nan=False,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
 
     @staticmethod
     def _decode_input(input_json: str) -> dict[str, Any]:
@@ -365,7 +413,10 @@ class ZaraBashExpertPlugin(ServicePlugin):
             runtime_generation=runtime_generation,
         )
 
-        encoded = self._json(dict(result))
+        try:
+            encoded = self._json(dict(result))
+        except (TypeError, ValueError, RecursionError) as error:
+            raise BashExpertAdapterError("invalid-expert-result-json") from error
         if len(encoded.encode("utf-8")) > output_limit:
             raise BashExpertAdapterError("expert-result-too-large")
         return encoded
