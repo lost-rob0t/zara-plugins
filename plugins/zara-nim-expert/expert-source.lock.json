@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "expert_id": "zara:expert/nim",
+  "adapter_version": "0.1.0",
+  "canonical_source": {
+    "repository": "lost-rob0t/dotfiles",
+    "path": ".zara/experts/nim",
+    "issue": 292,
+    "producer_pr": 297,
+    "commit": "5b01f03bdce98bc55f9f3cc76a1023b91ab63784"
+  },
+  "runtime_contract": {
+    "repository": "lost-rob0t/prolog-rlm",
+    "issue": 499
+  },
+  "zara_contract": {
+    "repository": "lost-rob0t/zara",
+    "issue": 1233,
+    "schema_pr": 1273
+  }
+}

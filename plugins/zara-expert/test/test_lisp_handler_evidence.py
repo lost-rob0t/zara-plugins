@@ -43,6 +43,12 @@ class CanonicalLookingHostTerm:
         return f"evidence:lisp:sha256:{'0' * 64}"
 
 
+class ForgedEvidenceString(str):
+    def encode(self, encoding="utf-8", errors="strict"):
+        del encoding, errors
+        return b"forged-evidence-bytes"
+
+
 class ObjectTraceBackend:
     def run(self, request):
         del request
@@ -59,6 +65,26 @@ class ObjectResultBackend:
         return {
             "ok": True,
             "results": [CanonicalLookingHostTerm()],
+            "trace": [],
+        }
+
+
+class StringSubclassTraceBackend:
+    def run(self, request):
+        del request
+        return {
+            "ok": True,
+            "results": ["symbolic-result"],
+            "trace": [ForgedEvidenceString("registered-predicate")],
+        }
+
+
+class StringSubclassResultBackend:
+    def run(self, request):
+        del request
+        return {
+            "ok": True,
+            "results": [ForgedEvidenceString("symbolic-result")],
             "trace": [],
         }
 
@@ -131,6 +157,36 @@ class LispHandlerEvidenceTests(unittest.TestCase):
                 brain = root / "expert.pl"
                 brain.write_text("% canonical symbolic fixture\n", encoding="utf-8")
                 host = ExpertHost(ObjectResultBackend(), state_root=root / "state")
+                register_lisp_family(host, {source_key: [brain]})
+
+                with self.assertRaisesRegex(ExpertError, "result entries must be strings"):
+                    make_lisp_expert_handler(host, expert_id)(
+                        expert_operation="structural.check",
+                        arguments=["(x)"],
+                    )
+
+    def test_registered_host_trace_rejects_string_subclass_for_every_lisp_dialect(self):
+        for source_key, expert_id in DIALECT_CASES:
+            with self.subTest(expert_id=expert_id), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                brain = root / "expert.pl"
+                brain.write_text("% canonical symbolic fixture\n", encoding="utf-8")
+                host = ExpertHost(StringSubclassTraceBackend(), state_root=root / "state")
+                register_lisp_family(host, {source_key: [brain]})
+
+                with self.assertRaisesRegex(ExpertError, "trace entries must be strings"):
+                    make_lisp_expert_handler(host, expert_id)(
+                        expert_operation="structural.check",
+                        arguments=["(x)"],
+                    )
+
+    def test_registered_host_result_rejects_string_subclass_for_every_lisp_dialect(self):
+        for source_key, expert_id in DIALECT_CASES:
+            with self.subTest(expert_id=expert_id), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                brain = root / "expert.pl"
+                brain.write_text("% canonical symbolic fixture\n", encoding="utf-8")
+                host = ExpertHost(StringSubclassResultBackend(), state_root=root / "state")
                 register_lisp_family(host, {source_key: [brain]})
 
                 with self.assertRaisesRegex(ExpertError, "result entries must be strings"):

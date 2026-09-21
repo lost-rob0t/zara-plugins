@@ -29,7 +29,7 @@ def _require_string_references(value: Any, label: str) -> None:
 
     if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
         return
-    if any(not isinstance(item, str) for item in value):
+    if any(type(item) is not str for item in value):
         raise CompositionError(f"{label} must contain strings")
 
 
@@ -77,7 +77,7 @@ def _strict_family_core_evidence_refs(result: Mapping[str, Any]) -> list[str]:
             f"Lisp expert trace exceeds {_family._MAX_CORE_EVIDENCE_REFS} entries"
         )
     if raw_trace:
-        if any(not isinstance(item, str) for item in raw_trace):
+        if any(type(item) is not str for item in raw_trace):
             raise ExpertError("Lisp expert trace entries must be strings")
         return [_family._content_addressed_evidence_ref(item) for item in raw_trace]
 
@@ -88,7 +88,7 @@ def _strict_family_core_evidence_refs(result: Mapping[str, Any]) -> list[str]:
         raise ExpertError(
             f"Lisp expert evidence exceeds {_family._MAX_CORE_EVIDENCE_REFS} entries"
         )
-    if any(not isinstance(item, str) for item in raw_results):
+    if any(type(item) is not str for item in raw_results):
         raise ExpertError("Lisp expert result entries must be strings")
     return [_family._content_addressed_evidence_ref(item) for item in raw_results]
 
@@ -105,7 +105,7 @@ def _strict_family_pending_postcondition(
     raw_results = result.get("results", ())
     if isinstance(raw_results, (str, bytes)) or not isinstance(raw_results, (list, tuple)):
         raise ExpertError("Lisp expert results must be a sequence")
-    if any(not isinstance(item, str) for item in raw_results):
+    if any(type(item) is not str for item in raw_results):
         raise ExpertError("Lisp expert result entries must be strings")
     if not any("verified(false)" in item for item in raw_results):
         return None
