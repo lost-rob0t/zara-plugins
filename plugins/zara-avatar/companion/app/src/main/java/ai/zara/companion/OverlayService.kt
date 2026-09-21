@@ -132,6 +132,16 @@ class OverlayService : Service() {
             mediaPlaybackRequiresUserGesture = true
             cacheMode = WebSettings.LOAD_NO_CACHE
         }
+        view.webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
+                    val detail = message.message().take(400)
+                    prefs.edit().putString("renderer_console_error", detail).apply()
+                    android.util.Log.e("ZaraCompanion", "WebView: $detail")
+                }
+                return true
+            }
+        }
         view.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = true
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse = resource(request)
@@ -167,7 +177,7 @@ class OverlayService : Service() {
                 while (!ready && web === view) {
                     delay(200)
                     ready = suspendCancellableCoroutine { continuation ->
-                        view.evaluateJavascript("window.companion?.ready === true") { result ->
+                        view.evaluateJavascript("window.companion && window.companion.ready === true") { result ->
                             if (continuation.isActive) continuation.resumeWith(Result.success(result == "true"))
                         }
                     }
