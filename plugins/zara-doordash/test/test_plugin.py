@@ -39,17 +39,19 @@ class Handle:
 class Runtime:
     def __init__(self):
         self.configuration = {
-            "plugins": {
-                "zara-doordash": {
-                    "learning_enabled": True,
-                    "preference_min_observations": 2,
-                    "preference_limit": 5,
-                }
-            }
+            "commerce_provider": "doordash",
+            "commerce_confirmation": "always",
+            "learning_enabled": True,
+            "preference_min_observations": 2,
+            "preference_limit": 5,
+            "preference_min_confidence": 0.6,
+            "policy_source": "prolog",
         }
         self.calls = []
+        self.resolve_calls = []
 
     def resolve_capability(self, capability):
+        self.resolve_calls.append(capability)
         if capability in {
             "browser.tab.open",
             "memory.preference.observe",
@@ -69,7 +71,10 @@ class Runtime:
                 {
                     "status": "ok",
                     "matched_observations": 3,
-                    "patterns": [{"item": "tacos", "positive_count": 3}],
+                    "patterns": [
+                        {"item": "tacos", "positive_count": 3, "confidence": 0.9},
+                        {"item": "pizza", "positive_count": 2, "confidence": 0.4},
+                    ],
                 }
             )
         raise AssertionError(handle.capability)
@@ -90,6 +95,18 @@ class DoorDashPluginTests(unittest.TestCase):
         )
         self.assertTrue(tools["doordash.checkout"].metadata["zara_requires_approval"])
         self.assertFalse(bool((tools["doordash.prepare"].metadata or {}).get("zara_requires_approval", False)))
+
+    def test_start_consumes_plugin_scoped_policy_without_resolving_dependencies(self):
+        runtime = Runtime()
+        plugin = ZaraDoorDashPlugin()
+
+        plugin.start(runtime)
+
+        self.assertEqual(runtime.resolve_calls, [])
+        self.assertEqual(plugin.preference_min_observations, 2)
+        self.assertEqual(plugin.preference_limit, 5)
+        self.assertEqual(plugin.preference_min_confidence, 0.6)
+        self.assertEqual(plugin.policy_source, "prolog")
 
     def test_approved_checkout_handoff_opens_browser_and_records_selection(self):
         runtime = Runtime()
@@ -119,7 +136,7 @@ class DoorDashPluginTests(unittest.TestCase):
         result = json.loads(
             plugin.preferences(context={"daypart": "late_night"})
         )
-        self.assertEqual(result["patterns"][0]["item"], "tacos")
+        self.assertEqual([item["item"] for item in result["patterns"]], ["tacos"])
         capability, request = runtime.calls[-1]
         self.assertEqual(capability, "memory.preference.patterns")
         self.assertEqual(request["domain"], "food")
@@ -137,7 +154,11 @@ class DoorDashPluginTests(unittest.TestCase):
         self.assertEqual(result["status"], "handoff_ready")
         self.assertFalse(result["purchase_completed"])
         self.assertEqual(result["browser"]["status"], "unavailable")
-        self.assertEqual(result["learning"]["status"], "unavailable")
+        self.assertEqual(result["learning"]["status"], "not_observed")
+        self.assertEqual(
+            [name for name, _ in plugin.runtime.calls],
+            [],
+        )
 
 
 if __name__ == "__main__":
