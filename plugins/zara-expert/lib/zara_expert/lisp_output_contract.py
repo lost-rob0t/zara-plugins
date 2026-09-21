@@ -88,6 +88,68 @@ def _validate_evidence_refs(value: Any, operation: str) -> None:
         _invalid(f"Lisp data.evidence_refs is invalid: {exc}")
 
 
+def _validate_repair_verify_postcondition(
+    expert_id: str,
+    input_data: Mapping[str, Any],
+    result: InvocationResult,
+) -> None:
+    """Bind projected verify success to the exact dialect receipt lineage.
+
+    The trusted host/Core path already owns verification and receipt minting. This
+    adapter only checks that a successful public projection refers to the exact
+    candidate, source generation, dialect postcondition, and evidence reference
+    that the caller asked Core to verify. No verifier or parser semantics live
+    here.
+    """
+
+    if result.status != "succeeded":
+        return
+
+    required_postcondition = _REQUIRED_POSTCONDITIONS.get(expert_id)
+    if required_postcondition is None:
+        _invalid("generic Lisp repair.verify cannot claim dialect verified success")
+
+    data = result.data
+    if data.get("verified") is not True:
+        _invalid("Lisp repair.verify success requires literal verified=true")
+
+    source_generation = input_data.get("source_generation")
+    if not isinstance(source_generation, str) or not source_generation:
+        _invalid("Lisp repair.verify success requires source generation")
+
+    arguments = input_data.get("arguments")
+    if not isinstance(arguments, list) or len(arguments) != 2:
+        _invalid("Lisp repair.verify success requires original and candidate source")
+    candidate_source = arguments[1]
+    if not isinstance(candidate_source, str):
+        _invalid("Lisp repair.verify success requires string replacement candidate")
+    candidate_sha256 = hashlib.sha256(
+        candidate_source.encode("utf-8", errors="strict")
+    ).hexdigest()
+
+    receipt_ref = data.get("verified_outcome_ref")
+    if not isinstance(receipt_ref, str) or not receipt_ref:
+        _invalid("Lisp repair.verify success requires verified-outcome receipt reference")
+    if not receipt_ref.startswith(_VERIFIED_POSTCONDITION_PREFIX):
+        _invalid("Lisp repair.verify success requires postcondition verified-outcome receipt")
+    if _VERIFIED_OUTCOME_REF_RE.fullmatch(receipt_ref) is None:
+        _invalid("Lisp repair.verify success requires canonical verified-outcome receipt")
+
+    postcondition = data.get("postcondition_evidence")
+    if not isinstance(postcondition, Mapping):
+        _invalid("Lisp repair.verify success requires postcondition evidence")
+    if postcondition.get("receipt_ref") != receipt_ref:
+        _invalid("Lisp repair.verify receipt lineage mismatch")
+    if postcondition.get("required_postcondition") != required_postcondition:
+        _invalid("Lisp repair.verify required postcondition mismatch")
+    if postcondition.get("source_generation") != source_generation:
+        _invalid("Lisp repair.verify postcondition source generation mismatch")
+    if postcondition.get("candidate_sha256") != candidate_sha256:
+        _invalid("Lisp repair.verify postcondition candidate digest mismatch")
+    if receipt_ref not in result.evidence:
+        _invalid("Lisp repair.verify canonical receipt must be projected as evidence reference")
+
+
 def _validate_repair_apply_postcondition(
     expert_id: str,
     input_data: Mapping[str, Any],
@@ -221,6 +283,8 @@ class LispFamilyCompositionInvoker(_BaseLispFamilyCompositionInvoker):
     def __call__(self, expert_id: str, operation: str, input_data: Mapping[str, Any], **kwargs):
         result = super().__call__(expert_id, operation, input_data, **kwargs)
         _validate_predicate_output(expert_id, operation, result)
+        if operation == "repair.verify":
+            _validate_repair_verify_postcondition(expert_id, input_data, result)
         return result
 
 
@@ -230,6 +294,8 @@ class CoreLispFamilyCompositionInvoker(_BaseCoreLispFamilyCompositionInvoker):
     def __call__(self, expert_id: str, operation: str, input_data: Mapping[str, Any], **kwargs):
         result = super().__call__(expert_id, operation, input_data, **kwargs)
         _validate_predicate_output(expert_id, operation, result)
+        if operation == "repair.verify":
+            _validate_repair_verify_postcondition(expert_id, input_data, result)
         if operation == "repair.apply":
             _validate_repair_apply_postcondition(expert_id, input_data, result)
             _validate_projected_evidence(operation, result.evidence)
