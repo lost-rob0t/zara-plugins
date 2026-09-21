@@ -6,8 +6,8 @@ android {
         applicationId = "ai.zara.companion"
         minSdk = 29
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.0-alpha.2"
+        versionCode = 3
+        versionName = "0.1.0-alpha.3"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -17,7 +17,10 @@ android {
     sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/rendererAssets").get().asFile)
     sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/fixtureAssets").get().asFile)
 }
-dependencies { implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2") }
+dependencies {
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    testImplementation("junit:junit:4.13.2")
+}
 val stageRenderer by tasks.registering(Exec::class) {
     workingDir(rootProject.projectDir)
     commandLine("python3", "stage_assets.py", layout.buildDirectory.dir("generated/rendererAssets").get().asFile)
