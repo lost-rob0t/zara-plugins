@@ -120,7 +120,8 @@ class LanguageCompositionTests(unittest.TestCase):
                 fence=fence,
             )
             self.assertEqual(node.status, "succeeded")
-            self.assertEqual(node.evidence, ("evidence:language",))
+            self.assertEqual(len(node.evidence), 1)
+            self.assertTrue(node.evidence[0].startswith("evidence:language:sha256:"))
             self.assertEqual(node.children, ())
 
         self.assertEqual(budget.invocations_used, 3)
