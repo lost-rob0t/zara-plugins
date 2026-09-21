@@ -155,6 +155,18 @@ class LispCurrentCoreVerifiedOutcomeE2ETests(unittest.TestCase):
             )
         )
 
+    def _trace_for(self, registry, expert_id: str):
+        matches = []
+        for invocation_id in registry.snapshot().invocation_ids:
+            trace = registry.explain(invocation_id)
+            if (
+                trace.get("expert_id") == expert_id
+                and trace.get("operation_id") == "repair.verify"
+            ):
+                matches.append(trace)
+        self.assertEqual(len(matches), 1)
+        return matches[0]
+
     def test_fresh_dialect_receipt_promotes_real_verify_through_current_core(self) -> None:
         receipts = {}
         resolver_calls = []
@@ -240,8 +252,7 @@ class LispCurrentCoreVerifiedOutcomeE2ETests(unittest.TestCase):
                 self.assertEqual(resolver_calls[-1], lookup)
                 self.assertEqual(budget.model_calls_used, 0)
 
-                invocation_id = registry.snapshot().invocation_ids[-1]
-                trace = registry.explain(invocation_id)
+                trace = self._trace_for(registry, expert_id)
                 self.assertEqual(trace["verdict"], "succeeded")
                 self.assertEqual(trace.get("effect_receipts", []), [])
                 self.assertIs(type(trace["usage"]["model_calls"]), int)
