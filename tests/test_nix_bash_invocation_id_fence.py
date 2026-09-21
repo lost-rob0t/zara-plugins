@@ -8,9 +8,9 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-REQUEST_ID = "req-generation-type"
-ACTIVATION_ID = "act:" + ("c" * 32)
-INVOCATION_ID = "inv:" + ("d" * 32)
+REQUEST_ID = "req-invocation-id-fence"
+ACTIVATION_ID = "act:" + ("d" * 32)
+INVOCATION_ID = "inv:" + ("a" * 32)
 EXPERT_OPERATION = "parse"
 EXPECTED_GENERATION = 1
 
@@ -56,7 +56,7 @@ def _load_plugin(package: str, module_name: str):
     try:
         path = REPO_ROOT / "plugins" / package / "lib" / module_name / "plugin.py"
         spec = importlib.util.spec_from_file_location(
-            f"strict_result_generation_{module_name}",
+            f"invocation_id_fence_{module_name}",
             path,
         )
         assert spec is not None and spec.loader is not None
@@ -75,69 +75,68 @@ NIX = _load_plugin("zara-nix-expert", "zara_nix_expert")
 BASH = _load_plugin("zara-bash-expert", "zara_bash_expert")
 
 
-def _result(
-    *,
-    expert_id: str,
-    manifest_digest: str,
-    registry_generation: object = EXPECTED_GENERATION,
-    runtime_generation: object = EXPECTED_GENERATION,
-) -> dict[str, object]:
+def _result(module) -> dict[str, object]:
     return {
         "protocol": "ZARA-EXPERT/1",
         "request_id": REQUEST_ID,
         "invocation_id": INVOCATION_ID,
         "activation_id": ACTIVATION_ID,
-        "expert_id": expert_id,
-        "expert_version": "0.1.0",
-        "manifest_digest": manifest_digest,
+        "expert_id": module.EXPERT_ID,
+        "expert_version": module.PLUGIN_VERSION,
+        "manifest_digest": module.MANIFEST_DIGEST,
         "expert_operation": EXPERT_OPERATION,
-        "resolved_registry_generation": registry_generation,
-        "resolved_runtime_generation": runtime_generation,
+        "resolved_registry_generation": EXPECTED_GENERATION,
+        "resolved_runtime_generation": EXPECTED_GENERATION,
         "verdict": "succeeded",
         "data": {"verdict": "clean"},
-        "evidence_refs": [],
+        "evidence_refs": ["source:fixture"],
         "usage": {"model_calls": 0},
         "effect_receipts": [],
     }
 
 
-class StrictResultGenerationTypeTests(unittest.TestCase):
-    def _assert_boolean_generation_rejected(
-        self,
-        *,
-        module,
-    ) -> None:
-        cases = (
-            {"registry_generation": True},
-            {"runtime_generation": True},
+class InvocationIdFenceTests(unittest.TestCase):
+    def _validate(self, module, result: dict[str, object]) -> None:
+        module._validate_result(
+            result,
+            request_id=REQUEST_ID,
+            activation_id=ACTIVATION_ID,
+            expert_operation=EXPERT_OPERATION,
+            registry_generation=EXPECTED_GENERATION,
+            runtime_generation=EXPECTED_GENERATION,
         )
-        for mutation in cases:
-            with self.subTest(expert_id=module.EXPERT_ID, mutation=mutation):
-                result = _result(
-                    expert_id=module.EXPERT_ID,
-                    manifest_digest=module.MANIFEST_DIGEST,
-                    **mutation,
-                )
+
+    def _assert_invocation_id_fence(self, module) -> None:
+        self._validate(module, _result(module))
+
+        adapter_error = (
+            module.NixExpertAdapterError
+            if module is NIX
+            else module.BashExpertAdapterError
+        )
+        invalid_ids: tuple[object, ...] = (
+            None,
+            7,
+            "",
+            "inv:short",
+            "inv:" + ("g" * 32),
+            "inv:" + ("a" * 33),
+        )
+        for invocation_id in invalid_ids:
+            with self.subTest(expert_id=module.EXPERT_ID, invocation_id=invocation_id):
+                result = _result(module)
+                result["invocation_id"] = invocation_id
                 with self.assertRaisesRegex(
-                    module.NixExpertAdapterError
-                    if module is NIX
-                    else module.BashExpertAdapterError,
-                    "stale-expert-result",
+                    adapter_error,
+                    "invalid-expert-invocation-id",
                 ):
-                    module._validate_result(
-                        result,
-                        request_id=REQUEST_ID,
-                        activation_id=ACTIVATION_ID,
-                        expert_operation=EXPERT_OPERATION,
-                        registry_generation=EXPECTED_GENERATION,
-                        runtime_generation=EXPECTED_GENERATION,
-                    )
+                    self._validate(module, result)
 
-    def test_nix_result_boolean_generations_fail_closed(self) -> None:
-        self._assert_boolean_generation_rejected(module=NIX)
+    def test_nix_rejects_noncanonical_core_invocation_ids(self) -> None:
+        self._assert_invocation_id_fence(NIX)
 
-    def test_bash_result_boolean_generations_fail_closed(self) -> None:
-        self._assert_boolean_generation_rejected(module=BASH)
+    def test_bash_rejects_noncanonical_core_invocation_ids(self) -> None:
+        self._assert_invocation_id_fence(BASH)
 
 
 if __name__ == "__main__":

@@ -390,8 +390,14 @@ def invoke_language_operation(
     result = method(spec.namespace, binding.predicate, arguments)
     evidence = result.get("results", [])
     explanation = result.get("trace", [])
-    if not isinstance(evidence, list) or not isinstance(explanation, list):
+    if not isinstance(evidence, list):
         raise ExpertError(f"{spec.namespace}: malformed expert evidence")
+    if not isinstance(explanation, list):
+        raise ExpertError(f"{spec.namespace}: malformed expert explanation")
+    if any(type(item) is not str for item in evidence):
+        raise ExpertError(f"{spec.namespace}: malformed expert evidence")
+    if any(type(item) is not str for item in explanation):
+        raise ExpertError(f"{spec.namespace}: malformed expert explanation")
     ok = result.get("ok")
     if ok is True:
         verdict = "succeeded" if evidence else "unknown"
