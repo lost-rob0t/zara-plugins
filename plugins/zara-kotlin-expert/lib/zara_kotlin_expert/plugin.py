@@ -34,6 +34,47 @@ ACTIVATION_ID_RE = re.compile(r"^act:[a-f0-9]{32}$")
 RESULT_VERDICTS = frozenset(
     {"succeeded", "failed", "unknown", "blocked", "unsupported", "cancelled", "error"}
 )
+RESULT_ERROR_CODES = frozenset(
+    {
+        "invalid_input",
+        "ambiguity",
+        "unsupported_operation",
+        "unsupported_backend",
+        "incompatible_protocol",
+        "denied",
+        "approval_required",
+        "stale_generation",
+        "unavailable",
+        "deadline_exceeded",
+        "budget_exceeded",
+        "cancelled",
+        "interrupted",
+        "unknown_external_outcome",
+    }
+)
+RESULT_FIELDS = frozenset(
+    {
+        "protocol",
+        "request_id",
+        "invocation_id",
+        "activation_id",
+        "expert_id",
+        "expert_version",
+        "manifest_digest",
+        "expert_operation",
+        "resolved_registry_generation",
+        "resolved_runtime_generation",
+        "verdict",
+        "data",
+        "evidence_refs",
+        "usage",
+        "effect_receipts",
+        "error_code",
+        "error_message",
+        "replayed",
+    }
+)
+USAGE_FIELDS = frozenset({"model_calls"})
 OPERATION_FIELDS: dict[str, tuple[dict[str, object], ...]] = {
     "match": (
         {"name": "path", "type": "string", "required": True},
@@ -270,6 +311,40 @@ def _validate_result_payload(
     return data, evidence_refs
 
 
+def _validate_result_usage(result: Mapping[str, object]) -> None:
+    usage = result.get("usage")
+    if usage is None:
+        raise KotlinExpertAdapterError("zero-model-proof-missing")
+    if type(usage) is not dict:
+        raise KotlinExpertAdapterError("invalid-expert-usage")
+    for field in usage:
+        if type(field) is not str or field not in USAGE_FIELDS:
+            raise KotlinExpertAdapterError("unknown-expert-usage-field")
+    model_calls = usage.get("model_calls")
+    if type(model_calls) is not int or model_calls != 0:
+        raise KotlinExpertAdapterError("zero-model-proof-missing")
+
+
+def _validate_result_metadata(result: Mapping[str, object]) -> None:
+    for field in result:
+        if type(field) is not str or field not in RESULT_FIELDS:
+            raise KotlinExpertAdapterError("unknown-expert-result-field")
+
+    error_code = result.get("error_code")
+    if error_code is not None and (
+        type(error_code) is not str or error_code not in RESULT_ERROR_CODES
+    ):
+        raise KotlinExpertAdapterError("invalid-expert-error-code")
+
+    error_message = result.get("error_message", "")
+    if type(error_message) is not str or len(error_message) > MAX_STRING_LENGTH:
+        raise KotlinExpertAdapterError("invalid-expert-error-message")
+
+    replayed = result.get("replayed", False)
+    if type(replayed) is not bool:
+        raise KotlinExpertAdapterError("invalid-expert-replayed")
+
+
 def _operation_descriptor(operation: str) -> dict[str, object]:
     return {
         "operation_id": operation,
@@ -289,6 +364,7 @@ def _validate_result(
     registry_generation: int,
     runtime_generation: int,
 ) -> None:
+    _validate_result_metadata(result)
     expected = {
         "protocol": PROTOCOL,
         "request_id": request_id,
@@ -312,10 +388,7 @@ def _validate_result(
     verdict = result.get("verdict")
     if verdict not in RESULT_VERDICTS:
         raise KotlinExpertAdapterError("invalid-expert-verdict")
-    usage = result.get("usage")
-    model_calls = usage.get("model_calls") if isinstance(usage, Mapping) else None
-    if type(model_calls) is not int or model_calls != 0:
-        raise KotlinExpertAdapterError("zero-model-proof-missing")
+    _validate_result_usage(result)
     receipts = result.get("effect_receipts")
     if not isinstance(receipts, (list, tuple)):
         raise KotlinExpertAdapterError("read-only-effect-proof-missing")
