@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -11,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DOTFILES_ROOT = os.environ.get("ZARA_DOTFILES_ROOT")
 ZARA_CORE_ROOT = os.environ.get("ZARA_CORE_ROOT")
 EXPECTED_DOTFILES_COMMIT = "fe8f7fa3c42803e0e505dcb6f7e4600d27649d9e"
-EXPECTED_ZARA_CORE_COMMIT = "0561fdbeadde3c2d7ed4ac94c5427f0c10421dac"
+EXPECTED_ZARA_CORE_COMMIT = "8177460982f94a5a60cf454c2fd4f9beae867a95"
 ZARA_EXPERT_LIB = REPO_ROOT / "plugins" / "zara-expert" / "lib"
 
 if ZARA_CORE_ROOT:
@@ -51,6 +52,29 @@ def _checkout_head(root: Path, expected: str, label: str) -> None:
         )
 
 
+class _BlockAfterRealLispBackend(SwiplBackend):
+    """Hold one real generic-Lisp repair result before Core can commit it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.completed = threading.Event()
+        self.release = threading.Event()
+        self.preview_calls = 0
+
+    def run(self, request):
+        result = super().run(request)
+        capability = request.get("capability")
+        if (
+            getattr(capability, "namespace", None) == "lisp"
+            and getattr(capability, "predicate", None) == "preview_repair"
+        ):
+            self.preview_calls += 1
+            self.completed.set()
+            if not self.release.wait(timeout=5.0):
+                raise AssertionError("real Lisp repair backend was not released")
+        return result
+
+
 @unittest.skipUnless(
     DOTFILES_ROOT and ZARA_CORE_ROOT,
     "exact Dotfiles and Zara Core checkouts not provided",
@@ -83,11 +107,11 @@ class LispCurrentCoreDelegationE2ETests(unittest.TestCase):
                     raise AssertionError(f"missing canonical Lisp source: {source}")
         validate_lisp_source_contracts(cls.sources)
 
-    def _runtime(self):
+    def _runtime(self, *, backend=None):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         host = ExpertHost(
-            SwiplBackend(),
+            backend if backend is not None else SwiplBackend(),
             state_root=Path(temporary.name) / "zara-expert-state",
             query_timeout_seconds=5.0,
         )
@@ -257,6 +281,87 @@ class LispCurrentCoreDelegationE2ETests(unittest.TestCase):
         self.assertEqual(tree.evidence, ())
         self.assertEqual(budget.model_calls_used, 0)
         self.assertEqual(len(registry.snapshot().invocation_ids), 1)
+
+    def test_core_cancellation_fences_real_delegated_lisp_output_before_commit(self) -> None:
+        backend = _BlockAfterRealLispBackend()
+        registry, handles = self._runtime(backend=backend)
+        composer = self._composer(registry, handles)
+        budget = SharedSymbolicBudget(
+            max_invocations=2,
+            max_depth=1,
+            max_model_calls=0,
+        )
+        outcome = {}
+
+        def invoke_repair() -> None:
+            try:
+                outcome["result"] = composer.invoke(
+                    "zara:expert/common-lisp",
+                    "repair.preview",
+                    {
+                        "arguments": [
+                            "(defun demo (x) (list x",
+                            "diagnostic:lisp:missing-close",
+                        ]
+                    },
+                    budget=budget,
+                    fence=self._fence(),
+                )
+            except BaseException as exc:  # pragma: no cover - failure surfaced below
+                outcome["error"] = exc
+
+        worker = threading.Thread(target=invoke_repair, daemon=True)
+        worker.start()
+        self.assertTrue(
+            backend.completed.wait(timeout=5.0),
+            "real Lisp backend did not complete before cancellation",
+        )
+        self.assertEqual(backend.preview_calls, 1)
+
+        invocation_ids = registry.snapshot().invocation_ids
+        self.assertEqual(len(invocation_ids), 1)
+        child_invocation_id = invocation_ids[0]
+        before = registry.explain(child_invocation_id)
+        self.assertEqual(before["expert_id"], "zara:expert/lisp")
+
+        receipt = registry.cancel(child_invocation_id)
+        self.assertIs(receipt["cancelled"], True)
+        self.assertIs(receipt["committed"], False)
+
+        backend.release.set()
+        worker.join(timeout=5.0)
+        self.assertFalse(worker.is_alive(), "cancelled Lisp delegation did not terminate")
+        self.assertNotIn("error", outcome)
+
+        tree = outcome["result"]
+        self.assertEqual(tree.status, "unknown")
+        self.assertEqual(len(tree.children), 1)
+        child = tree.children[0]
+        self.assertEqual(child.expert_id, "zara:expert/lisp")
+        self.assertEqual(child.status, "cancelled")
+        self.assertEqual(child.evidence, ())
+        self.assertEqual(child.data, {})
+        self.assertEqual(budget.invocations_used, 2)
+        self.assertEqual(budget.model_calls_used, 0)
+
+        trace = registry.explain(child_invocation_id)
+        self.assertEqual(trace["verdict"], "cancelled")
+        self.assertEqual(trace["evidence_refs"], [])
+        self.assertEqual(trace.get("effect_receipts", []), [])
+        self.assertIs(type(trace["usage"]["model_calls"]), int)
+        self.assertEqual(trace["usage"]["model_calls"], 0)
+
+        fresh_budget = SharedSymbolicBudget(max_model_calls=0)
+        fresh = composer.invoke(
+            "zara:expert/lisp",
+            "structural.check",
+            {"arguments": ["(fresh)"]},
+            budget=fresh_budget,
+            fence=self._fence(),
+        )
+        self.assertEqual(fresh.status, "succeeded")
+        self.assertTrue(fresh.evidence)
+        self.assertEqual(fresh_budget.model_calls_used, 0)
 
 
 if __name__ == "__main__":
