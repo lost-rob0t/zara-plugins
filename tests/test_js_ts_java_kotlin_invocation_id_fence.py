@@ -9,12 +9,11 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-REQUEST_ID = "req-core-evidence-bounds"
+REQUEST_ID = "req-four-language-invocation-id"
 ACTIVATION_ID = "act:" + ("a" * 32)
+INVOCATION_ID = "inv:" + ("b" * 32)
 EXPERT_OPERATION = "inspect"
 EXPECTED_GENERATION = 1
-CORE_MAX_EVIDENCE_REFS = 32
-CORE_MAX_EVIDENCE_REF_LENGTH = 128
 INPUT_JSON = json.dumps(
     {
         "source": "const value = 1;",
@@ -48,7 +47,7 @@ def _load_plugin(package: str, module_name: str):
     try:
         path = REPO_ROOT / "plugins" / package / "lib" / module_name / "plugin.py"
         spec = importlib.util.spec_from_file_location(
-            f"core_evidence_bounds_{module_name}",
+            f"four_language_invocation_id_{module_name}",
             path,
         )
         assert spec is not None and spec.loader is not None
@@ -77,9 +76,9 @@ CASES = (
 
 
 class _Runtime:
-    def __init__(self, module, evidence_refs: list[str]):
+    def __init__(self, module, invocation_id: object = INVOCATION_ID) -> None:
         self.module = module
-        self.evidence_refs = evidence_refs
+        self.invocation_id = invocation_id
         self.requests: list[dict[str, object]] = []
 
     def resolve_capability(self, capability: str) -> str:
@@ -92,7 +91,7 @@ class _Runtime:
         return {
             "protocol": self.module.PROTOCOL,
             "request_id": request["request_id"],
-            "invocation_id": "inv:" + ("0" * 32),
+            "invocation_id": self.invocation_id,
             "activation_id": request["activation_id"],
             "expert_id": self.module.EXPERT_ID,
             "expert_version": self.module.PLUGIN_VERSION,
@@ -102,17 +101,16 @@ class _Runtime:
             "resolved_runtime_generation": request["expected_runtime_generation"],
             "verdict": "succeeded",
             "data": {"result": {}},
-            "evidence_refs": self.evidence_refs,
+            "evidence_refs": [],
             "usage": {"model_calls": 0},
             "effect_receipts": [],
         }
 
 
-def _invoke(module, evidence_refs: list[str]) -> tuple[str, _Runtime]:
-    runtime = _Runtime(module, evidence_refs)
+def _invoke(module, runtime: _Runtime) -> str:
     plugin = module.create_plugin()
     plugin.start(runtime)
-    encoded = plugin.invoke(
+    return plugin.invoke(
         REQUEST_ID,
         ACTIVATION_ID,
         EXPERT_OPERATION,
@@ -120,61 +118,47 @@ def _invoke(module, evidence_refs: list[str]) -> tuple[str, _Runtime]:
         EXPECTED_GENERATION,
         INPUT_JSON,
     )
-    return encoded, runtime
 
 
-class CoreEvidenceBoundsTests(unittest.TestCase):
-    def test_exact_core_evidence_bounds_are_accepted(self) -> None:
-        exact_ref = "e:" + ("a" * (CORE_MAX_EVIDENCE_REF_LENGTH - 2))
-        refs = [exact_ref] * CORE_MAX_EVIDENCE_REFS
+class _StringSubclass(str):
+    pass
 
+
+class FourLanguageInvocationIdFenceTests(unittest.TestCase):
+    def test_canonical_invocation_id_remains_zero_model(self) -> None:
         for module, _error_type in CASES:
             with self.subTest(expert_id=module.EXPERT_ID):
-                encoded, runtime = _invoke(module, refs)
-                result = json.loads(encoded)
-                self.assertEqual(result["evidence_refs"], refs)
-                self.assertEqual(result["usage"]["model_calls"], 0)
+                runtime = _Runtime(module)
+                result = json.loads(_invoke(module, runtime))
+                self.assertEqual(result["invocation_id"], INVOCATION_ID)
+                self.assertEqual(result["usage"], {"model_calls": 0})
+                self.assertEqual(result["effect_receipts"], [])
                 self.assertEqual(runtime.requests[0]["limits"]["max_model_calls"], 0)
 
-    def test_more_than_core_max_evidence_refs_fails_closed(self) -> None:
-        refs = ["source:fixture"] * (CORE_MAX_EVIDENCE_REFS + 1)
-
+    def test_noncanonical_core_invocation_ids_fail_closed(self) -> None:
+        invalid_ids: tuple[object, ...] = (
+            None,
+            7,
+            "",
+            "inv:short",
+            "inv:" + ("g" * 32),
+            "inv:" + ("a" * 33),
+            _StringSubclass(INVOCATION_ID),
+        )
         for module, error_type in CASES:
-            with self.subTest(expert_id=module.EXPERT_ID):
-                runtime = _Runtime(module, refs)
-                plugin = module.create_plugin()
-                plugin.start(runtime)
-                with self.assertRaisesRegex(error_type, "invalid-expert-evidence"):
-                    plugin.invoke(
-                        REQUEST_ID,
-                        ACTIVATION_ID,
-                        EXPERT_OPERATION,
-                        EXPECTED_GENERATION,
-                        EXPECTED_GENERATION,
-                        INPUT_JSON,
-                    )
-                self.assertEqual(len(runtime.requests), 1)
-                self.assertEqual(runtime.requests[0]["limits"]["max_model_calls"], 0)
-
-    def test_evidence_ref_longer_than_core_max_fails_closed(self) -> None:
-        too_long = "e:" + ("b" * (CORE_MAX_EVIDENCE_REF_LENGTH - 1))
-        self.assertEqual(len(too_long), CORE_MAX_EVIDENCE_REF_LENGTH + 1)
-
-        for module, error_type in CASES:
-            with self.subTest(expert_id=module.EXPERT_ID):
-                runtime = _Runtime(module, [too_long])
-                plugin = module.create_plugin()
-                plugin.start(runtime)
-                with self.assertRaisesRegex(error_type, "invalid-expert-evidence"):
-                    plugin.invoke(
-                        REQUEST_ID,
-                        ACTIVATION_ID,
-                        EXPERT_OPERATION,
-                        EXPECTED_GENERATION,
-                        EXPECTED_GENERATION,
-                        INPUT_JSON,
-                    )
-                self.assertEqual(len(runtime.requests), 1)
+            for invocation_id in invalid_ids:
+                with self.subTest(
+                    expert_id=module.EXPERT_ID,
+                    invocation_id=repr(invocation_id),
+                ):
+                    runtime = _Runtime(module, invocation_id)
+                    with self.assertRaisesRegex(
+                        error_type,
+                        "invalid-expert-invocation-id",
+                    ):
+                        _invoke(module, runtime)
+                    self.assertEqual(len(runtime.requests), 1)
+                    self.assertEqual(runtime.requests[0]["limits"]["max_model_calls"], 0)
 
 
 if __name__ == "__main__":
