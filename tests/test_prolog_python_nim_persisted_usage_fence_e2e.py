@@ -160,6 +160,39 @@ class PrologPythonNimPersistedUsageFenceE2ETests(unittest.TestCase):
                     ):
                         _projection([evidence]).validate()
 
+    def test_typed_lane3_evidence_requires_explicit_zero_model_calls(self) -> None:
+        for expert_id in (
+            "zara:expert/prolog",
+            "zara:expert/python",
+            "zara:expert/nim",
+        ):
+            with self.subTest(expert_id=expert_id):
+                evidence = _canonical_lane3_evidence(expert_id)
+                evidence.pop("model_calls")
+                with self.assertRaisesRegex(
+                    (TypeError, ValueError),
+                    "expert.*model_calls|model_calls.*expert",
+                ):
+                    _projection([evidence]).validate()
+
+    def test_untyped_legacy_root_model_calls_cannot_claim_symbolic_trust(self) -> None:
+        for expert_id in (
+            "zara:expert/prolog",
+            "zara:expert/python",
+            "zara:expert/nim",
+        ):
+            with self.subTest(expert_id=expert_id):
+                evidence = {
+                    "legacy_expert": expert_id,
+                    "legacy_fact": "symbolic-looking-but-untyped",
+                    "model_calls": 0,
+                }
+                with self.assertRaisesRegex(
+                    (TypeError, ValueError),
+                    "expert.*model|model.*expert",
+                ):
+                    _projection([evidence]).validate()
+
     def test_legacy_provider_metadata_is_rejected_after_process_recreation(self) -> None:
         canonical = [
             _canonical_lane3_evidence(expert_id)
