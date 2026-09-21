@@ -1,0 +1,34 @@
+name: Prolog Python Nim Output Schema E2E
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/zara-expert/**'
+      - '.github/workflows/prolog-python-nim-output-schema-e2e.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'plugins/zara-expert/**'
+      - '.github/workflows/prolog-python-nim-output-schema-e2e.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  output-schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      OPENAI_API_KEY: ''
+      OPENROUTER_API_KEY: ''
+      ANTHROPIC_API_KEY: ''
+      GOOGLE_API_KEY: ''
+      GEMINI_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Prove public style and explanation output schemas
+        run: python plugins/zara-expert/test/test_language_output_schema_contract.py
