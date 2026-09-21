@@ -79,11 +79,13 @@ class _Runtime:
         self,
         module,
         *,
-        extra_result: dict[str, object] | None = None,
-        extra_usage: dict[str, object] | None = None,
+        extra_result: dict[object, object] | None = None,
+        usage: object | None = None,
+        extra_usage: dict[object, object] | None = None,
     ) -> None:
         self.module = module
         self.extra_result = extra_result or {}
+        self.usage = usage
         self.extra_usage = extra_usage or {}
         self.requests: list[dict[str, object]] = []
 
@@ -94,7 +96,10 @@ class _Runtime:
 
     def invoke_capability(self, _handle: str, request: dict[str, object]):
         self.requests.append(request)
-        result = {
+        usage = self.usage
+        if usage is None:
+            usage = {"model_calls": 0, **self.extra_usage}
+        result: dict[object, object] = {
             "protocol": self.module.PROTOCOL,
             "request_id": request["request_id"],
             "activation_id": request["activation_id"],
@@ -107,7 +112,7 @@ class _Runtime:
             "verdict": "succeeded",
             "data": {"result": {}},
             "evidence_refs": [],
-            "usage": {"model_calls": 0, **self.extra_usage},
+            "usage": usage,
             "effect_receipts": [],
         }
         result.update(self.extra_result)
@@ -150,14 +155,64 @@ class ResultMetadataContractTests(unittest.TestCase):
                 self.assertEqual(len(runtime.requests), 1)
                 self.assertEqual(runtime.requests[0]["limits"]["max_model_calls"], 0)
 
-    def test_unknown_usage_field_fails_closed(self) -> None:
+    def test_non_string_top_level_result_field_fails_closed(self) -> None:
         for module, error_type in CASES:
             with self.subTest(expert_id=module.EXPERT_ID):
-                runtime = _Runtime(module, extra_usage={"tokens": 1})
-                with self.assertRaisesRegex(error_type, "unknown-expert-usage-field"):
+                runtime = _Runtime(module, extra_result={7: "forged"})
+                with self.assertRaisesRegex(error_type, "unknown-expert-result-field"):
                     _invoke(module, runtime)
-                self.assertEqual(len(runtime.requests), 1)
-                self.assertEqual(runtime.requests[0]["limits"]["max_model_calls"], 0)
+
+    def test_unknown_usage_field_fails_closed(self) -> None:
+        for module, error_type in CASES:
+            for extra_usage in ({"tokens": 1}, {7: "forged"}):
+                with self.subTest(expert_id=module.EXPERT_ID, usage=extra_usage):
+                    runtime = _Runtime(module, extra_usage=extra_usage)
+                    with self.assertRaisesRegex(error_type, "unknown-expert-usage-field"):
+                        _invoke(module, runtime)
+                    self.assertEqual(len(runtime.requests), 1)
+                    self.assertEqual(runtime.requests[0]["limits"]["max_model_calls"], 0)
+
+    def test_usage_must_be_plain_json_object(self) -> None:
+        class UsageDict(dict):
+            pass
+
+        for module, error_type in CASES:
+            for usage in (UsageDict(model_calls=0), [("model_calls", 0)]):
+                with self.subTest(expert_id=module.EXPERT_ID, usage_type=type(usage).__name__):
+                    runtime = _Runtime(module, usage=usage)
+                    with self.assertRaisesRegex(error_type, "invalid-expert-usage"):
+                        _invoke(module, runtime)
+
+    def test_optional_result_metadata_is_typed_and_bounded(self) -> None:
+        for module, error_type in CASES:
+            valid_runtime = _Runtime(
+                module,
+                extra_result={"error_code": None, "error_message": "", "replayed": False},
+            )
+            with self.subTest(expert_id=module.EXPERT_ID, case="valid"):
+                result = json.loads(_invoke(module, valid_runtime))
+                self.assertIsNone(result["error_code"])
+                self.assertEqual(result["error_message"], "")
+                self.assertIs(result["replayed"], False)
+
+            cases = (
+                ({"error_code": object()}, "invalid-expert-error-code"),
+                ({"error_code": "provider_error"}, "invalid-expert-error-code"),
+                ({"error_message": []}, "invalid-expert-error-message"),
+                (
+                    {"error_message": "x" * (module.MAX_STRING_LENGTH + 1)},
+                    "invalid-expert-error-message",
+                ),
+                ({"replayed": 1}, "invalid-expert-replayed"),
+            )
+            for extra_result, expected_error in cases:
+                with self.subTest(
+                    expert_id=module.EXPERT_ID,
+                    expected_error=expected_error,
+                ):
+                    runtime = _Runtime(module, extra_result=extra_result)
+                    with self.assertRaisesRegex(error_type, expected_error):
+                        _invoke(module, runtime)
 
 
 if __name__ == "__main__":
