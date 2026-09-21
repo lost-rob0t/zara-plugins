@@ -47,6 +47,7 @@ class FakeRuntime:
             "resolved_runtime_generation": runtime_generation,
             "verdict": "succeeded",
             "data": {"result": {}},
+            "evidence_refs": [],
             "usage": {"model_calls": self.model_calls},
             "effect_receipts": self.receipts,
         }
