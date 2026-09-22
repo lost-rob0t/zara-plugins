@@ -88,6 +88,29 @@ class SymbolicMemoryMCP:
             raise SymbolicMemoryMCPError("memory id must be non-empty")
         return self._call("memory_get", {"id": memory_id})
 
+    def observe_preference(
+        self,
+        observation: dict[str, object],
+        *,
+        scope: str = "project",
+        retention: str = "long_term",
+    ) -> dict[str, object]:
+        if not isinstance(observation, dict) or not observation:
+            raise SymbolicMemoryMCPError("preference observation must be a non-empty object")
+        if scope not in SUPPORTED_SCOPES:
+            raise SymbolicMemoryMCPError(f"unsupported symbolic-memory scope: {scope}")
+        if retention not in SUPPORTED_RETENTION:
+            raise SymbolicMemoryMCPError(f"unsupported symbolic-memory retention: {retention}")
+        return self._call(
+            "memory_preference_observe",
+            {"observation": dict(observation), "scope": scope, "retention": retention},
+        )
+
+    def preference_patterns(self, query: dict[str, object]) -> dict[str, object]:
+        if not isinstance(query, dict):
+            raise SymbolicMemoryMCPError("preference pattern query must be an object")
+        return self._call("memory_preference_patterns", {"query": dict(query)})
+
     def _call(self, tool_name: str, arguments: dict[str, object]) -> dict[str, object]:
         self._request_id += 1
         request_id = self._request_id
