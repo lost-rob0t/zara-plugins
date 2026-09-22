@@ -488,6 +488,13 @@ def _validate_result(
         raise NixExpertAdapterError("read-only-effect-proof-missing")
     if receipts:
         raise NixExpertAdapterError("read-only-effect-leak")
+
+    error_code = result.get("error_code")
+    terminal_error = error_code in {"cancelled", "stale_generation"}
+    if verdict == "succeeded" and terminal_error:
+        raise NixExpertAdapterError("terminal-fence")
+    if terminal_error and (data or evidence_refs):
+        raise NixExpertAdapterError("terminal-fence")
     if verdict == "cancelled":
         if data or evidence_refs:
             raise NixExpertAdapterError("cancelled-expert-output-leak")
