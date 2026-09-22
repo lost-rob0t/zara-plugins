@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from zara.plugins import PluginMetadata, ServicePlugin
@@ -16,7 +18,7 @@ EXPERT_NAME = "NimExpert"
 SOURCE_REFERENCE = "dotfiles:.zara/experts/nim"
 UPSTREAM_CONTRACT = "lost-rob0t/prolog-rlm#499"
 HOST_CAPABILITY = "expert.invoke"
-MANIFEST_DIGEST = "sha256:1369bcabcc0e47ce54d3bbc77ecbc667d85487a7291a65daeaf501b5cec46ee2"
+MANIFEST_DIGEST = "sha256:fc39b472e4f5b4c2b4c0a0414cfdc83f1ae6b7e2f083492ca28e3f2e3550751a"
 MAX_INPUT_BYTES = 8192
 MAX_OUTPUT_BYTES = 65536
 MAX_TIMEOUT_MS = 3000
@@ -28,22 +30,7 @@ REQUEST_ID_RE = re.compile(r"^[!-~]{1,128}$")
 ACTIVATION_ID_RE = re.compile(r"^act:[a-f0-9]{32}$")
 INVOCATION_ID_RE = re.compile(r"^inv:[a-f0-9]{32}$")
 RESULT_VERDICTS = frozenset({"succeeded", "failed", "unknown", "blocked", "unsupported", "cancelled", "error"})
-RESULT_ERROR_CODES = frozenset({
-    "invalid_input",
-    "ambiguity",
-    "unsupported_operation",
-    "unsupported_backend",
-    "incompatible_protocol",
-    "denied",
-    "approval_required",
-    "stale_generation",
-    "unavailable",
-    "deadline_exceeded",
-    "budget_exceeded",
-    "cancelled",
-    "interrupted",
-    "unknown_external_outcome",
-})
+RESULT_ERROR_CODES = frozenset({"invalid_input", "ambiguity", "unsupported_operation", "unsupported_backend", "incompatible_protocol", "denied", "approval_required", "stale_generation", "unavailable", "deadline_exceeded", "budget_exceeded", "cancelled", "interrupted", "unknown_external_outcome"})
 RESULT_FIELDS = frozenset({"protocol", "request_id", "invocation_id", "activation_id", "expert_id", "expert_version", "manifest_digest", "expert_operation", "resolved_registry_generation", "resolved_runtime_generation", "verdict", "data", "evidence_refs", "usage", "effect_receipts", "error_code", "error_message", "replayed"})
 USAGE_FIELDS = frozenset({"model_calls"})
 OPERATION_FIELDS: dict[str, tuple[dict[str, object], ...]] = {
@@ -65,16 +52,63 @@ OPERATION_OUTPUT_FIELDS: dict[str, tuple[dict[str, object], ...]] = {
     "explain": ({"name": "explanation", "type": "object", "required": True},),
 }
 ALLOWED_OPERATIONS = frozenset(OPERATION_FIELDS)
-LANGUAGE_BOUNDARIES = {
-    "language": "nim",
-    "extensions": (".nim", ".nims", ".nimble"),
-    "applicability_keywords": ("nim", "nims", "nimble"),
-    "evidence_topics": ("syntax", "types", "templates", "macros", "diagnostics", "style", "repair-verification"),
-}
+LANGUAGE_BOUNDARIES = {"language": "nim", "extensions": (".nim", ".nims", ".nimble"), "applicability_keywords": ("nim", "nims", "nimble"), "evidence_topics": ("syntax", "types", "templates", "macros", "diagnostics", "style", "repair-verification")}
 
 
 class NimExpertAdapterError(RuntimeError):
     """Fail closed; this adapter has no model/provider fallback."""
+
+
+def _source_lock_path() -> Path:
+    return Path(__file__).resolve().parents[2] / "expert-source.lock.json"
+
+
+def _validate_source_lock() -> None:
+    try:
+        raw = _source_lock_path().read_bytes()
+    except OSError as error:
+        raise NimExpertAdapterError("source-lock-unavailable") from error
+    if "sha256:" + hashlib.sha256(raw).hexdigest() != MANIFEST_DIGEST:
+        raise NimExpertAdapterError("source-lock-digest-mismatch")
+    try:
+        lock = json.loads(raw, parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()))
+    except (TypeError, UnicodeDecodeError, ValueError) as error:
+        raise NimExpertAdapterError("source-lock-invalid") from error
+    if type(lock) is not dict:
+        raise NimExpertAdapterError("source-lock-invalid")
+    canonical = lock.get("canonical_source")
+    runtime_contract = lock.get("runtime_contract")
+    runtime_repo, runtime_issue = UPSTREAM_CONTRACT.rsplit("#", 1)
+    if not (
+        type(lock.get("schema_version")) is int and lock.get("schema_version") == 1
+        and type(lock.get("expert_id")) is str and lock.get("expert_id") == EXPERT_ID
+        and type(lock.get("adapter_version")) is str and lock.get("adapter_version") == PLUGIN_VERSION
+        and type(canonical) is dict and canonical.get("repository") == "lost-rob0t/dotfiles"
+        and canonical.get("path") == SOURCE_REFERENCE.removeprefix("dotfiles:")
+        and type(canonical.get("commit")) is str and re.fullmatch(r"[a-f0-9]{40}", canonical["commit"]) is not None
+        and type(runtime_contract) is dict and runtime_contract.get("repository") == runtime_repo
+        and type(runtime_contract.get("issue")) is int and str(runtime_contract.get("issue")) == runtime_issue
+    ):
+        raise NimExpertAdapterError("source-lock-identity-mismatch")
+    try:
+        from zara_expert import language_family as language_family_module
+    except ImportError:
+        return
+    try:
+        specs = tuple(spec for spec in language_family_module.language_family_specs() if getattr(spec, "key", None) == LANGUAGE_BOUNDARIES["language"])
+    except Exception as error:
+        raise NimExpertAdapterError("source-lock-host-unavailable") from error
+    if len(specs) != 1:
+        raise NimExpertAdapterError("source-lock-host-mismatch")
+    spec = specs[0]
+    if not (
+        getattr(spec, "expert_id", None) == EXPERT_ID
+        and getattr(spec, "source_reference", None) == SOURCE_REFERENCE
+        and getattr(spec, "upstream_issue", None) == UPSTREAM_CONTRACT
+        and tuple(getattr(spec, "extensions", ())) == tuple(LANGUAGE_BOUNDARIES["extensions"])
+        and tuple(getattr(spec, "applicability_keywords", ())) == tuple(LANGUAGE_BOUNDARIES["applicability_keywords"])
+    ):
+        raise NimExpertAdapterError("source-lock-host-mismatch")
 
 
 def _validate_generation(value: object, field: str) -> int:
@@ -141,8 +175,7 @@ def _validate_output(operation: str, verdict: str, data: object) -> None:
             raise NimExpertAdapterError("invalid-expert-output")
         if name not in data:
             continue
-        value = data[name]
-        kind = field["type"]
+        value, kind = data[name], field["type"]
         valid = type(value) is bool if kind == "boolean" else type(value) is dict if kind == "object" else type(value) is list if kind == "list" else False
         if not valid:
             raise NimExpertAdapterError("invalid-expert-output")
@@ -152,15 +185,12 @@ def _validate_result_metadata(result: Mapping[str, object]) -> None:
     if any(type(field) is not str or field not in RESULT_FIELDS for field in result):
         raise NimExpertAdapterError("unknown-expert-result-field")
     error_code = result.get("error_code")
-    if error_code is not None and (
-        type(error_code) is not str or error_code not in RESULT_ERROR_CODES
-    ):
+    if error_code is not None and (type(error_code) is not str or error_code not in RESULT_ERROR_CODES):
         raise NimExpertAdapterError("invalid-expert-error-code")
     error_message = result.get("error_message", "")
     if type(error_message) is not str or len(error_message) > MAX_STRING_LENGTH:
         raise NimExpertAdapterError("invalid-expert-error-message")
-    replayed = result.get("replayed", False)
-    if type(replayed) is not bool:
+    if type(result.get("replayed", False)) is not bool:
         raise NimExpertAdapterError("invalid-expert-replayed")
 
 
@@ -212,6 +242,7 @@ class ZaraNimExpertPlugin(ServicePlugin):
         self._runtime = None
 
     def descriptor(self) -> str:
+        _validate_source_lock()
         return json.dumps({
             "protocol": PROTOCOL, "expert_id": EXPERT_ID, "expert_version": PLUGIN_VERSION,
             "package_namespace": PACKAGE_NAMESPACE, "manifest_digest": MANIFEST_DIGEST,
@@ -227,6 +258,7 @@ class ZaraNimExpertPlugin(ServicePlugin):
         }, allow_nan=False, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
     def invoke(self, request_id: str, activation_id: str, expert_operation: str, expected_registry_generation: int, expected_runtime_generation: int, input_json: str = "{}") -> str:
+        _validate_source_lock()
         if type(expert_operation) is not str or expert_operation not in ALLOWED_OPERATIONS:
             raise NimExpertAdapterError("unsupported-expert-operation")
         if type(request_id) is not str or REQUEST_ID_RE.fullmatch(request_id) is None:
@@ -237,8 +269,7 @@ class ZaraNimExpertPlugin(ServicePlugin):
         runtime_generation = _validate_generation(expected_runtime_generation, "runtime-generation")
         payload = _decode_input(input_json, expert_operation)
         runtime = self._runtime
-        resolver = getattr(runtime, "resolve_capability", None)
-        invoker = getattr(runtime, "invoke_capability", None)
+        resolver, invoker = getattr(runtime, "resolve_capability", None), getattr(runtime, "invoke_capability", None)
         if not callable(resolver) or not callable(invoker):
             raise NimExpertAdapterError("expert-host-composition-unavailable")
         request = {"protocol": PROTOCOL, "request_id": request_id, "operation": "expert.invoke", "activation_id": activation_id, "expert_id": EXPERT_ID, "expert_operation": expert_operation, "expected_registry_generation": registry_generation, "expected_runtime_generation": runtime_generation, "input": payload, "limits": {"timeout_ms": MAX_TIMEOUT_MS, "max_results": MAX_RESULTS, "max_output_bytes": MAX_OUTPUT_BYTES, "max_model_calls": 0}}
