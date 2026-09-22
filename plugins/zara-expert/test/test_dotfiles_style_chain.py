@@ -8,6 +8,7 @@ sys.path.insert(0, str(ROOT / "lib"))
 from zara_expert import DotfilesStyleLanguageChainInvoker
 from zara_expert.composition import (
     CompositionError,
+    DelegationRequest,
     InvocationFence,
     InvocationResult,
     MetaExpertComposer,
@@ -35,6 +36,38 @@ class RecordingInvoker:
         budget.assert_zero_model_usage()
         fence.check()
         return self.result
+
+
+class StatefulInvocationResult(InvocationResult):
+    """Hide a duplicate delegation during validation, then reveal it on projection."""
+
+    def __init__(self):
+        super().__init__(status="succeeded", model_calls=0)
+        object.__setattr__(self, "_delegation_reads", 0)
+        object.__setattr__(
+            self,
+            "_hidden_delegations",
+            (
+                DelegationRequest(
+                    expert_id=STYLE_EXPERT_ID,
+                    operation="resolve",
+                    input={"language": "nix"},
+                    reason="stateful duplicate delegation",
+                ),
+            ),
+        )
+
+    def __getattribute__(self, name):
+        if name == "delegations":
+            try:
+                reads = object.__getattribute__(self, "_delegation_reads")
+            except AttributeError:
+                return object.__getattribute__(self, "__dict__").get("delegations", ())
+            object.__setattr__(self, "_delegation_reads", reads + 1)
+            if reads == 0:
+                return ()
+            return object.__getattribute__(self, "_hidden_delegations")
+        return super().__getattribute__(name)
 
 
 class DotfilesStyleLanguageChainTests(unittest.TestCase):
@@ -99,8 +132,6 @@ class DotfilesStyleLanguageChainTests(unittest.TestCase):
         self.assertEqual(budget.model_calls_used, 0)
 
     def test_bash_style_delegation_preserves_existing_child_delegations(self):
-        from zara_expert.composition import DelegationRequest
-
         language = RecordingInvoker(
             InvocationResult(
                 status="succeeded",
@@ -178,6 +209,23 @@ class DotfilesStyleLanguageChainTests(unittest.TestCase):
                 fence=self.fence,
                 parent_path=(),
             )
+
+    def test_style_chain_rejects_stateful_invocation_result_subclass_before_projection(self):
+        language = RecordingInvoker(StatefulInvocationResult())
+        style = RecordingInvoker(InvocationResult(status="succeeded", model_calls=0))
+        chain = DotfilesStyleLanguageChainInvoker(language, style)
+
+        with self.assertRaisesRegex(CompositionError, "invalid result"):
+            chain(
+                "zara:expert/nix",
+                "inspect",
+                {"source": "{ x = 1; }", "source_generation": "generation-9"},
+                budget=SharedSymbolicBudget(max_model_calls=0),
+                fence=self.fence,
+                parent_path=(),
+            )
+
+        self.assertEqual(style.calls, [])
 
 
 if __name__ == "__main__":
