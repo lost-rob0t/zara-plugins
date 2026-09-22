@@ -117,6 +117,25 @@ RESULT_FIELDS = frozenset(
     }
 )
 USAGE_FIELDS = frozenset({"model_calls"})
+SOURCE_LOCK_FIELDS = frozenset(
+    {
+        "schema_version",
+        "expert_id",
+        "adapter_version",
+        "canonical_source",
+        "runtime_contract",
+        "zara_contract",
+    }
+)
+CANONICAL_SOURCE_FIELDS = frozenset(
+    {"repository", "path", "issue", "producer_pr", "commit"}
+)
+RUNTIME_CONTRACT_FIELDS = frozenset({"repository", "issue"})
+ZARA_CONTRACT_FIELDS = frozenset({"repository", "issue", "schema_pr"})
+CANONICAL_SOURCE_PRODUCER_PR = 300
+ZARA_CONTRACT_REPOSITORY = "lost-rob0t/zara"
+ZARA_CONTRACT_ISSUE = 1233
+ZARA_CONTRACT_SCHEMA_PR = 1273
 
 
 class NixExpertAdapterError(RuntimeError):
@@ -127,6 +146,17 @@ def _source_lock_path() -> Path:
     return Path(__file__).resolve().parents[2] / "expert-source.lock.json"
 
 
+def _reject_source_lock_duplicate_object_pairs(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    value: dict[str, object] = {}
+    for key, child in pairs:
+        if type(key) is not str or key in value:
+            raise ValueError("duplicate-json-key")
+        value[key] = child
+    return value
+
+
 def _validate_source_lock() -> None:
     try:
         raw = _source_lock_path().read_bytes()
@@ -135,7 +165,11 @@ def _validate_source_lock() -> None:
     if "sha256:" + hashlib.sha256(raw).hexdigest() != MANIFEST_DIGEST:
         raise NixExpertAdapterError("source-lock-digest-mismatch")
     try:
-        lock = json.loads(raw, parse_constant=_reject_json_constant)
+        lock = json.loads(
+            raw,
+            parse_constant=_reject_json_constant,
+            object_pairs_hook=_reject_source_lock_duplicate_object_pairs,
+        )
     except (TypeError, UnicodeDecodeError, ValueError) as error:
         raise NixExpertAdapterError("source-lock-invalid") from error
     if type(lock) is not dict:
@@ -143,25 +177,38 @@ def _validate_source_lock() -> None:
 
     canonical = lock.get("canonical_source")
     runtime_contract = lock.get("runtime_contract")
+    zara_contract = lock.get("zara_contract")
     runtime_repo, runtime_issue = UPSTREAM_CONTRACT.rsplit("#", 1)
     if not (
-        type(lock.get("schema_version")) is int
+        set(lock) == SOURCE_LOCK_FIELDS
+        and type(lock.get("schema_version")) is int
         and lock.get("schema_version") == 1
         and type(lock.get("expert_id")) is str
         and lock.get("expert_id") == EXPERT_ID
         and type(lock.get("adapter_version")) is str
         and lock.get("adapter_version") == PLUGIN_VERSION
         and type(canonical) is dict
+        and set(canonical) == CANONICAL_SOURCE_FIELDS
         and canonical.get("repository") == "lost-rob0t/dotfiles"
         and canonical.get("path") == SOURCE_REFERENCE.removeprefix("dotfiles:")
         and type(canonical.get("issue")) is int
         and canonical.get("issue") == SOURCE_ISSUE
+        and type(canonical.get("producer_pr")) is int
+        and canonical.get("producer_pr") == CANONICAL_SOURCE_PRODUCER_PR
         and type(canonical.get("commit")) is str
         and re.fullmatch(r"[a-f0-9]{40}", canonical["commit"]) is not None
         and type(runtime_contract) is dict
+        and set(runtime_contract) == RUNTIME_CONTRACT_FIELDS
         and runtime_contract.get("repository") == runtime_repo
         and type(runtime_contract.get("issue")) is int
         and str(runtime_contract.get("issue")) == runtime_issue
+        and type(zara_contract) is dict
+        and set(zara_contract) == ZARA_CONTRACT_FIELDS
+        and zara_contract.get("repository") == ZARA_CONTRACT_REPOSITORY
+        and type(zara_contract.get("issue")) is int
+        and zara_contract.get("issue") == ZARA_CONTRACT_ISSUE
+        and type(zara_contract.get("schema_pr")) is int
+        and zara_contract.get("schema_pr") == ZARA_CONTRACT_SCHEMA_PR
     ):
         raise NixExpertAdapterError("source-lock-identity-mismatch")
 
