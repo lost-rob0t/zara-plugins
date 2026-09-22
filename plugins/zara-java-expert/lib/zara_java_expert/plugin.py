@@ -531,7 +531,6 @@ def _validate_result(
     verdict = result.get("verdict")
     if verdict not in RESULT_VERDICTS:
         raise JavaExpertAdapterError("invalid-expert-verdict")
-    data, evidence_refs = _validate_result_payload(result)
     _validate_result_usage(result)
     receipts = result.get("effect_receipts")
     if not isinstance(receipts, (list, tuple)):
@@ -539,16 +538,26 @@ def _validate_result(
     if receipts:
         raise JavaExpertAdapterError("read-only-effect-leak")
 
+    data_value = result.get("data")
+    evidence_value = result.get("evidence_refs")
     error_code = result.get("error_code")
     terminal_error = error_code in {"cancelled", "stale_generation"}
     if verdict == "succeeded" and terminal_error:
         raise JavaExpertAdapterError("terminal-fence")
+    if terminal_error:
+        if isinstance(data_value, Mapping) and data_value:
+            raise JavaExpertAdapterError("terminal-fence")
+        if isinstance(evidence_value, (list, tuple)) and evidence_value:
+            raise JavaExpertAdapterError("terminal-fence")
+    if verdict == "cancelled":
+        if not isinstance(data_value, Mapping) or data_value:
+            raise JavaExpertAdapterError("cancelled-expert-output-leak")
+        if not isinstance(evidence_value, (list, tuple)) or evidence_value:
+            raise JavaExpertAdapterError("cancelled-expert-output-leak")
+    _validate_operation_output(expert_operation, verdict, data_value)
+    data, evidence_refs = _validate_result_payload(result)
     if terminal_error and (data or evidence_refs):
         raise JavaExpertAdapterError("terminal-fence")
-    if verdict == "cancelled":
-        if data or evidence_refs:
-            raise JavaExpertAdapterError("cancelled-expert-output-leak")
-    _validate_operation_output(expert_operation, verdict, data)
 
 
 class ZaraJavaExpertPlugin(ServicePlugin):
