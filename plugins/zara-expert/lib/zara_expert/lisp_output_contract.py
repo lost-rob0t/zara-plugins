@@ -277,6 +277,38 @@ def _validate_predicate_output(
         _invalid("Lisp repair.verify postcondition_evidence must be an object")
 
 
+def _snapshot_authority_projection(
+    operation: str,
+    result: InvocationResult,
+) -> InvocationResult:
+    """Detach validated repair authority from mutable host/Core containers.
+
+    This is an ownership snapshot after the existing Core/dialect validators have
+    accepted the wire values. It deliberately does not mint, reinterpret, or
+    validate receipt/postcondition semantics; Zara Core remains their authority.
+    Existing fences constrain authority leaves to immutable built-in primitives,
+    so copying the accepted dictionaries is sufficient to stop late host mutation.
+    """
+
+    if operation not in {"repair.verify", "repair.apply"}:
+        return result
+
+    data = dict(result.data)
+    for field in ("effect_receipt", "postcondition_evidence"):
+        value = data.get(field)
+        if type(value) is dict:
+            data[field] = dict(value)
+
+    return InvocationResult(
+        status=result.status,
+        data=data,
+        evidence=result.evidence,
+        delegations=result.delegations,
+        explanation=result.explanation,
+        model_calls=result.model_calls,
+    )
+
+
 class LispFamilyCompositionInvoker(_BaseLispFamilyCompositionInvoker):
     """Public Lisp adapter with fail-closed ZARA-EXPERT/1 output validation."""
 
@@ -285,7 +317,7 @@ class LispFamilyCompositionInvoker(_BaseLispFamilyCompositionInvoker):
         _validate_predicate_output(expert_id, operation, result)
         if operation == "repair.verify":
             _validate_repair_verify_postcondition(expert_id, input_data, result)
-        return result
+        return _snapshot_authority_projection(operation, result)
 
 
 class CoreLispFamilyCompositionInvoker(_BaseCoreLispFamilyCompositionInvoker):
@@ -299,7 +331,7 @@ class CoreLispFamilyCompositionInvoker(_BaseCoreLispFamilyCompositionInvoker):
         if operation == "repair.apply":
             _validate_repair_apply_postcondition(expert_id, input_data, result)
             _validate_projected_evidence(operation, result.evidence)
-        return result
+        return _snapshot_authority_projection(operation, result)
 
 
 # Any import of zara_expert.lisp_composition first initializes the package. Keep
