@@ -121,6 +121,18 @@ class DuplicateJsonKeyFenceTests(unittest.TestCase):
             '{"source":"echo safe","source":"echo unsafe"}',
         )
 
+    def test_nix_rejects_duplicate_nested_keys_before_dispatch(self) -> None:
+        self._assert_module_rejects_duplicate_keys(
+            NIX,
+            '{"source":"x = 1","meta":{"path":"safe","path":"other"}}',
+        )
+
+    def test_bash_rejects_duplicate_nested_keys_before_dispatch(self) -> None:
+        self._assert_module_rejects_duplicate_keys(
+            BASH,
+            '{"source":"echo safe","meta":{"path":"safe","path":"other"}}',
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
