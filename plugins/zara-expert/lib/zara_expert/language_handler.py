@@ -49,10 +49,6 @@ _CLOSED_OPERATION_PROJECTION_EXPERTS = frozenset(
 VerifiedOutcomeResolver = Callable[..., Mapping[str, Any] | None]
 
 
-def _zero_usage() -> dict[str, int]:
-    return {"provider_calls": 0, "model_calls": MAX_MODEL_CALLS}
-
-
 def _canonical_expert_id(expert_id: str) -> str:
     if type(expert_id) is not str:
         raise ExpertError(f"unknown language expert: {expert_id!r}")
@@ -338,9 +334,9 @@ def make_language_expert_handler(
     remaining keyword payload is validated against the selected descriptor
     schema, converted to the registered-predicate ABI, and dispatched through
     the existing ExpertHost capability boundary. Pure-symbolic outcomes always
-    expose exact zero provider/model-call proof. Filesystem repair remains
-    outside this adapter and must cross Zara's typed effect/approval path before
-    fresh postcondition verification.
+    expose an exact zero model-call ledger. Filesystem repair remains outside
+    this adapter and must cross Zara's typed effect/approval path before fresh
+    postcondition verification.
 
     ``verified_outcome_resolver`` is an optional trusted host seam for reading an
     already-produced Zara verified-outcome receipt. It is never operation input
@@ -372,7 +368,7 @@ def make_language_expert_handler(
                     "expert_id": canonical_id,
                 },
                 "evidence_refs": [],
-                "usage": _zero_usage(),
+                "usage": {"model_calls": MAX_MODEL_CALLS},
                 "effect_receipts": [],
             }
 
@@ -455,7 +451,7 @@ def make_language_expert_handler(
             "verdict": verdict,
             "data": data,
             "evidence_refs": evidence_refs,
-            "usage": _zero_usage(),
+            "usage": {"model_calls": MAX_MODEL_CALLS},
             "effect_receipts": [],
         }
 
