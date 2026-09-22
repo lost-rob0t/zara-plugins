@@ -1,0 +1,94 @@
+name: Nix Bash Durable Persistence E2E
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/zara-nix-expert/**'
+      - 'plugins/zara-bash-expert/**'
+      - 'plugins/zara-expert/**'
+      - 'tests/test_nix_bash_durable_persistence_e2e.py'
+      - 'tests/test_nix_bash_current_core_delegation_e2e.py'
+      - '.github/workflows/nix-bash-durable-persistence-e2e.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-bash-durable-persistence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  durable-persistence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Fetch exact canonical Dotfiles brains
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=1b93e01f3482e49a853f651eb28c21eb1d9cad0e
+          rm -rf .ci/dotfiles-nix-bash-durable
+          git init .ci/dotfiles-nix-bash-durable
+          git -C .ci/dotfiles-nix-bash-durable remote add origin https://github.com/lost-rob0t/dotfiles.git
+          git -C .ci/dotfiles-nix-bash-durable config core.sparseCheckout true
+          mkdir -p .ci/dotfiles-nix-bash-durable/.git/info
+          printf '%s\n' \
+            '/.zara/experts/nix/' \
+            '/.zara/experts/bash/' \
+            '/.zara/experts/language/' \
+            > .ci/dotfiles-nix-bash-durable/.git/info/sparse-checkout
+          git -C .ci/dotfiles-nix-bash-durable fetch --depth=1 origin "$revision"
+          git -C .ci/dotfiles-nix-bash-durable checkout --detach FETCH_HEAD
+          test "$(git -C .ci/dotfiles-nix-bash-durable rev-parse HEAD)" = "$revision"
+
+      - name: Fetch exact Zara Core conversation authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=4a7ad7673910e901a09a9e79c81e60bd2aeed8aa
+          rm -rf .ci/zara-core-nix-bash-durable
+          git init .ci/zara-core-nix-bash-durable
+          git -C .ci/zara-core-nix-bash-durable remote add origin https://github.com/lost-rob0t/zara.git
+          git -C .ci/zara-core-nix-bash-durable config core.sparseCheckout true
+          mkdir -p .ci/zara-core-nix-bash-durable/.git/info
+          printf '%s\n' '/zara/' '/modules/' '/android/' > .ci/zara-core-nix-bash-durable/.git/info/sparse-checkout
+          git -C .ci/zara-core-nix-bash-durable fetch --depth=1 origin "$revision"
+          git -C .ci/zara-core-nix-bash-durable checkout --detach FETCH_HEAD
+          test "$(git -C .ci/zara-core-nix-bash-durable rev-parse HEAD)" = "$revision"
+
+      - name: Install symbolic runtime and network audit tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends swi-prolog-nox strace
+          python3 -m pip install 'pykka>=3.1' 'langchain-core>=0.2' 'langgraph>=0.2'
+
+      - name: Prove Nix Bash evidence survives restart with zero providers or models
+        env:
+          ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles-nix-bash-durable
+          ZARA_CURRENT_CORE_ROOT: ${{ github.workspace }}/.ci/zara-core-nix-bash-durable
+        shell: bash
+        run: |
+          set -euo pipefail
+          trace="$RUNNER_TEMP/nix-bash-durable-persistence-network.trace"
+          env \
+            -u OPENAI_API_KEY \
+            -u ANTHROPIC_API_KEY \
+            -u OPENROUTER_API_KEY \
+            -u GOOGLE_API_KEY \
+            -u GEMINI_API_KEY \
+            -u GROQ_API_KEY \
+            -u ZAI_API_KEY \
+            -u AZURE_OPENAI_API_KEY \
+            -u HF_TOKEN \
+            strace -f -e trace=network -o "$trace" \
+            python3 -m unittest discover -s tests -t . -p 'test_nix_bash_durable_persistence_e2e.py'
+          if grep -Eq '(connect|sendto|sendmsg)\(.*sa_family=AF_INET6?' "$trace"; then
+            echo 'unexpected outbound IPv4/IPv6 network syscall during Nix/Bash durable persistence E2E' >&2
+            cat "$trace" >&2
+            exit 1
+          fi
