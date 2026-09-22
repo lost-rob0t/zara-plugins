@@ -540,7 +540,7 @@ class ZaraTypeScriptExpertPlugin(ServicePlugin):
             raise
         except Exception as error:
             raise TypeScriptExpertAdapterError("expert-host-invocation-failed") from error
-        if not isinstance(result, Mapping):
+        if type(result) is not dict:
             raise TypeScriptExpertAdapterError("invalid-expert-result")
         _validate_result(
             result,
