@@ -46,6 +46,10 @@ from .lisp_output_contract import (
     CoreLispFamilyCompositionInvoker,
     LispFamilyCompositionInvoker,
 )
+from .lisp_nested_result_fence import install_lisp_nested_result_container_fence
+
+install_lisp_nested_result_container_fence()
+
 from .style_runtime import PrologRlmStyleOverlayAdapter, StyleOverlayResolution
 
 __all__ = [
