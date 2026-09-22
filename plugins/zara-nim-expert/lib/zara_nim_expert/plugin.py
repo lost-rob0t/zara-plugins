@@ -252,11 +252,15 @@ class ZaraNimExpertPlugin(ServicePlugin):
             raise NimExpertAdapterError("invalid-expert-result")
         _validate_result(result, request_id=request_id, activation_id=activation_id, operation=expert_operation, registry_generation=registry_generation, runtime_generation=runtime_generation)
         try:
-            encoded = json.dumps(dict(result), allow_nan=False, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            encoded = json.dumps(result, allow_nan=False, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            snapshot = json.loads(encoded, parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()))
         except (TypeError, ValueError, RecursionError) as error:
             raise NimExpertAdapterError("invalid-expert-result-json") from error
         if len(encoded.encode("utf-8")) > MAX_OUTPUT_BYTES:
             raise NimExpertAdapterError("expert-result-too-large")
+        if type(snapshot) is not dict:
+            raise NimExpertAdapterError("invalid-expert-result")
+        _validate_result(snapshot, request_id=request_id, activation_id=activation_id, operation=expert_operation, registry_generation=registry_generation, runtime_generation=runtime_generation)
         return encoded
 
     def tools(self):
