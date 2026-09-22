@@ -149,12 +149,12 @@ def _validate_json_tree(value: object) -> None:
 
 
 def _validate_request_id(value: str) -> None:
-    if not isinstance(value, str) or REQUEST_ID_RE.fullmatch(value) is None:
+    if type(value) is not str or REQUEST_ID_RE.fullmatch(value) is None:
         raise NixExpertAdapterError("invalid-request-id")
 
 
 def _validate_activation_id(value: str) -> None:
-    if not isinstance(value, str) or ACTIVATION_ID_RE.fullmatch(value) is None:
+    if type(value) is not str or ACTIVATION_ID_RE.fullmatch(value) is None:
         raise NixExpertAdapterError("invalid-activation-id")
 
 
