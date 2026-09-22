@@ -58,6 +58,18 @@ class FreshnessForgingString(str):
         return True
 
 
+class AuthorityForgingKey(str):
+    """A string-subclass key must never become an authority field alias."""
+
+    __hash__ = str.__hash__
+
+    def __eq__(self, other):
+        return True
+
+    def __ne__(self, other):
+        return False
+
+
 def current_fence():
     return InvocationFence(
         workspace_id="project",
@@ -155,6 +167,49 @@ class LispPostconditionScalarIdentityTests(unittest.TestCase):
                 with self.assertRaisesRegex(
                     CompositionError,
                     "postcondition evidence candidate_sha256 must be a built-in string",
+                ):
+                    invoke(
+                        expert_id,
+                        "repair.verify",
+                        {
+                            "arguments": [self.original, self.candidate],
+                            "source_generation": self.source_generation,
+                        },
+                        result,
+                    )
+
+    def test_verify_rejects_string_subclass_postcondition_authority_key(self):
+        for expert_id, required_postcondition, suffix, trace in _DIALECTS:
+            with self.subTest(expert_id=expert_id):
+                receipt_ref = (
+                    "zara.verified-outcome/v1:outcome:postcondition/" + suffix
+                )
+                postcondition = {
+                    "receipt_ref": receipt_ref,
+                    "required_postcondition": required_postcondition,
+                    AuthorityForgingKey("source_generation"): self.source_generation,
+                    "candidate_sha256": self.candidate_sha256,
+                }
+                result = core_result(
+                    data={
+                        "result": {
+                            "ok": True,
+                            "results": [
+                                "verified(false)",
+                                f"required_postcondition({required_postcondition})",
+                            ],
+                            "trace": [trace],
+                        },
+                        "verified": True,
+                        "verified_outcome_ref": receipt_ref,
+                        "postcondition_evidence": postcondition,
+                    },
+                    evidence_refs=(receipt_ref,),
+                )
+
+                with self.assertRaisesRegex(
+                    CompositionError,
+                    "postcondition evidence keys must be built-in strings",
                 ):
                     invoke(
                         expert_id,

@@ -56,8 +56,9 @@ def _require_plain_postcondition_evidence(data: Any) -> None:
     Output validation reads postcondition bindings more than once before the
     result is persisted/rendered. Mapping and string subclasses can change those
     bindings or equality semantics between checks. Reject non-built-in receipt
-    containers and authority-bearing scalar strings before the existing receipt
-    grammar is evaluated; Core remains the sole verifier/receipt authority.
+    containers, authority-bearing keys, and authority-bearing scalar strings
+    before the existing receipt grammar is evaluated; Core remains the sole
+    verifier/receipt authority.
     """
 
     if not isinstance(data, Mapping):
@@ -67,6 +68,10 @@ def _require_plain_postcondition_evidence(data: Any) -> None:
         return
     if type(postcondition) is not dict:
         raise CompositionError("Lisp postcondition evidence must be a built-in dict")
+    if any(isinstance(key, str) and type(key) is not str for key in postcondition):
+        raise CompositionError(
+            "Lisp postcondition evidence keys must be built-in strings"
+        )
     for field in _POSTCONDITION_STRING_FIELDS:
         if field not in postcondition:
             continue
