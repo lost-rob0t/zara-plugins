@@ -345,8 +345,8 @@ class NixBashCancelledRestartE2ETests(unittest.TestCase):
                 SymbolicConversationProjection(
                     conversation_id=record.id,
                     projection_generation=3,
-                    runtime_generation=2,
-                    turn_id="turn:nix-bash:late-terminal",
+                    runtime_generation=1,
+                    turn_id="turn:nix-bash:cancelled-restart",
                     outcome="success",
                     project_id=PROJECT_ID,
                     project_generation=1,
