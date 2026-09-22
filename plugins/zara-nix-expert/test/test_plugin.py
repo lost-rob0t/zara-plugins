@@ -13,7 +13,7 @@ from zara_nix_expert.plugin import NixExpertAdapterError, ZaraNixExpertPlugin
 
 
 EXPECTED_MANIFEST_DIGEST = (
-    "sha256:a5c349600eabd8add0f336c4932caf27d7cc9b222ca6c0f197f352fc56b2f0cf"
+    "sha256:c5a71709af3cae413de5151dfc9fc1e2e19bcb9fb209ac6cc4c6815f381c3ef8"
 )
 ACTIVATION_ID = "act:" + ("a" * 32)
 
@@ -37,7 +37,7 @@ class FakeRuntime:
             "invocation_id": "inv:" + ("a" * 32),
             "activation_id": request["activation_id"],
             "expert_id": request["expert_id"],
-            "expert_version": "0.1.0",
+            "expert_version": "1",
             "manifest_digest": EXPECTED_MANIFEST_DIGEST,
             "expert_operation": request["expert_operation"],
             "resolved_registry_generation": request["expected_registry_generation"],
@@ -52,8 +52,8 @@ class FakeRuntime:
 
 def invoke(
     plugin: ZaraNixExpertPlugin,
-    operation: str = "parse",
-    payload: str = '{"source":"{}"}',
+    operation: str = "inspect",
+    payload: str = '{"source":"{}","source_generation":"fixture:nix:1"}',
 ) -> str:
     return plugin.invoke(
         "req-1",
@@ -78,12 +78,13 @@ class NixExpertPluginTests(unittest.TestCase):
 
         self.assertEqual(descriptor["protocol"], "ZARA-EXPERT/1")
         self.assertEqual(descriptor["expert_id"], "zara:expert/nix")
+        self.assertEqual(descriptor["expert_version"], "1")
         self.assertEqual(descriptor["manifest_digest"], EXPECTED_MANIFEST_DIGEST)
         self.assertEqual(descriptor["source_reference"], "dotfiles:.zara/experts/nix")
         self.assertEqual(descriptor["reasoning_kind"], "symbolic")
         self.assertEqual(descriptor["fallback_policy"], "fail_closed")
         self.assertEqual(descriptor["delegation_policy"], "never")
-        self.assertEqual(descriptor["possible_effects"], ["none"])
+        self.assertEqual(descriptor["possible_effects"], ["filesystem_write"])
         self.assertEqual(descriptor["supported_engines"], ["swipl"])
         self.assertEqual(
             descriptor["applicability"],
@@ -101,18 +102,21 @@ class NixExpertPluginTests(unittest.TestCase):
         self.assertEqual(
             {operation["operation_id"] for operation in descriptor["operations"]},
             {
-                "parse",
-                "inspect_flake",
-                "inspect_module",
-                "inspect_home_manager",
-                "style_check",
-                "check_plan",
+                "match",
+                "inspect",
+                "diagnose",
+                "repair.preview",
+                "repair.verify",
+                "style.rules",
+                "explain",
+                "repair.apply",
             },
         )
         for operation in descriptor["operations"]:
             self.assertEqual(set(operation), {"operation_id", "input_schema", "output_schema"})
             self.assertIsInstance(operation["input_schema"]["fields"], list)
-            self.assertEqual(operation["output_schema"], {"fields": []})
+            self.assertIsInstance(operation["output_schema"]["fields"], list)
+            self.assertTrue(operation["output_schema"]["fields"])
         self.assertEqual(runtime.resolved, [])
         self.assertEqual(runtime.requests, [])
 
@@ -121,7 +125,13 @@ class NixExpertPluginTests(unittest.TestCase):
         plugin = ZaraNixExpertPlugin()
         plugin.start(runtime)
 
-        result = json.loads(invoke(plugin, "inspect_flake", '{"path":"flake.nix"}'))
+        result = json.loads(
+            invoke(
+                plugin,
+                "inspect",
+                '{"source":"{}","source_generation":"fixture:nix:1"}',
+            )
+        )
 
         self.assertEqual(runtime.resolved, ["expert.invoke"])
         self.assertEqual(len(runtime.requests), 1)
@@ -130,14 +140,14 @@ class NixExpertPluginTests(unittest.TestCase):
         self.assertEqual(request["request_id"], "req-1")
         self.assertEqual(request["activation_id"], ACTIVATION_ID)
         self.assertEqual(request["expert_id"], "zara:expert/nix")
-        self.assertEqual(request["expert_operation"], "inspect_flake")
+        self.assertEqual(request["expert_operation"], "inspect")
         self.assertEqual(request["expected_registry_generation"], 7)
         self.assertEqual(request["expected_runtime_generation"], 3)
         self.assertEqual(request["limits"]["max_model_calls"], 0)
         self.assertEqual(result["usage"]["model_calls"], 0)
         self.assertEqual(result["effect_receipts"], [])
 
-    def test_effectful_or_unknown_operation_is_rejected_before_host(self) -> None:
+    def test_unknown_operation_is_rejected_before_host(self) -> None:
         runtime = FakeRuntime()
         plugin = ZaraNixExpertPlugin()
         plugin.start(runtime)
@@ -154,13 +164,17 @@ class NixExpertPluginTests(unittest.TestCase):
         plugin.start(runtime)
 
         cases = (
-            ("inspect_flake", "{}", "missing-operation-input"),
+            ("inspect", '{"source":"{}"}', "missing-operation-input"),
             (
-                "parse",
-                '{"source":"{}","provider_fallback":true}',
+                "inspect",
+                '{"source":"{}","source_generation":"fixture:1","provider_fallback":true}',
                 "unknown-operation-input",
             ),
-            ("parse", '{"source":7}', "invalid-operation-input"),
+            (
+                "inspect",
+                '{"source":7,"source_generation":"fixture:1"}',
+                "invalid-operation-input",
+            ),
         )
         for operation, payload, error in cases:
             with self.subTest(operation=operation, error=error):
@@ -176,9 +190,9 @@ class NixExpertPluginTests(unittest.TestCase):
         plugin.start(runtime)
 
         with self.assertRaisesRegex(NixExpertAdapterError, "invalid-registry-generation"):
-            plugin.invoke("req-1", ACTIVATION_ID, "parse", -1, 1)
+            plugin.invoke("req-1", ACTIVATION_ID, "inspect", -1, 1)
         with self.assertRaisesRegex(NixExpertAdapterError, "invalid-max-results"):
-            plugin.invoke("req-1", ACTIVATION_ID, "parse", 1, 1, max_results=33)
+            plugin.invoke("req-1", ACTIVATION_ID, "inspect", 1, 1, max_results=33)
 
         self.assertEqual(runtime.requests, [])
 
@@ -198,10 +212,10 @@ class NixExpertPluginTests(unittest.TestCase):
             arguments = {
                 "request_id": "req:zero",
                 "activation_id": ACTIVATION_ID,
-                "expert_operation": "parse",
+                "expert_operation": "inspect",
                 "expected_registry_generation": 0,
                 "expected_runtime_generation": 0,
-                "input_json": '{"source":"{}"}',
+                "input_json": '{"source":"{}","source_generation":"fixture:nix:1"}',
                 "timeout_ms": 2500,
                 "max_results": 8,
                 "max_output_bytes": 32768,
@@ -212,9 +226,9 @@ class NixExpertPluginTests(unittest.TestCase):
                     plugin.invoke(**arguments)
 
         with self.assertRaisesRegex(NixExpertAdapterError, "invalid-registry-generation"):
-            plugin.invoke("req-1", ACTIVATION_ID, "parse", True, 1)
+            plugin.invoke("req-1", ACTIVATION_ID, "inspect", True, 1)
         with self.assertRaisesRegex(NixExpertAdapterError, "invalid-runtime-generation"):
-            plugin.invoke("req-1", ACTIVATION_ID, "parse", 1, 1.5)
+            plugin.invoke("req-1", ACTIVATION_ID, "inspect", 1, 1.5)
 
         self.assertEqual(runtime.requests, [])
 
@@ -224,7 +238,7 @@ class NixExpertPluginTests(unittest.TestCase):
         plugin.start(runtime)
 
         with self.assertRaisesRegex(NixExpertAdapterError, "invalid-activation-id"):
-            plugin.invoke("req-1", "activation-1", "parse", 1, 1)
+            plugin.invoke("req-1", "activation-1", "inspect", 1, 1)
 
         self.assertEqual(runtime.requests, [])
 

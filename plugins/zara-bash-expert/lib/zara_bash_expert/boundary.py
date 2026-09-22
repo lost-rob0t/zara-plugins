@@ -16,6 +16,8 @@ from .plugin import (
 
 _FIELD_TYPES: dict[str, type[object]] = {
     "string": str,
+    "reference": str,
+    "object": dict,
 }
 
 
@@ -47,7 +49,7 @@ def _validate_operation_payload(operation: str, payload: Mapping[str, Any]) -> N
         if expected_type is None:
             raise BashExpertAdapterError("unsupported-input-field-type")
         value = payload[name]
-        if not isinstance(value, expected_type):
+        if type(value) is not expected_type:
             raise BashExpertAdapterError("invalid-input-field-type")
         if name == "path" and (not value or "\x00" in value):
             raise BashExpertAdapterError("invalid-input-path")

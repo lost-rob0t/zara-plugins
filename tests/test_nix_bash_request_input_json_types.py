@@ -104,10 +104,12 @@ class RequestInputJsonTypeFenceTests(unittest.TestCase):
             plugin.invoke(
                 request_id=REQUEST_ID,
                 activation_id=ACTIVATION_ID,
-                expert_operation="parse",
+                expert_operation="inspect",
                 expected_registry_generation=1,
                 expected_runtime_generation=1,
-                input_json=_ForgedJsonText('{"source":"x = 1"}'),
+                input_json=_ForgedJsonText(
+                    '{"source":"x = 1","source_generation":"fixture:1"}'
+                ),
                 timeout_ms=1000,
                 max_results=8,
                 max_output_bytes=4096,
