@@ -101,6 +101,46 @@ class LispNestedResultScalarIdentityTests(unittest.TestCase):
                 self.assertEqual(budget.model_calls_used, 0)
                 self.assertEqual(registry.calls[0][3].max_model_calls, 0)
 
+    def test_rejects_nested_non_wire_container_before_durable_projection(self):
+        for expert_id in DIALECTS:
+            with self.subTest(expert_id=expert_id):
+                mutable_tags = {"balanced"}
+                nested_result = {
+                    "ok": True,
+                    "results": ["balanced(true)"],
+                    "trace": ["structural-check"],
+                    "details": {
+                        "tags": mutable_tags,
+                    },
+                    "model_calls": 0,
+                    "effect_receipts": [],
+                }
+                registry = RecordingCoreRegistry(successful_predicate_result(nested_result))
+                handle = SimpleNamespace(expert_id=expert_id, workspace="project")
+                invoker = CoreLispFamilyCompositionInvoker(
+                    registry,
+                    activation_for=lambda _expert_id, _fence: handle,
+                    limits_factory=CoreLimits,
+                )
+                budget = SharedSymbolicBudget(max_invocations=1, max_model_calls=0)
+
+                with self.assertRaisesRegex(
+                    CompositionError,
+                    "Lisp symbolic result value must use canonical built-in wire types",
+                ):
+                    invoker(
+                        expert_id,
+                        "structural.check",
+                        {"arguments": ["(print 1)"]},
+                        budget=budget,
+                        fence=current_fence(),
+                        parent_path=(),
+                    )
+
+                mutable_tags.add("late-host-mutation")
+                self.assertEqual(budget.model_calls_used, 0)
+                self.assertEqual(registry.calls[0][3].max_model_calls, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
