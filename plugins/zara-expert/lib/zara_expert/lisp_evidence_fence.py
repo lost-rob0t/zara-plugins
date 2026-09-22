@@ -35,6 +35,22 @@ def _require_string_references(value: Any, label: str) -> None:
         raise CompositionError(f"{label} must contain strings")
 
 
+def _require_plain_postcondition_evidence(data: Any) -> None:
+    """Keep verified-outcome receipt evidence on the canonical object wire type.
+
+    Output validation reads postcondition bindings more than once before the
+    result is persisted/rendered. A Mapping subclass can change those bindings
+    between reads. Reject non-built-in mappings before the existing receipt
+    grammar is evaluated; Core remains the sole verifier/receipt authority.
+    """
+
+    if not isinstance(data, Mapping):
+        return
+    postcondition = data.get("postcondition_evidence")
+    if postcondition is not None and type(postcondition) is not dict:
+        raise CompositionError("Lisp postcondition evidence must be a built-in dict")
+
+
 def _guard_handler_outcome(outcome: Any) -> None:
     if not isinstance(outcome, Mapping):
         return
@@ -47,6 +63,7 @@ def _guard_handler_outcome(outcome: Any) -> None:
     data = outcome.get("data")
     if not isinstance(data, Mapping):
         return
+    _require_plain_postcondition_evidence(data)
     nested = data.get("result")
     if not isinstance(nested, Mapping):
         return
@@ -56,10 +73,14 @@ def _guard_handler_outcome(outcome: Any) -> None:
 def _guard_core_outcome(outcome: Any) -> None:
     evidence_refs = getattr(outcome, "evidence_refs", None)
     _require_string_references(evidence_refs, "Core Lisp expert evidence_refs")
+
+    data = getattr(outcome, "data", None)
+    if isinstance(data, Mapping):
+        _require_plain_postcondition_evidence(data)
+
     if evidence_refs:
         return
 
-    data = getattr(outcome, "data", None)
     if not isinstance(data, Mapping):
         return
     nested = data.get("result")
@@ -186,10 +207,10 @@ def install_lisp_evidence_type_fence() -> None:
     safe only after provenance has already been established. At the Core/plugin
     boundary an arbitrary object could otherwise stringify to a canonical-looking
     evidence reference. The verified-outcome path has the same rule for symbolic
-    result terms, receipt-binding inputs, and receipt identity fields: only
-    canonical built-in strings/lists/bools may influence verified success. Keep
-    existing composition/runtime ownership intact and do not duplicate parser
-    semantics.
+    result terms, receipt-binding inputs, receipt identity fields, and receipt
+    evidence containers: only canonical built-in strings/lists/dicts/bools may
+    influence verified success. Keep existing composition/runtime ownership intact
+    and do not duplicate parser semantics.
     """
 
     if getattr(_base, "_LISP_EVIDENCE_TYPE_FENCE_INSTALLED", False):
