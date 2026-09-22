@@ -533,7 +533,7 @@ def _validate_result(
         raise JavaExpertAdapterError("invalid-expert-verdict")
     _validate_result_usage(result)
     receipts = result.get("effect_receipts")
-    if not isinstance(receipts, (list, tuple)):
+    if type(receipts) is not list:
         raise JavaExpertAdapterError("read-only-effect-proof-missing")
     if receipts:
         raise JavaExpertAdapterError("read-only-effect-leak")
