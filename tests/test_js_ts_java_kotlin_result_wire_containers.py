@@ -153,7 +153,7 @@ class FourLanguageResultWireContainerTests(unittest.TestCase):
                 expert_operation="inspect",
                 expected_registry_generation=1,
                 expected_runtime_generation=1,
-                input_json=module._json(payload),
+                input_json=plugin._json(payload),
             )
         self.assertEqual(len(runtime.requests), 1)
         self.assertEqual(runtime.requests[0]["limits"]["max_model_calls"], 0)
