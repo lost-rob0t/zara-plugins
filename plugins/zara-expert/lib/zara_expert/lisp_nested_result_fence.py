@@ -13,16 +13,22 @@ def _guard_nested_container_identity(value: Any) -> None:
     The Lisp output contract recursively snapshots built-in dict/list/tuple
     containers after the existing semantic validators succeed. A subclass or
     arbitrary Mapping would otherwise survive that snapshot by identity and stay
-    mutable from the host side. String subclasses also survive by identity and
-    may override equality/hash behavior seen by conversation projection. This
-    guard owns only Python wire/container/scalar identity; Prolog-RLM remains the
-    parser/reader/repair semantic authority.
+    mutable from the host side. Mapping keys are also preserved by identity, so
+    they must be exact built-in strings rather than host-controlled subclasses.
+    Scalar subclasses accepted by the shared inert JSON-like validator can
+    likewise carry host-controlled equality/hash behavior into durable/public
+    projection. This guard owns only Python wire/container/scalar identity;
+    Prolog-RLM remains the parser/reader/repair semantic authority.
     """
 
     if isinstance(value, Mapping):
         if type(value) is not dict:
             raise CompositionError(
                 "Lisp symbolic result mapping must be a built-in dict"
+            )
+        if any(type(key) is not str for key in value):
+            raise CompositionError(
+                "Lisp symbolic result mapping keys must be exact built-in strings"
             )
         return
     if isinstance(value, list) and type(value) is not list:
@@ -31,6 +37,10 @@ def _guard_nested_container_identity(value: Any) -> None:
         raise CompositionError("Lisp symbolic result tuple must be a built-in tuple")
     if isinstance(value, str) and type(value) is not str:
         raise CompositionError("Lisp symbolic result string must be a built-in string")
+    if isinstance(value, (int, float)) and type(value) not in (int, float, bool):
+        raise CompositionError(
+            "Lisp symbolic result scalar must use an exact built-in wire type"
+        )
 
 
 def install_lisp_nested_result_container_fence() -> None:
