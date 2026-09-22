@@ -183,12 +183,7 @@ class NixBashDurablePersistenceE2ETests(unittest.TestCase):
                 request_id=f"req:nix-bash:persistence:{language}",
             )
             self.assertIs(result.verdict, current_core.ExpertVerdict.SUCCEEDED)
-            self.assertEqual(
-                result.usage,
-                {"provider_calls": 0, "model_calls": 0},
-            )
-            for key in ("provider_calls", "model_calls"):
-                self.assertIs(type(result.usage[key]), int)
+            self.assertEqual(result.usage, {"model_calls": 0})
             self.assertEqual(result.effect_receipts, ())
             self.assertTrue(result.evidence_refs)
             evidence.append(
@@ -199,7 +194,6 @@ class NixBashDurablePersistenceE2ETests(unittest.TestCase):
                     "invocation_id": result.invocation_id,
                     "data": result.data,
                     "evidence_refs": list(result.evidence_refs),
-                    "provider_calls": result.usage["provider_calls"],
                     "model_calls": result.usage["model_calls"],
                     "effect_receipts": list(result.effect_receipts),
                 }
