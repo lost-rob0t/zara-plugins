@@ -662,6 +662,11 @@ class ZaraNixExpertPlugin(ServicePlugin):
         )
         if result["verdict"] == "succeeded":
             evidence = result["evidence_refs"]
+            if any(
+                item.startswith("evidence:expert-provenance:sha256:")
+                for item in evidence
+            ):
+                raise NixExpertAdapterError("provenance-evidence-namespace-conflict")
             provenance_ref = _provenance_evidence_ref()
             if provenance_ref not in evidence:
                 if len(evidence) >= MAX_EVIDENCE_REFS:
