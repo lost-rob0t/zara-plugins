@@ -383,6 +383,8 @@ def _validate_result_payload(result: Mapping[str, object]) -> tuple[dict[str, ob
             or len(evidence_ref) > MAX_EVIDENCE_REF_LENGTH
         ):
             raise NixExpertAdapterError("invalid-expert-evidence")
+    if len(set(evidence_refs)) != len(evidence_refs):
+        raise NixExpertAdapterError("invalid-expert-evidence")
     return data, evidence_refs
 
 
