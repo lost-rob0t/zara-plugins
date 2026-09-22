@@ -621,6 +621,7 @@ class ZaraBashExpertPlugin(ServicePlugin):
         except Exception as error:
             raise BashExpertAdapterError("expert-host-invocation-failed") from error
 
+        _validate_source_lock()
         if type(result) is not dict:
             raise BashExpertAdapterError("invalid-expert-result")
         _validate_result(
