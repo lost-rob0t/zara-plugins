@@ -23,6 +23,10 @@ def _hex_json(payload):
     return "".join(f"{ord(char):06x}" for char in text)
 
 
+class _TextSubclass(str):
+    pass
+
+
 class FakeStyleExpertHost:
     def __init__(self, rule):
         self.rule = rule
@@ -162,6 +166,42 @@ class DotfilesStyleMetaCompositionTests(unittest.TestCase):
         self.assertEqual(self.host.calls, [])
         self.assertEqual(budget.evidence_used, 0)
         self.assertEqual(budget.model_calls_used, 0)
+
+    def test_style_invoker_rejects_noncanonical_route_text_before_host_dispatch(self):
+        cases = (
+            (
+                _TextSubclass(STYLE_EXPERT_ID),
+                "resolve",
+                {"language": "nix"},
+                "unsupported StyleExpert identity",
+            ),
+            (
+                STYLE_EXPERT_ID,
+                _TextSubclass("resolve"),
+                {"language": "nix"},
+                "unsupported StyleExpert operation",
+            ),
+            (
+                STYLE_EXPERT_ID,
+                "resolve",
+                {"language": _TextSubclass("nix")},
+                "language must be exact text",
+            ),
+        )
+        for expert_id, operation, input_data, message in cases:
+            with self.subTest(expert_id=expert_id, operation=operation, input_data=input_data):
+                budget = SharedSymbolicBudget(max_model_calls=0)
+                with self.assertRaisesRegex(CompositionError, message):
+                    self._composer().invoke(
+                        expert_id,
+                        operation,
+                        input_data,
+                        budget=budget,
+                        fence=self.fence,
+                    )
+                self.assertEqual(self.host.calls, [])
+                self.assertEqual(budget.evidence_used, 0)
+                self.assertEqual(budget.model_calls_used, 0)
 
 
 if __name__ == "__main__":
