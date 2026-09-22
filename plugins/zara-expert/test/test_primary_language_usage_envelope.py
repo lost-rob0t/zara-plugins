@@ -56,76 +56,113 @@ class PrimaryLanguageUsageEnvelopeTests(unittest.TestCase):
             "source_generation": "generation:usage-envelope",
         }
 
-    def test_direct_composition_rejects_provider_shaped_usage_metadata(self):
+    @staticmethod
+    def _handler_result(usage):
+        return {
+            "verdict": "succeeded",
+            "data": {"diagnostics": ["diagnostic(symbolic)."]},
+            "evidence_refs": ["evidence:language:sha256:trusted"],
+            "usage": usage,
+            "effect_receipts": [],
+        }
+
+    @staticmethod
+    def _core_result(usage):
+        return SimpleNamespace(
+            verdict=SimpleNamespace(value="succeeded"),
+            data={"diagnostics": ["diagnostic(symbolic)."]},
+            evidence_refs=("evidence:language:sha256:trusted",),
+            usage=usage,
+            effect_receipts=(),
+        )
+
+    def _direct_invoke(self, expert_id, usage):
         invoker = LanguageFamilyCompositionInvoker(object())
+        with patch(
+            "zara_expert.language_composition.make_language_expert_handler",
+            return_value=lambda **_kwargs: self._handler_result(usage),
+        ):
+            return invoker(
+                expert_id,
+                "diagnose",
+                self._payload(),
+                budget=SharedSymbolicBudget(max_model_calls=0),
+                fence=self._fence(),
+                parent_path=(),
+            )
 
+    def _core_invoke(self, expert_id, usage):
+        handle = SimpleNamespace(
+            expert_id=expert_id,
+            workspace="workspace-usage-envelope",
+        )
+        invoker = CoreLanguageFamilyCompositionInvoker(
+            StaticRegistry(self._core_result(usage)),
+            activation_for=lambda _expert_id, _fence, handle=handle: handle,
+            limits_factory=CoreLimits,
+        )
+        return invoker(
+            expert_id,
+            "diagnose",
+            self._payload(),
+            budget=SharedSymbolicBudget(max_model_calls=0),
+            fence=self._fence(),
+            parent_path=(),
+        )
+
+    def test_direct_composition_accepts_only_explicit_integer_zero_provider_and_model_usage(self):
         for expert_id in PRIMARY_EXPERT_IDS:
             with self.subTest(expert_id=expert_id):
-                fake_handler = lambda **_kwargs: {
-                    "verdict": "succeeded",
-                    "data": {"diagnostics": ["diagnostic(symbolic)."]},
-                    "evidence_refs": ["evidence:language:sha256:trusted"],
-                    "usage": {
-                        "model_calls": 0,
-                        "provider_calls": 1,
-                        "provider": "hidden-fallback",
-                    },
-                    "effect_receipts": [],
-                }
-                with patch(
-                    "zara_expert.language_composition.make_language_expert_handler",
-                    return_value=fake_handler,
-                ):
-                    with self.assertRaisesRegex(
-                        CompositionError,
-                        "usage ledger contains unsupported fields",
-                    ):
-                        invoker(
-                            expert_id,
-                            "diagnose",
-                            self._payload(),
-                            budget=SharedSymbolicBudget(max_model_calls=0),
-                            fence=self._fence(),
-                            parent_path=(),
-                        )
+                result = self._direct_invoke(
+                    expert_id,
+                    {"provider_calls": 0, "model_calls": 0},
+                )
+                self.assertEqual(result.model_calls, 0)
 
-    def test_core_composition_rejects_provider_shaped_usage_metadata(self):
+    def test_core_composition_accepts_only_explicit_integer_zero_provider_and_model_usage(self):
         for expert_id in PRIMARY_EXPERT_IDS:
             with self.subTest(expert_id=expert_id):
-                result = SimpleNamespace(
-                    verdict=SimpleNamespace(value="succeeded"),
-                    data={"diagnostics": ["diagnostic(symbolic)."]},
-                    evidence_refs=("evidence:language:sha256:trusted",),
-                    usage={
-                        "model_calls": 0,
-                        "provider_calls": 1,
-                        "provider": "hidden-fallback",
-                    },
-                    effect_receipts=(),
+                result = self._core_invoke(
+                    expert_id,
+                    {"provider_calls": 0, "model_calls": 0},
                 )
-                registry = StaticRegistry(result)
-                handle = SimpleNamespace(
-                    expert_id=expert_id,
-                    workspace="workspace-usage-envelope",
-                )
-                invoker = CoreLanguageFamilyCompositionInvoker(
-                    registry,
-                    activation_for=lambda _expert_id, _fence, handle=handle: handle,
-                    limits_factory=CoreLimits,
-                )
+                self.assertEqual(result.model_calls, 0)
 
-                with self.assertRaisesRegex(
-                    CompositionError,
-                    "usage ledger contains unsupported fields",
-                ):
-                    invoker(
-                        expert_id,
-                        "diagnose",
-                        self._payload(),
-                        budget=SharedSymbolicBudget(max_model_calls=0),
-                        fence=self._fence(),
-                        parent_path=(),
-                    )
+    def test_direct_composition_rejects_missing_fake_or_extra_provider_proof(self):
+        cases = (
+            ({"model_calls": 0}, "attempted provider use"),
+            ({"provider_calls": 1, "model_calls": 0}, "attempted provider use"),
+            ({"provider_calls": 0.0, "model_calls": 0}, "attempted provider use"),
+            ({"provider_calls": False, "model_calls": 0}, "attempted provider use"),
+            ({"provider_calls": "0", "model_calls": 0}, "attempted provider use"),
+            (
+                {"provider_calls": 0, "model_calls": 0, "provider": "hidden-fallback"},
+                "usage ledger contains unsupported fields",
+            ),
+        )
+        for expert_id in PRIMARY_EXPERT_IDS:
+            for usage, message in cases:
+                with self.subTest(expert_id=expert_id, usage=usage):
+                    with self.assertRaisesRegex(CompositionError, message):
+                        self._direct_invoke(expert_id, usage)
+
+    def test_core_composition_rejects_missing_fake_or_extra_provider_proof(self):
+        cases = (
+            ({"model_calls": 0}, "attempted provider use"),
+            ({"provider_calls": 1, "model_calls": 0}, "attempted provider use"),
+            ({"provider_calls": 0.0, "model_calls": 0}, "attempted provider use"),
+            ({"provider_calls": False, "model_calls": 0}, "attempted provider use"),
+            ({"provider_calls": "0", "model_calls": 0}, "attempted provider use"),
+            (
+                {"provider_calls": 0, "model_calls": 0, "provider": "hidden-fallback"},
+                "usage ledger contains unsupported fields",
+            ),
+        )
+        for expert_id in PRIMARY_EXPERT_IDS:
+            for usage, message in cases:
+                with self.subTest(expert_id=expert_id, usage=usage):
+                    with self.assertRaisesRegex(CompositionError, message):
+                        self._core_invoke(expert_id, usage)
 
 
 if __name__ == "__main__":
