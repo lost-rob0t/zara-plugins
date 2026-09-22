@@ -7,13 +7,32 @@ from . import lisp_composition as _base
 from .composition import CompositionError
 
 
+def _guard_receipt_object(receipt: Mapping[Any, Any], label: str) -> None:
+    """Reject custom mapping/string semantics at the Core receipt boundary.
+
+    The canonical Core validator owns receipt schema and lineage rules. This
+    guard only prevents Python mapping/string subclasses from overriding lookup,
+    iteration, hashing, or equality while those existing rules compare the
+    canonical effect receipt with its projected copy and source generation.
+    """
+
+    if type(receipt) is not dict:
+        raise CompositionError(f"{label} must be a built-in dict")
+
+    for key, value in receipt.items():
+        if isinstance(key, str) and type(key) is not str:
+            raise CompositionError(f"{label} keys must be built-in strings")
+        if isinstance(value, str) and type(value) is not str:
+            raise CompositionError(f"{label} string values must be built-in strings")
+
+
 def _guard_core_effect_receipts(outcome: Any) -> None:
-    """Reject custom receipt container semantics before Core result projection.
+    """Reject custom receipt wire semantics before Core result projection.
 
     Zara Core remains the sole effect and receipt authority. This fence only
-    preserves the canonical host-language wire identity for receipt containers
-    that the existing Lisp composition validator already accepts. Ordinary
-    malformed values are left to that validator so error ownership is unchanged.
+    preserves canonical host-language wire identity for containers/scalars that
+    the existing Lisp composition validator already accepts. Ordinary malformed
+    values are left to that validator so schema/error ownership is unchanged.
     """
 
     receipts = getattr(outcome, "effect_receipts", None)
@@ -25,10 +44,21 @@ def _guard_core_effect_receipts(outcome: Any) -> None:
         )
 
     for receipt in receipts:
-        if isinstance(receipt, Mapping) and type(receipt) is not dict:
-            raise CompositionError(
-                "Core Lisp expert effect receipt must be a built-in dict"
-            )
+        if isinstance(receipt, Mapping):
+            _guard_receipt_object(receipt, "Core Lisp expert effect receipt")
+
+    # `data` has its own canonical mapping fence. Only inspect it here after it
+    # is already a built-in dict so this receipt fence never invokes arbitrary
+    # custom Mapping.get/item behavior ahead of that existing validation.
+    data = getattr(outcome, "data", None)
+    if type(data) is not dict:
+        return
+    projected_receipt = data.get("effect_receipt")
+    if isinstance(projected_receipt, Mapping):
+        _guard_receipt_object(
+            projected_receipt,
+            "Core Lisp expert projected effect receipt",
+        )
 
 
 def install_lisp_effect_receipt_type_fence() -> None:
