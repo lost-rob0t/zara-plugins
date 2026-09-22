@@ -201,7 +201,7 @@ def _validate_data_tree(value: object, depth: int = 0) -> None:
                 raise NimExpertAdapterError("invalid-expert-data-json")
             _validate_data_tree(child, depth + 1)
         return
-    if type(value) in (list, tuple):
+    if type(value) is list:
         for child in value:
             _validate_data_tree(child, depth + 1)
         return
@@ -266,7 +266,7 @@ def _validate_result(result: Mapping[str, object], *, request_id: str, activatio
     if type(usage) is not dict or set(usage) != USAGE_FIELDS or type(usage.get("model_calls")) is not int or usage.get("model_calls") != 0:
         raise NimExpertAdapterError("zero-model-proof-missing")
     receipts = result.get("effect_receipts")
-    if type(receipts) not in (list, tuple):
+    if type(receipts) is not list:
         raise NimExpertAdapterError("read-only-effect-proof-missing")
     if receipts:
         raise NimExpertAdapterError("read-only-effect-leak")
