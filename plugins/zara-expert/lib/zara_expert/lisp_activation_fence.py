@@ -53,6 +53,8 @@ def install_lisp_activation_handle_type_fence() -> None:
         activation_for: Callable[[str, InvocationFence], Any],
         limits_factory: Callable[..., Any],
     ) -> None:
+        if not callable(activation_for):
+            raise TypeError("activation_for must be callable")
         original_init(
             self,
             registry,
