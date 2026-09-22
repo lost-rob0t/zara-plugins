@@ -392,7 +392,7 @@ def _validate_operation_output(operation: str, verdict: str, data: object) -> No
             _validate_output_field(field, data[name])
 
 
-def _validate_result_data_tree(data: Mapping[str, object]) -> None:
+def _validate_result_data_tree(data: dict[str, object]) -> None:
     stack: list[tuple[bool, object]] = [(False, data)]
     active_containers: set[int] = set()
     nodes = 0
@@ -406,7 +406,7 @@ def _validate_result_data_tree(data: Mapping[str, object]) -> None:
         if nodes > MAX_RESULT_NODES:
             raise KotlinExpertAdapterError("invalid-expert-data-json")
 
-        if isinstance(current, dict):
+        if type(current) is dict:
             container_id = id(current)
             if container_id in active_containers:
                 raise KotlinExpertAdapterError("invalid-expert-data-json")
@@ -416,7 +416,7 @@ def _validate_result_data_tree(data: Mapping[str, object]) -> None:
                 if type(key) is not str:
                     raise KotlinExpertAdapterError("invalid-expert-data-json")
                 stack.append((False, child))
-        elif isinstance(current, (list, tuple)):
+        elif type(current) is list:
             container_id = id(current)
             if container_id in active_containers:
                 raise KotlinExpertAdapterError("invalid-expert-data-json")
@@ -434,14 +434,14 @@ def _validate_result_data_tree(data: Mapping[str, object]) -> None:
 
 def _validate_result_payload(
     result: Mapping[str, object],
-) -> tuple[Mapping[str, object], list[str] | tuple[str, ...]]:
+) -> tuple[dict[str, object], list[str]]:
     data = result.get("data")
-    if not isinstance(data, Mapping):
+    if type(data) is not dict:
         raise KotlinExpertAdapterError("invalid-expert-data")
     _validate_result_data_tree(data)
 
     evidence_refs = result.get("evidence_refs")
-    if not isinstance(evidence_refs, (list, tuple)):
+    if type(evidence_refs) is not list:
         raise KotlinExpertAdapterError("invalid-expert-evidence")
     if len(evidence_refs) > MAX_EVIDENCE_REFS:
         raise KotlinExpertAdapterError("invalid-expert-evidence")
