@@ -5,6 +5,7 @@ from enum import IntEnum
 import json
 from pathlib import PurePosixPath
 import re
+from types import MappingProxyType
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
 
@@ -54,6 +55,25 @@ def _normalized_inert_value(value: Any) -> Any:
     raise CompositionError(f"expert input contains unsupported value: {type(value).__name__}")
 
 
+def _frozen_delegation_value(value: Any) -> Any:
+    """Snapshot one delegation payload so validated routing cannot drift later."""
+
+    if type(value) in (str, int, float, bool, type(None)):
+        return value
+    if isinstance(value, Mapping):
+        snapshot: dict[str, Any] = {}
+        for key, item in value.items():
+            if type(key) is not str:
+                raise CompositionError("expert delegation input mapping keys must be exact text")
+            snapshot[key] = _frozen_delegation_value(item)
+        return MappingProxyType(snapshot)
+    if type(value) in (list, tuple):
+        return tuple(_frozen_delegation_value(item) for item in value)
+    raise CompositionError(
+        f"expert delegation input contains unsupported value: {type(value).__name__}"
+    )
+
+
 def _invocation_signature(
     expert_id: str,
     operation: str,
@@ -70,6 +90,14 @@ class DelegationRequest:
     operation: str
     input: Mapping[str, Any]
     reason: str
+
+    def __post_init__(self) -> None:
+        for name in ("expert_id", "operation", "reason"):
+            if type(getattr(self, name)) is not str:
+                raise CompositionError(f"expert delegation {name} must be exact text")
+        if not isinstance(self.input, Mapping):
+            raise CompositionError("expert delegation input must be a mapping")
+        object.__setattr__(self, "input", _frozen_delegation_value(self.input))
 
 
 @dataclass(frozen=True)
