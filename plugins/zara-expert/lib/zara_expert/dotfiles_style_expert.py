@@ -261,15 +261,15 @@ class DotfilesStyleCompositionInvoker:
         del parent_path
         budget.assert_zero_model_usage()
         fence.check()
-        if expert_id != STYLE_EXPERT_ID:
+        if type(expert_id) is not str or expert_id != STYLE_EXPERT_ID:
             raise CompositionError(f"unsupported StyleExpert identity: {expert_id!r}")
-        if operation != _STYLE_COMPOSITION_OPERATION:
+        if type(operation) is not str or operation != _STYLE_COMPOSITION_OPERATION:
             raise CompositionError(f"unsupported StyleExpert operation: {operation!r}")
         if not isinstance(input_data, Mapping) or frozenset(input_data) != _STYLE_COMPOSITION_INPUT_KEYS:
             raise CompositionError("StyleExpert resolve input shape drifted")
         language = input_data.get("language")
-        if not isinstance(language, str) or not language:
-            raise CompositionError("StyleExpert resolve language must be non-empty text")
+        if type(language) is not str or not language:
+            raise CompositionError("StyleExpert resolve language must be exact text and non-empty")
         composition = _compose_dotfiles_style(
             self._host,
             language,
