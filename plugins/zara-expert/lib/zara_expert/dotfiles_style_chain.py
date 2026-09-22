@@ -111,7 +111,7 @@ class DotfilesStyleLanguageChainInvoker:
     ) -> InvocationResult:
         fence.check()
         budget.assert_zero_model_usage()
-        if not isinstance(result, InvocationResult):
+        if type(result) is not InvocationResult:
             raise CompositionError("Dotfiles style-chain invoker returned invalid result")
         if result.model_calls != 0:
             raise CompositionError("Dotfiles style-chain child attempted model use")
