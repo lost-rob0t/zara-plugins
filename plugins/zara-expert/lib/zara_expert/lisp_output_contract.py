@@ -312,24 +312,23 @@ def _snapshot_authority_projection(
     operation: str,
     result: InvocationResult,
 ) -> InvocationResult:
-    """Detach validated repair authority from mutable host/Core containers.
+    """Detach validated symbolic output from mutable host/Core containers.
 
-    This is an ownership snapshot after the existing Core/dialect validators have
-    accepted the wire values. It deliberately does not mint, reinterpret, or
-    validate receipt/postcondition semantics; Zara Core remains their authority.
-    Existing fences constrain authority leaves to immutable built-in primitives,
-    so copying the accepted dictionaries is sufficient to stop late host mutation.
+    Every accepted Lisp predicate result may feed durable conversation state or
+    rendering, not only repair operations. Snapshot its already-validated nested
+    symbolic result before exposure so late host/Core mutation cannot rewrite a
+    successful turn. Repair authority dictionaries retain their existing narrow
+    snapshot. This is ownership only: Zara Core still owns receipt/postcondition
+    semantics and Prolog-RLM remains the Lisp parser/reader authority.
     """
-
-    if operation not in {"repair.verify", "repair.apply"}:
-        return result
 
     data = dict(result.data)
     _snapshot_symbolic_result(data)
-    for field in ("effect_receipt", "postcondition_evidence"):
-        value = data.get(field)
-        if type(value) is dict:
-            data[field] = dict(value)
+    if operation in {"repair.verify", "repair.apply"}:
+        for field in ("effect_receipt", "postcondition_evidence"):
+            value = data.get(field)
+            if type(value) is dict:
+                data[field] = dict(value)
 
     return InvocationResult(
         status=result.status,
