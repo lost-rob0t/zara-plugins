@@ -1,3 +1,4 @@
+import hashlib
 import sys
 import unittest
 from collections import UserDict
@@ -24,6 +25,18 @@ DIALECT_REPAIR_EXPERTS = (
 
 class ReceiptTuple(tuple):
     pass
+
+
+class AuthorityForgingString(str):
+    """String subclass that can forge equality at authority comparisons."""
+
+    def __eq__(self, other):
+        return True
+
+    def __ne__(self, other):
+        return False
+
+    __hash__ = str.__hash__
 
 
 class CoreLimits:
@@ -63,6 +76,34 @@ def core_outcome(*, data, evidence_refs=("ev:core:lisp",), effect_receipts=()):
         evidence_refs=evidence_refs,
         effect_receipts=effect_receipts,
         usage={"model_calls": 0},
+    )
+
+
+def successful_apply_outcome(expert_id, *, receipt, projected_receipt=None):
+    required_postconditions = {
+        "zara:expert/common-lisp": "sbcl_fresh_reader_and_compile_evidence",
+        "zara:expert/emacs-lisp": "emacs_fresh_reader_and_byte_compile_evidence",
+    }
+    replacement = "(print 1)"
+    postcondition_ref = "zara.verified-outcome/v1:outcome:postcondition/project-9"
+    postcondition = {
+        "checker": "reader",
+        "expert_id": expert_id,
+        "verified": True,
+        "fresh": True,
+        "source_generation": "project:8",
+        "observed_generation": "project:9",
+        "candidate_sha256": hashlib.sha256(replacement.encode("utf-8")).hexdigest(),
+        "required_postcondition": required_postconditions[expert_id],
+        "receipt_ref": postcondition_ref,
+    }
+    return core_outcome(
+        data={
+            "effect_receipt": receipt if projected_receipt is None else projected_receipt,
+            "postcondition_evidence": postcondition,
+        },
+        evidence_refs=(postcondition_ref,),
+        effect_receipts=(receipt,),
     )
 
 
@@ -148,6 +189,54 @@ class LispCoreEffectReceiptIdentityTests(unittest.TestCase):
                         effect_receipts=(UserDict(receipt),),
                     ),
                 )
+
+    def test_rejects_custom_projected_effect_receipt_mapping(self):
+        for expert_id in DIALECT_REPAIR_EXPERTS:
+            with self.subTest(expert_id=expert_id):
+                receipt = {
+                    "receipt_id": "edit:42",
+                    "capability": "filesystem_write",
+                    "source_generation": "project:8",
+                }
+                self._invoke(
+                    expert_id,
+                    "repair.apply",
+                    {
+                        "repair": {"replacement": "(print 1)"},
+                        "expected_preimage": "(print 1",
+                        "source_generation": "project:8",
+                    },
+                    successful_apply_outcome(
+                        expert_id,
+                        receipt=receipt,
+                        projected_receipt=UserDict(receipt),
+                    ),
+                )
+
+    def test_rejects_custom_effect_receipt_authority_strings(self):
+        for expert_id in DIALECT_REPAIR_EXPERTS:
+            for field, value in (
+                ("receipt_id", AuthorityForgingString("edit:42")),
+                ("capability", AuthorityForgingString("filesystem_write")),
+                ("source_generation", AuthorityForgingString("project:stale")),
+            ):
+                with self.subTest(expert_id=expert_id, field=field):
+                    receipt = {
+                        "receipt_id": "edit:42",
+                        "capability": "filesystem_write",
+                        "source_generation": "project:8",
+                    }
+                    receipt[field] = value
+                    self._invoke(
+                        expert_id,
+                        "repair.apply",
+                        {
+                            "repair": {"replacement": "(print 1)"},
+                            "expected_preimage": "(print 1",
+                            "source_generation": "project:8",
+                        },
+                        successful_apply_outcome(expert_id, receipt=receipt),
+                    )
 
 
 if __name__ == "__main__":
