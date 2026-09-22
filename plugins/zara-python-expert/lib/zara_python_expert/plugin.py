@@ -25,6 +25,7 @@ MAX_TIMEOUT_MS = 3000
 MAX_RESULTS = 32
 MAX_GENERATION = 2_147_483_647
 MAX_EVIDENCE_REFS = 32
+MAX_EVIDENCE_REF_LENGTH = 128
 MAX_STRING_LENGTH = 4096
 REQUEST_ID_RE = re.compile(r"^[!-~]{1,128}$")
 ACTIVATION_ID_RE = re.compile(r"^act:[a-f0-9]{32}$")
@@ -270,7 +271,10 @@ def _validate_result(result: Mapping[str, object], *, request_id: str, activatio
     if receipts:
         raise PythonExpertAdapterError("read-only-effect-leak")
     evidence = result.get("evidence_refs")
-    if type(evidence) not in (list, tuple) or len(evidence) > MAX_EVIDENCE_REFS or any(type(item) is not str for item in evidence):
+    if type(evidence) is not list or len(evidence) > MAX_EVIDENCE_REFS or any(
+        type(item) is not str or not item or len(item) > MAX_EVIDENCE_REF_LENGTH
+        for item in evidence
+    ):
         raise PythonExpertAdapterError("invalid-expert-evidence")
     if verdict == "cancelled" and evidence:
         raise PythonExpertAdapterError("cancelled-expert-output-leak")
