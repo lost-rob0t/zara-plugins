@@ -119,6 +119,17 @@ def _reject_json_constant(_value: str) -> None:
     raise ValueError("non-finite JSON number")
 
 
+def _reject_duplicate_object_pairs(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    value: dict[str, object] = {}
+    for key, child in pairs:
+        if key in value:
+            raise BashExpertAdapterError("ambiguous-input-json")
+        value[key] = child
+    return value
+
+
 def _validate_json_tree(value: object) -> None:
     stack: list[tuple[object, int]] = [(value, 1)]
     nodes = 0
@@ -377,7 +388,11 @@ class ZaraBashExpertPlugin(ServicePlugin):
         if len(input_json.encode("utf-8")) > MAX_INPUT_BYTES:
             raise BashExpertAdapterError("input-too-large")
         try:
-            value = json.loads(input_json, parse_constant=_reject_json_constant)
+            value = json.loads(
+                input_json,
+                parse_constant=_reject_json_constant,
+                object_pairs_hook=_reject_duplicate_object_pairs,
+            )
         except (TypeError, ValueError) as error:
             raise BashExpertAdapterError("invalid-input-json") from error
         if not isinstance(value, dict):
