@@ -33,7 +33,7 @@ INVOCATION_ID_RE = re.compile(r"^inv:[a-f0-9]{32}$")
 RESULT_VERDICTS = frozenset({"succeeded", "failed", "unknown", "blocked", "unsupported", "cancelled", "error"})
 RESULT_ERROR_CODES = frozenset({"invalid_input", "ambiguity", "unsupported_operation", "unsupported_backend", "incompatible_protocol", "denied", "approval_required", "stale_generation", "unavailable", "deadline_exceeded", "budget_exceeded", "cancelled", "interrupted", "unknown_external_outcome"})
 RESULT_FIELDS = frozenset({"protocol", "request_id", "invocation_id", "activation_id", "expert_id", "expert_version", "manifest_digest", "expert_operation", "resolved_registry_generation", "resolved_runtime_generation", "verdict", "data", "evidence_refs", "usage", "effect_receipts", "error_code", "error_message", "replayed"})
-USAGE_FIELDS = frozenset({"model_calls"})
+USAGE_FIELDS = frozenset({"provider_calls", "model_calls"})
 OPERATION_FIELDS: dict[str, tuple[dict[str, object], ...]] = {
     "match": ({"name": "path", "type": "string", "required": True}, {"name": "source_generation", "type": "reference", "required": True}),
     "inspect": ({"name": "source", "type": "string", "required": True}, {"name": "source_generation", "type": "reference", "required": True}),
@@ -263,7 +263,14 @@ def _validate_result(result: Mapping[str, object], *, request_id: str, activatio
     if type(verdict) is not str or verdict not in RESULT_VERDICTS:
         raise PythonExpertAdapterError("invalid-expert-verdict")
     usage = result.get("usage")
-    if type(usage) is not dict or set(usage) != USAGE_FIELDS or type(usage.get("model_calls")) is not int or usage.get("model_calls") != 0:
+    if (
+        type(usage) is not dict
+        or set(usage) != USAGE_FIELDS
+        or type(usage.get("provider_calls")) is not int
+        or usage.get("provider_calls") != 0
+        or type(usage.get("model_calls")) is not int
+        or usage.get("model_calls") != 0
+    ):
         raise PythonExpertAdapterError("zero-model-proof-missing")
     receipts = result.get("effect_receipts")
     if type(receipts) is not list:
