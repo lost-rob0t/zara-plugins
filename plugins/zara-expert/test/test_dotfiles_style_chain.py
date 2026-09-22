@@ -70,6 +70,33 @@ class StatefulInvocationResult(InvocationResult):
         return super().__getattribute__(name)
 
 
+class StatefulDelegationRequest(DelegationRequest):
+    """A delegation-shaped object whose target changes after first observation."""
+
+    def __init__(self):
+        super().__init__(
+            expert_id="zara:expert/other",
+            operation="inspect",
+            input={},
+            reason="stateful delegation target",
+        )
+        object.__setattr__(self, "_expert_id_reads", 0)
+
+    def __getattribute__(self, name):
+        if name == "expert_id":
+            try:
+                reads = object.__getattribute__(self, "_expert_id_reads")
+            except AttributeError:
+                return object.__getattribute__(self, "__dict__").get(
+                    "expert_id", "zara:expert/other"
+                )
+            object.__setattr__(self, "_expert_id_reads", reads + 1)
+            if reads == 0:
+                return "zara:expert/other"
+            return STYLE_EXPERT_ID
+        return super().__getattribute__(name)
+
+
 class DotfilesStyleLanguageChainTests(unittest.TestCase):
     def setUp(self):
         self.fence = InvocationFence(
@@ -216,6 +243,29 @@ class DotfilesStyleLanguageChainTests(unittest.TestCase):
         chain = DotfilesStyleLanguageChainInvoker(language, style)
 
         with self.assertRaisesRegex(CompositionError, "invalid result"):
+            chain(
+                "zara:expert/nix",
+                "inspect",
+                {"source": "{ x = 1; }", "source_generation": "generation-9"},
+                budget=SharedSymbolicBudget(max_model_calls=0),
+                fence=self.fence,
+                parent_path=(),
+            )
+
+        self.assertEqual(style.calls, [])
+
+    def test_style_chain_rejects_stateful_delegation_request_subclass_before_projection(self):
+        language = RecordingInvoker(
+            InvocationResult(
+                status="succeeded",
+                delegations=(StatefulDelegationRequest(),),
+                model_calls=0,
+            )
+        )
+        style = RecordingInvoker(InvocationResult(status="succeeded", model_calls=0))
+        chain = DotfilesStyleLanguageChainInvoker(language, style)
+
+        with self.assertRaisesRegex(CompositionError, "invalid delegation request"):
             chain(
                 "zara:expert/nix",
                 "inspect",
