@@ -79,7 +79,7 @@ class BashExpertPluginTests(unittest.TestCase):
         self.assertEqual(descriptor["protocol"], "ZARA-EXPERT/1")
         self.assertEqual(descriptor["expert_id"], "zara:expert/bash")
         self.assertEqual(descriptor["manifest_digest"], EXPECTED_MANIFEST_DIGEST)
-        self.assertEqual(descriptor["source_reference"], "source:dotfiles-bash-expert-v1")
+        self.assertEqual(descriptor["source_reference"], "dotfiles:.zara/experts/bash")
         self.assertEqual(descriptor["reasoning_kind"], "symbolic")
         self.assertEqual(descriptor["fallback_policy"], "fail_closed")
         self.assertEqual(descriptor["delegation_policy"], "never")
@@ -87,7 +87,7 @@ class BashExpertPluginTests(unittest.TestCase):
         self.assertEqual(descriptor["supported_engines"], ["swipl"])
         self.assertEqual(
             descriptor["applicability"],
-            {"keywords": ["bash", "bashrc", "quoting", "shell"]},
+            {"keywords": ["bash", "shell", "sh"]},
         )
         self.assertNotIn("placement", descriptor)
         self.assertNotIn("required_observations", descriptor)
