@@ -10,9 +10,24 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import tempfile
+import types
 from pathlib import Path
 from typing import Any
+
+
+_ZARA_CORE_ROOT = os.environ.get("ZARA_CURRENT_CORE_ROOT")
+if _ZARA_CORE_ROOT:
+    sys.path.insert(0, str(Path(_ZARA_CORE_ROOT).resolve()))
+    from zara.principals import PrincipalContext
+
+    # Conversation persistence only needs the authenticated principal type.  Keep
+    # this acceptance on the canonical conversation owner without importing the
+    # unrelated LangGraph/provider server stack.
+    server_facade = types.ModuleType("zara.server")
+    server_facade.PrincipalContext = PrincipalContext
+    sys.modules["zara.server"] = server_facade
 
 from tests import test_nix_bash_durable_persistence_e2e as durable
 
