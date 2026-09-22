@@ -81,6 +81,21 @@ def invoke_verify(expert_id, result, *, source_generation="project:4", candidate
     return node, registry, budget
 
 
+class StatefulPostcondition(dict):
+    """A non-canonical Mapping can change receipt identity after validation."""
+
+    def __init__(self, values):
+        super().__init__(values)
+        self._source_generation_reads = 0
+
+    def get(self, key, default=None):
+        if key == "source_generation":
+            self._source_generation_reads += 1
+            if self._source_generation_reads > 1:
+                return "project:stale"
+        return super().get(key, default)
+
+
 class LispVerifyPostconditionProjectionTests(unittest.TestCase):
     def setUp(self):
         self.expert_id = "zara:expert/common-lisp"
@@ -136,6 +151,58 @@ class LispVerifyPostconditionProjectionTests(unittest.TestCase):
         self.assertEqual(len(registry.calls), 1)
         self.assertEqual(registry.calls[0]["limits"].max_model_calls, 0)
         self.assertEqual(budget.model_calls_used, 0)
+
+    def test_core_verify_success_rejects_stateful_postcondition_mapping_subclasses(self):
+        dialect_cases = (
+            (
+                "zara:expert/common-lisp",
+                "sbcl_fresh_reader_and_compile_evidence",
+                "common-lisp-project-4",
+                "common-lisp:verify_repair/3",
+            ),
+            (
+                "zara:expert/emacs-lisp",
+                "emacs_fresh_reader_and_byte_compile_evidence",
+                "emacs-lisp-project-4",
+                "emacs-lisp:verify_repair/3",
+            ),
+        )
+        for expert_id, required_postcondition, receipt_suffix, trace in dialect_cases:
+            with self.subTest(expert_id=expert_id):
+                receipt_ref = (
+                    "zara.verified-outcome/v1:outcome:postcondition/" + receipt_suffix
+                )
+                postcondition = StatefulPostcondition(
+                    {
+                        "receipt_ref": receipt_ref,
+                        "required_postcondition": required_postcondition,
+                        "source_generation": self.source_generation,
+                        "candidate_sha256": self.candidate_sha256,
+                    }
+                )
+                data = {
+                    "result": {
+                        "ok": True,
+                        "results": [
+                            "verified(false)",
+                            f"required_postcondition({required_postcondition})",
+                        ],
+                        "trace": [trace],
+                    },
+                    "verified": True,
+                    "verified_outcome_ref": receipt_ref,
+                    "postcondition_evidence": postcondition,
+                }
+                with self.assertRaisesRegex(
+                    CompositionError,
+                    "postcondition evidence must be a built-in dict",
+                ):
+                    invoke_verify(
+                        expert_id,
+                        core_result(data=data, evidence_refs=(receipt_ref,)),
+                        source_generation=self.source_generation,
+                        candidate=self.candidate,
+                    )
 
     def test_core_verify_success_rejects_mismatched_candidate_digest(self):
         data = dict(self.successful_result().data)
