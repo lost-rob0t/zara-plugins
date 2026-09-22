@@ -549,7 +549,7 @@ class ZaraKotlinExpertPlugin(ServicePlugin):
             raise
         except Exception as error:
             raise KotlinExpertAdapterError("expert-host-invocation-failed") from error
-        if not isinstance(result, Mapping):
+        if type(result) is not dict:
             raise KotlinExpertAdapterError("invalid-expert-result")
         _validate_result(
             result,
