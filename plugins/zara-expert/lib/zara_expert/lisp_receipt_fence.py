@@ -7,11 +7,20 @@ from . import lisp_composition as _base
 from .composition import CompositionError
 
 
+_RECEIPT_AUTHORITY_STRING_FIELDS = frozenset(
+    {
+        "receipt_id",
+        "capability",
+        "source_generation",
+    }
+)
+
+
 def _guard_receipt_object(receipt: Mapping[Any, Any], label: str) -> None:
-    """Reject custom mapping/string semantics at the Core receipt boundary.
+    """Reject custom mapping/scalar semantics at the Core receipt boundary.
 
     The canonical Core validator owns receipt schema and lineage rules. This
-    guard only prevents Python mapping/string subclasses from overriding lookup,
+    guard only prevents Python mapping/scalar objects from overriding lookup,
     iteration, hashing, or equality while those existing rules compare the
     canonical effect receipt with its projected copy and source generation.
     """
@@ -24,6 +33,16 @@ def _guard_receipt_object(receipt: Mapping[Any, Any], label: str) -> None:
             raise CompositionError(f"{label} keys must be built-in strings")
         if isinstance(value, str) and type(value) is not str:
             raise CompositionError(f"{label} string values must be built-in strings")
+
+    # These fields participate directly in receipt identity/authority lineage.
+    # Do not let an arbitrary non-string object provide forged equality at the
+    # canonical-vs-projected receipt or request-generation comparisons. Presence
+    # and full schema remain Core-owned; this fence only narrows host scalar type.
+    for field in _RECEIPT_AUTHORITY_STRING_FIELDS:
+        if field in receipt and type(receipt[field]) is not str:
+            raise CompositionError(
+                f"{label} {field} must be a built-in string"
+            )
 
 
 def _guard_core_effect_receipts(outcome: Any) -> None:
