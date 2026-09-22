@@ -115,6 +115,10 @@ class DotfilesStyleLanguageChainInvoker:
             raise CompositionError("Dotfiles style-chain invoker returned invalid result")
         if result.model_calls != 0:
             raise CompositionError("Dotfiles style-chain child attempted model use")
+        if any(type(child) is not DelegationRequest for child in result.delegations):
+            raise CompositionError(
+                "Dotfiles style-chain child returned invalid delegation request"
+            )
         return result
 
 
