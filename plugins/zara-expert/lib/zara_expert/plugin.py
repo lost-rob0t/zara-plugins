@@ -30,6 +30,7 @@ from .lisp_family import (
     register_lisp_family,
 )
 from .lisp_source_contract import validate_lisp_source_contracts
+from .strange_loop import StrangeLoopConfig, StrangeLoopManager
 
 
 PLUGIN_VERSION = "0.1.0"
@@ -56,9 +57,11 @@ class ZaraExpertPlugin(ServicePlugin):
         if backend is None:
             backend = SwiplBackend() if SwiplBackend.available() else UnavailableExpertBackend()
         self.backend = backend
+        self._state_root = root
         self.host = ExpertHost(self.backend, state_root=root)
         self._registered_lisp_experts: frozenset[str] = frozenset()
         self._registered_language_experts: frozenset[str] = frozenset()
+        self._strange_loop_manager: StrangeLoopManager | None = None
 
     @staticmethod
     def _plugin_section(configuration: Mapping[str, Any] | object) -> Mapping[str, Any]:
@@ -91,6 +94,14 @@ class ZaraExpertPlugin(ServicePlugin):
             raise ExpertError("language_expert_sources must be a mapping")
         return sources
 
+    @classmethod
+    def _strange_loop_config(
+        cls,
+        configuration: Mapping[str, Any] | object,
+    ) -> StrangeLoopConfig:
+        section = cls._plugin_section(configuration)
+        return StrangeLoopConfig.from_mapping(section.get("strange_loop"))
+
     def _preflight_language_authority(
         self,
         sources: Mapping[str, Iterable[str | Path]],
@@ -112,6 +123,15 @@ class ZaraExpertPlugin(ServicePlugin):
     def start(self, runtime) -> None:
         lisp_sources = self._lisp_sources(runtime.configuration)
         language_sources = self._language_sources(runtime.configuration)
+        strange_loop_config = self._strange_loop_config(runtime.configuration)
+        if (
+            strange_loop_config.enabled
+            and strange_loop_config.background
+            and not callable(getattr(runtime, "start_worker", None))
+        ):
+            raise ExpertError(
+                "enabled background strange loop requires PluginRuntime.start_worker"
+            )
 
         # Validate every configured brain ABI/policy and existing language
         # authority before mutating any expert namespace. A bad later source
@@ -131,7 +151,30 @@ class ZaraExpertPlugin(ServicePlugin):
         register_lisp_descriptor_symbols(runtime, self._registered_lisp_experts)
         register_language_descriptor_symbols(runtime, self._registered_language_experts)
 
+        manager = StrangeLoopManager(
+            ExpertHost(
+                self.backend,
+                state_root=self._state_root / "strange-loop-private",
+            ),
+            strange_loop_config,
+        )
+        self._strange_loop_manager = manager
+        try:
+            manager.start(runtime)
+        except Exception:
+            manager.stop()
+            self._strange_loop_manager = None
+            self.host.clear_registrations()
+            self._registered_lisp_experts = frozenset()
+            self._registered_language_experts = frozenset()
+            raise
+
     def stop(self) -> None:
+        manager = self._strange_loop_manager
+        self._strange_loop_manager = None
+        if manager is not None:
+            manager.stop()
+
         # Plugin stop is a capability-revocation boundary. Clear registered
         # predicate authority before dropping the descriptor bookkeeping so a
         # handler captured before stop cannot keep invoking a stale brain.
@@ -153,9 +196,40 @@ class ZaraExpertPlugin(ServicePlugin):
                 "backend": "swipl" if isinstance(self.backend, SwiplBackend) else "custom",
                 "lisp_family": sorted(self._registered_lisp_experts),
                 "language_family": sorted(self._registered_language_experts),
+                "strange_loop": (
+                    self._strange_loop_manager.status()
+                    if self._strange_loop_manager is not None
+                    else {
+                        "enabled": False,
+                        "background": False,
+                        "status": "disabled",
+                        "registered": False,
+                        "tick_count": 0,
+                        "error_count": 0,
+                        "source_count": 0,
+                        "max_iterations": 8,
+                        "max_candidates": 16,
+                        "min_improvement": 0.0,
+                        "model_calls": 0,
+                    }
+                ),
                 "model_calls": 0,
             }
         )
+
+    def register_strange_loop_hook(self, stage: str, callback) -> None:
+        """Register one trusted local observer for management-loop lifecycle."""
+        manager = self._strange_loop_manager
+        if manager is None:
+            raise ExpertError("strange loop is not configured")
+        manager.register_hook(stage, callback)
+
+    def strange_loop_tick(self) -> dict[str, Any]:
+        """Run one trusted management tick; intentionally not a StructuredTool."""
+        manager = self._strange_loop_manager
+        if manager is None:
+            raise ExpertError("strange loop is not configured")
+        return manager.tick_once()
 
     def register_namespace(
         self,
