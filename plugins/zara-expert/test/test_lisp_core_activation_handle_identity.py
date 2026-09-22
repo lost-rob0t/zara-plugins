@@ -10,7 +10,8 @@ from zara_expert import CoreLispFamilyCompositionInvoker
 from zara_expert.composition import CompositionError, InvocationFence, SharedSymbolicBudget
 
 
-DIALECT_EXPERTS = (
+LISP_EXPERTS = (
+    "zara:expert/lisp",
     "zara:expert/common-lisp",
     "zara:expert/emacs-lisp",
 )
@@ -83,7 +84,7 @@ class LispCoreActivationHandleIdentityTests(unittest.TestCase):
         self.assertEqual(budget.model_calls_used, 0)
 
     def test_rejects_forged_activation_expert_identity_before_core_invoke(self):
-        for expert_id in DIALECT_EXPERTS:
+        for expert_id in LISP_EXPERTS:
             with self.subTest(expert_id=expert_id):
                 handle = SimpleNamespace(
                     expert_id=ForgedText("zara:expert/not-the-requested-expert"),
@@ -92,7 +93,7 @@ class LispCoreActivationHandleIdentityTests(unittest.TestCase):
                 self._assert_rejected_before_core_invoke(expert_id, handle)
 
     def test_rejects_forged_activation_workspace_before_core_invoke(self):
-        for expert_id in DIALECT_EXPERTS:
+        for expert_id in LISP_EXPERTS:
             with self.subTest(expert_id=expert_id):
                 handle = SimpleNamespace(
                     expert_id=expert_id,
