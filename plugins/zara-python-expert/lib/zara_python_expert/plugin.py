@@ -218,7 +218,7 @@ class ZaraPythonExpertPlugin(ServicePlugin):
             "name": EXPERT_NAME, "description": "Pure-symbolic PythonExpert product adapter",
             "source_reference": SOURCE_REFERENCE, "reasoning_kind": "symbolic",
             "operations": [_operation_descriptor(operation) for operation in sorted(ALLOWED_OPERATIONS)],
-            "applicability": {"extensions": list(LANGUAGE_BOUNDARIES["extensions"]), "keywords": list(LANGUAGE_BOUNDARIES["applicability_keywords"])},
+            "applicability": {"keywords": list(LANGUAGE_BOUNDARIES["applicability_keywords"])},
             "required_capabilities": [HOST_CAPABILITY], "possible_effects": ["none"],
             "supported_engines": ["swipl"], "supported_platforms": ["desktop", "server", "android"],
             "fallback_policy": "fail_closed", "delegation_policy": "never",
