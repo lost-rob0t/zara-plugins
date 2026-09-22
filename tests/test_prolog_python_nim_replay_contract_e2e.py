@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
@@ -14,6 +15,7 @@ from tests import test_prolog_python_nim_surface_parity_e2e as surface
 from tests import test_prolog_python_nim_typed_persistence_e2e as typed
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
 DOTFILES_ROOT = os.environ.get("ZARA_DOTFILES_ROOT")
 ZARA_CORE_ROOT = os.environ.get("ZARA_CORE_ROOT")
 EXPECTED_DOTFILES_COMMIT = "3309c54ecb5f65c29374de6c60d2135a9ea2f94b"
@@ -21,11 +23,108 @@ EXPECTED_ZARA_CORE_COMMIT = "af7185ee48def384783002332262412e9674343e"
 _PROJECT_A = "workspace:prolog-python-nim:replay:A"
 _SYMBOLIC_RENDERER = "symbolic-dcg/v1"
 _PROVIDER_CREDENTIALS = surface._PROVIDER_CREDENTIALS
+_PROVENANCE_PREFIX = "evidence:expert-provenance:sha256:"
+_PRODUCT_CASES = {
+    "prolog": ("zara-prolog-expert", "zara_prolog_expert", "p(x)."),
+    "python": ("zara-python-expert", "zara_python_expert", "x = 1"),
+    "nim": ("zara-nim-expert", "zara_nim_expert", "let x = 1"),
+}
+
+
+def _load_product_adapter(language: str):
+    package, module_name, _source = _PRODUCT_CASES[language]
+    path = REPO_ROOT / "plugins" / package / "lib" / module_name / "plugin.py"
+    spec = importlib.util.spec_from_file_location(
+        f"prolog_python_nim_replay_{module_name}",
+        path,
+    )
+    if spec is None or spec.loader is None:
+        raise AssertionError(f"cannot load product adapter: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class _ProductRuntime:
+    def __init__(self, module, invocation_hex: str) -> None:
+        self.module = module
+        self.invocation_hex = invocation_hex
+        self.requests: list[dict[str, object]] = []
+
+    def resolve_capability(self, capability: str) -> str:
+        if capability != "expert.invoke":
+            raise AssertionError(f"unexpected product capability: {capability}")
+        return capability
+
+    def invoke_capability(self, _handle: str, request: dict[str, object]) -> dict[str, object]:
+        self.requests.append(request)
+        return {
+            "protocol": self.module.PROTOCOL,
+            "request_id": request["request_id"],
+            "invocation_id": "inv:" + self.invocation_hex,
+            "activation_id": request["activation_id"],
+            "expert_id": self.module.EXPERT_ID,
+            "expert_version": self.module.PLUGIN_VERSION,
+            "manifest_digest": self.module.MANIFEST_DIGEST,
+            "expert_operation": request["expert_operation"],
+            "resolved_registry_generation": request["expected_registry_generation"],
+            "resolved_runtime_generation": request["expected_runtime_generation"],
+            "verdict": "succeeded",
+            "data": {"result": {"language": self.module.LANGUAGE_BOUNDARIES["language"]}},
+            "evidence_refs": [f"fixture:host:{self.module.LANGUAGE_BOUNDARIES['language']}"],
+            "usage": {"model_calls": 0},
+            "effect_receipts": [],
+            "error_code": None,
+            "error_message": "",
+            "replayed": False,
+        }
+
+
+def _serialized_product_provenance_refs() -> dict[str, str]:
+    refs: dict[str, str] = {}
+    for offset, language in enumerate(("prolog", "python", "nim"), start=1):
+        module = _load_product_adapter(language)
+        runtime = _ProductRuntime(module, f"{offset:032x}")
+        plugin = module.create_plugin()
+        plugin.start(runtime)
+        _package, _module_name, source = _PRODUCT_CASES[language]
+        encoded = plugin.invoke(
+            f"req-product-replay-{language}",
+            "act:" + f"{offset:032x}",
+            "inspect",
+            1,
+            1,
+            json.dumps(
+                {
+                    "source": source,
+                    "source_generation": f"source:product-replay:{language}:1",
+                }
+            ),
+        )
+        projected = json.loads(encoded)
+        provenance = [
+            ref
+            for ref in projected["evidence_refs"]
+            if ref.startswith(_PROVENANCE_PREFIX)
+        ]
+        if len(provenance) != 1:
+            raise AssertionError(
+                f"{module.EXPERT_ID} must serialize exactly one verified provenance ref"
+            )
+        if projected["usage"] != {"model_calls": 0}:
+            raise AssertionError(f"{module.EXPERT_ID} widened the model ledger")
+        if projected["effect_receipts"]:
+            raise AssertionError(f"{module.EXPERT_ID} leaked an effect receipt")
+        if runtime.requests[0]["limits"]["max_model_calls"] != 0:
+            raise AssertionError(f"{module.EXPERT_ID} widened the model budget")
+        refs[module.EXPERT_ID] = provenance[0]
+    return refs
 
 
 def _canonical_typed_evidence(
     chain_evidence: list[dict[str, Any]],
     explanations: dict[str, dict[str, Any]],
+    provenance_refs: dict[str, str],
 ) -> list[dict[str, Any]]:
     evidence: list[dict[str, Any]] = []
     for item in chain_evidence:
@@ -37,6 +136,10 @@ def _canonical_typed_evidence(
             raise AssertionError("typed replay evidence widened the model budget")
         if not entry["evidence_refs"]:
             raise AssertionError("typed replay evidence must retain canonical evidence refs")
+        provenance_ref = provenance_refs[entry["expert_id"]]
+        if provenance_ref in entry["evidence_refs"]:
+            raise AssertionError("host evidence already contains product provenance identity")
+        entry["evidence_refs"] = [*entry["evidence_refs"], provenance_ref]
         evidence.append(entry)
     return sorted(evidence, key=lambda item: item["expert_id"])
 
@@ -115,8 +218,17 @@ class PrologPythonNimReplayContractE2ETests(unittest.TestCase):
             surface_case,
             root / "expert-state-explain",
         )
+        product_provenance = _serialized_product_provenance_refs()
+        self.assertEqual(
+            set(product_provenance),
+            {"zara:expert/prolog", "zara:expert/python", "zara:expert/nim"},
+        )
         helper._assert_android_contract()
-        typed_evidence = _canonical_typed_evidence(chain_evidence, explanations)
+        typed_evidence = _canonical_typed_evidence(
+            chain_evidence,
+            explanations,
+            product_provenance,
+        )
 
         database_path = root / "conversation.db"
         database = surface.DatabaseManager(database_path)
@@ -216,6 +328,12 @@ class PrologPythonNimReplayContractE2ETests(unittest.TestCase):
             self.assertTrue(entry["explanation"]["trace"])
             self.assertNotIn("result", entry)
             self.assertEqual(entry["model_calls"], 0)
+            provenance = [
+                ref
+                for ref in entry["evidence_refs"]
+                if ref.startswith(_PROVENANCE_PREFIX)
+            ]
+            self.assertEqual(provenance, [product_provenance[entry["expert_id"]]])
 
         android = typed._android_twin(recovered)
         self.assertEqual(json.loads(android["expertEvidenceJson"]), projection["expert_evidence"])
@@ -224,6 +342,14 @@ class PrologPythonNimReplayContractE2ETests(unittest.TestCase):
         self.assertEqual(android["providerCalls"], projection["provider_calls"])
         self.assertEqual(android["modelCalls"], projection["model_calls"])
         self.assertEqual(android["rendererProvenance"], projection["renderer_provenance"])
+        android_evidence = json.loads(android["expertEvidenceJson"])
+        for entry in android_evidence:
+            provenance = [
+                ref
+                for ref in entry["evidence_refs"]
+                if ref.startswith(_PROVENANCE_PREFIX)
+            ]
+            self.assertEqual(provenance, [product_provenance[entry["expert_id"]]])
         reopened_database.close()
 
 
