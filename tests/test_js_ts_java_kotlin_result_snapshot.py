@@ -160,7 +160,10 @@ class JsTsJavaKotlinResultSnapshotTests(unittest.TestCase):
                 projected = json.loads(_invoke(module, runtime, source))
                 self.assertEqual(projected["usage"], {"model_calls": 0})
                 self.assertEqual(projected["effect_receipts"], [])
-                self.assertEqual(projected["evidence_refs"], ["fixture:evidence"])
+                self.assertEqual(
+                    projected["evidence_refs"],
+                    ["fixture:evidence", module._provenance_evidence_ref()],
+                )
                 self.assertEqual(runtime.requests[0]["limits"]["max_model_calls"], 0)
 
 
