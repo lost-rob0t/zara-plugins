@@ -50,7 +50,7 @@ class LanguageHandlerTests(unittest.TestCase):
         path.write_text("% canonical-language-brain-fixture\n", encoding="utf-8")
         return path
 
-    def test_core_handler_uses_host_owned_operation_and_exact_zero_model_ledger(self):
+    def test_core_handler_uses_host_owned_operation_and_exact_zero_usage_ledger(self):
         register_language_family(self.host, {"python": [self._brain("python")]})
         handler = make_language_expert_handler(self.host, "zara:expert/python")
 
@@ -66,7 +66,10 @@ class LanguageHandlerTests(unittest.TestCase):
         )
 
         self.assertEqual(outcome["verdict"], "succeeded")
-        self.assertEqual(outcome["usage"], {"model_calls": 0})
+        self.assertEqual(
+            outcome["usage"],
+            {"provider_calls": 0, "model_calls": 0},
+        )
         self.assertEqual(outcome["effect_receipts"], [])
         self.assertEqual(len(outcome["evidence_refs"]), 1)
         self.assertTrue(
@@ -98,7 +101,10 @@ class LanguageHandlerTests(unittest.TestCase):
         )
 
         self.assertEqual(outcome["verdict"], "unknown")
-        self.assertEqual(outcome["usage"], {"model_calls": 0})
+        self.assertEqual(
+            outcome["usage"],
+            {"provider_calls": 0, "model_calls": 0},
+        )
         self.assertEqual(outcome["effect_receipts"], [])
         self.assertEqual(outcome["evidence_refs"], [])
         self.assertEqual(outcome["data"], {})
@@ -114,7 +120,10 @@ class LanguageHandlerTests(unittest.TestCase):
             project_style="style:project-v3",
         )
 
-        self.assertEqual(outcome["usage"], {"model_calls": 0})
+        self.assertEqual(
+            outcome["usage"],
+            {"provider_calls": 0, "model_calls": 0},
+        )
         call = self.backend.calls[-1]
         self.assertEqual(call["capability"].predicate, "language_style_rules")
         self.assertEqual(
@@ -152,7 +161,10 @@ class LanguageHandlerTests(unittest.TestCase):
         )
 
         self.assertEqual(outcome["verdict"], "blocked")
-        self.assertEqual(outcome["usage"], {"model_calls": 0})
+        self.assertEqual(
+            outcome["usage"],
+            {"provider_calls": 0, "model_calls": 0},
+        )
         self.assertEqual(outcome["effect_receipts"], [])
         self.assertEqual(outcome["data"]["reason"], "canonical-typed-edit-required")
         self.assertEqual(self.backend.calls, [])
