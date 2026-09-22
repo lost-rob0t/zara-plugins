@@ -89,8 +89,9 @@ def _expected_provenance_ref(module) -> str:
 
 
 class _Runtime:
-    def __init__(self, module) -> None:
+    def __init__(self, module, evidence_refs: list[str] | None = None) -> None:
         self.module = module
+        self.evidence_refs = list(evidence_refs or ["fixture:evidence"])
         self.requests: list[dict[str, object]] = []
 
     def resolve_capability(self, capability: str) -> str:
@@ -113,7 +114,7 @@ class _Runtime:
             "resolved_runtime_generation": request["expected_runtime_generation"],
             "verdict": "succeeded",
             "data": {"result": {"language": self.module.LANGUAGE_BOUNDARIES["language"]}},
-            "evidence_refs": ["fixture:evidence"],
+            "evidence_refs": list(self.evidence_refs),
             "usage": {"model_calls": 0},
             "effect_receipts": [],
             "error_code": None,
@@ -198,6 +199,32 @@ class PrologPythonNimResultSnapshotTests(unittest.TestCase):
                 finally:
                     module.SOURCE_REFERENCE = original_source
                     module.UPSTREAM_CONTRACT = original_upstream
+
+    def test_host_cannot_claim_verified_provenance_namespace(self) -> None:
+        for module, error_type, source in CASES:
+            expected_ref = _expected_provenance_ref(module)
+            hostile_evidence_sets = (
+                [
+                    "fixture:evidence",
+                    "evidence:expert-provenance:sha256:" + ("0" * 64),
+                ],
+                ["fixture:evidence", expected_ref, expected_ref],
+            )
+            for evidence_refs in hostile_evidence_sets:
+                with self.subTest(
+                    expert_id=module.EXPERT_ID,
+                    evidence_refs=evidence_refs,
+                ):
+                    runtime = _Runtime(module, evidence_refs=evidence_refs)
+                    with self.assertRaisesRegex(
+                        error_type,
+                        "provenance-evidence-namespace-conflict",
+                    ):
+                        _invoke(module, runtime, source)
+                    self.assertEqual(
+                        runtime.requests[0]["limits"]["max_model_calls"],
+                        0,
+                    )
 
     def test_unmutated_result_remains_zero_model_and_read_only(self) -> None:
         for module, _error_type, source in CASES:
