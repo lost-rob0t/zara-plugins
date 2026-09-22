@@ -1,0 +1,41 @@
+name: Nix Bash Package Host Contract
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/zara-nix-expert/**'
+      - 'plugins/zara-bash-expert/**'
+      - 'plugins/zara-expert/**'
+      - 'tests/test_nix_bash_package_host_contract.py'
+      - '.github/workflows/nix-bash-package-host-contract.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-bash-package-host-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-host-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Prove packages reuse canonical zara-expert operation contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          env \
+            -u OPENAI_API_KEY \
+            -u ANTHROPIC_API_KEY \
+            -u OPENROUTER_API_KEY \
+            -u GOOGLE_API_KEY \
+            -u GEMINI_API_KEY \
+            -u GROQ_API_KEY \
+            -u ZAI_API_KEY \
+            -u AZURE_OPENAI_API_KEY \
+            -u HF_TOKEN \
+            python3 -m unittest discover -s tests -t . -p 'test_nix_bash_package_host_contract.py'
