@@ -30,6 +30,13 @@ from .dotfiles_family import (
 )
 from .dotfiles_handler import make_dotfiles_expert_handler
 from .dotfiles_style import DotfilesStyleSource, style_sources_for_language
+from .dotfiles_style_chain import DotfilesStyleLanguageChainInvoker
+from .dotfiles_style_expert import (
+    DotfilesStyleComposition,
+    DotfilesStyleCompositionInvoker,
+    compose_dotfiles_style,
+    register_dotfiles_style_expert,
+)
 from .language_composition import (
     CoreLanguageFamilyCompositionInvoker,
     LanguageFamilyCompositionInvoker,
@@ -64,6 +71,9 @@ __all__ = [
     "CoreLispFamilyCompositionInvoker",
     "DelegationRequest",
     "DotfilesExpertSourceAdapter",
+    "DotfilesStyleComposition",
+    "DotfilesStyleCompositionInvoker",
+    "DotfilesStyleLanguageChainInvoker",
     "DotfilesStyleSource",
     "EffectiveStyle",
     "EvidenceNode",
@@ -83,9 +93,11 @@ __all__ = [
     "StyleOverlay",
     "StyleOverlayResolution",
     "StyleScope",
+    "compose_dotfiles_style",
     "dotfiles_descriptor",
     "make_dotfiles_expert_handler",
     "register_dotfiles_expert",
+    "register_dotfiles_style_expert",
     "resolve_style",
     "style_sources_for_language",
 ]
