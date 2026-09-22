@@ -713,6 +713,21 @@ class ZaraKotlinExpertPlugin(ServicePlugin):
             registry_generation=registry_generation,
             runtime_generation=runtime_generation,
         )
+        try:
+            owned_encoded = self._json(result)
+            result = json.loads(owned_encoded, parse_constant=_reject_json_constant)
+        except (TypeError, ValueError, RecursionError) as error:
+            raise KotlinExpertAdapterError("invalid-expert-result-json") from error
+        if type(result) is not dict:
+            raise KotlinExpertAdapterError("invalid-expert-result")
+        _validate_result(
+            result,
+            request_id=request_id,
+            activation_id=activation_id,
+            expert_operation=expert_operation,
+            registry_generation=registry_generation,
+            runtime_generation=runtime_generation,
+        )
         if result["verdict"] == "succeeded":
             evidence = result["evidence_refs"]
             if any(item.startswith("evidence:expert-provenance:sha256:") for item in evidence):
