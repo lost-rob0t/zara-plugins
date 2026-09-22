@@ -52,6 +52,9 @@ class DotfilesStyleLanguageChainInvoker:
         budget.assert_zero_model_usage()
         fence.check()
 
+        if type(expert_id) is not str or type(operation) is not str:
+            raise CompositionError("Dotfiles style-chain route identity must use exact text")
+
         if expert_id == STYLE_EXPERT_ID:
             result = self._style_invoker(
                 expert_id,
