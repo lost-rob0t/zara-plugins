@@ -30,7 +30,7 @@ class ForgedText(str):
 
 
 class ForgedInt(int):
-    """Integer-shaped activation generation with caller-controlled equality."""
+    """Integer-shaped activation generation that lies about equality."""
 
     def __eq__(self, other):
         del other
