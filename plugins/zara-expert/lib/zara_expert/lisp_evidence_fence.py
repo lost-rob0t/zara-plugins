@@ -218,31 +218,38 @@ def _guard_core_repair_input_wire(
 ) -> None:
     """Fence repair authority inputs before activation/Core invocation.
 
-    This validates only host-language wire identity. Zara Core remains the owner
-    of edit schema, approval, capability execution, generation checks, and fresh
-    postcondition verification; Prolog-RLM remains the Lisp parser/repair owner.
+    The existing payload validator owns shape/schema errors. This fence only
+    rejects otherwise-accepted Python subclasses that can override iteration,
+    equality, or encoding at the repair authority boundary. Zara Core remains
+    the owner of edit schema, approval, capability execution, generation checks,
+    and fresh postcondition verification; Prolog-RLM remains the Lisp parser and
+    structural-repair semantic owner.
     """
 
-    if operation not in _REPAIR_OPERATIONS:
+    if type(operation) is not str or operation not in _REPAIR_OPERATIONS:
+        return
+    if not isinstance(input_data, Mapping):
         return
     if type(input_data) is not dict:
         raise CompositionError("Lisp repair input must be a built-in dict")
 
     if operation == "repair.verify":
         arguments = input_data.get("arguments", [])
+        if not isinstance(arguments, list):
+            return
         if type(arguments) is not list:
             raise CompositionError("Lisp repair.verify arguments must be a built-in list")
-        if any(type(item) is not str for item in arguments):
+        if any(isinstance(item, str) and type(item) is not str for item in arguments):
             raise CompositionError("Lisp repair.verify arguments must contain built-in strings")
         source_generation = input_data.get("source_generation")
-        if source_generation is not None and type(source_generation) is not str:
+        if isinstance(source_generation, str) and type(source_generation) is not str:
             raise CompositionError(
                 "Lisp repair.verify source_generation must be a built-in string"
             )
         return
 
     repair = input_data.get("repair")
-    if repair is not None and type(repair) is not dict:
+    if isinstance(repair, dict) and type(repair) is not dict:
         raise CompositionError("Lisp repair.apply repair must be a built-in dict")
     if type(repair) is dict and "replacement" in repair:
         replacement = repair["replacement"]
@@ -251,12 +258,12 @@ def _guard_core_repair_input_wire(
                 "Lisp repair.apply replacement must be a built-in string"
             )
     expected_preimage = input_data.get("expected_preimage")
-    if expected_preimage is not None and type(expected_preimage) is not str:
+    if isinstance(expected_preimage, str) and type(expected_preimage) is not str:
         raise CompositionError(
             "Lisp repair.apply expected_preimage must be a built-in string"
         )
     source_generation = input_data.get("source_generation")
-    if source_generation is not None and type(source_generation) is not str:
+    if isinstance(source_generation, str) and type(source_generation) is not str:
         raise CompositionError(
             "Lisp repair.apply source_generation must be a built-in string"
         )
