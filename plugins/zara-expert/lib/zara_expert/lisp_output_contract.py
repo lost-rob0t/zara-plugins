@@ -277,26 +277,35 @@ def _validate_predicate_output(
         _invalid("Lisp repair.verify postcondition_evidence must be an object")
 
 
+def _snapshot_symbolic_value(value: Any) -> Any:
+    """Recursively detach already-validated built-in symbolic containers.
+
+    This is ownership only: preserve the accepted wire values and container
+    kinds while ensuring later Core/host mutation cannot rewrite conversation
+    state after validation. Parser/reader meaning remains entirely upstream.
+    """
+
+    if type(value) is dict:
+        return {key: _snapshot_symbolic_value(item) for key, item in value.items()}
+    if type(value) is list:
+        return [_snapshot_symbolic_value(item) for item in value]
+    if type(value) is tuple:
+        return tuple(_snapshot_symbolic_value(item) for item in value)
+    return value
+
+
 def _snapshot_symbolic_result(data: dict[str, Any]) -> None:
     """Detach the validated symbolic result from late Core/host mutation.
 
     The Lisp parser/reader semantics remain upstream. This only takes ownership
-    of the already-validated built-in result object and its evidence-bearing
-    sequence fields before conversation state can persist or render it.
+    of the already-validated built-in result object recursively before
+    conversation state can persist or render it.
     """
 
     nested = data.get("result")
     if type(nested) is not dict:
         return
-
-    snapshot = dict(nested)
-    for field in ("results", "trace", "effect_receipts"):
-        value = snapshot.get(field)
-        if type(value) is list:
-            snapshot[field] = list(value)
-        elif type(value) is tuple:
-            snapshot[field] = tuple(value)
-    data["result"] = snapshot
+    data["result"] = _snapshot_symbolic_value(nested)
 
 
 def _snapshot_authority_projection(
