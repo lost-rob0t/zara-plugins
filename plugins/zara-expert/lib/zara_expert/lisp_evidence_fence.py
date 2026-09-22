@@ -37,6 +37,19 @@ def _require_string_references(value: Any, label: str) -> None:
         raise CompositionError(f"{label} must contain strings")
 
 
+def _require_plain_mapping(value: Any, label: str) -> None:
+    """Reject custom mapping semantics before repeated validation/projection.
+
+    Core and the registered Lisp host expose JSON-object result containers as
+    built-in dicts. Accepting an arbitrary Mapping lets caller-controlled get,
+    iteration, or item lookup behavior change the object between the evidence
+    fence, the canonical result validator, and durable/public projection.
+    """
+
+    if isinstance(value, Mapping) and type(value) is not dict:
+        raise CompositionError(f"{label} must be a built-in dict")
+
+
 def _require_plain_postcondition_evidence(data: Any) -> None:
     """Keep verified-outcome evidence on canonical host-language wire types.
 
@@ -66,18 +79,22 @@ def _require_plain_postcondition_evidence(data: Any) -> None:
 def _guard_handler_outcome(outcome: Any) -> None:
     if not isinstance(outcome, Mapping):
         return
+    _require_plain_mapping(outcome, "Lisp expert outcome")
 
     evidence_refs = outcome.get("evidence_refs", ())
     _require_string_references(evidence_refs, "Lisp expert evidence_refs")
-    if evidence_refs:
-        return
 
     data = outcome.get("data")
     if not isinstance(data, Mapping):
         return
+    _require_plain_mapping(data, "Lisp expert result data")
     _require_plain_postcondition_evidence(data)
+
     nested = data.get("result")
     if not isinstance(nested, Mapping):
+        return
+    _require_plain_mapping(nested, "Lisp expert nested result")
+    if evidence_refs:
         return
     _require_string_references(nested.get("trace", ()), "Lisp expert host trace")
 
@@ -87,16 +104,16 @@ def _guard_core_outcome(outcome: Any) -> None:
     _require_string_references(evidence_refs, "Core Lisp expert evidence_refs")
 
     data = getattr(outcome, "data", None)
-    if isinstance(data, Mapping):
-        _require_plain_postcondition_evidence(data)
-
-    if evidence_refs:
-        return
-
     if not isinstance(data, Mapping):
         return
+    _require_plain_mapping(data, "Core Lisp expert result data")
+    _require_plain_postcondition_evidence(data)
+
     nested = data.get("result")
     if not isinstance(nested, Mapping):
+        return
+    _require_plain_mapping(nested, "Core Lisp expert nested result")
+    if evidence_refs:
         return
     _require_string_references(nested.get("trace", ()), "Core Lisp expert host trace")
 
