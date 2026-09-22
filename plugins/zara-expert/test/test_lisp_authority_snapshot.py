@@ -164,10 +164,16 @@ class LispAuthoritySnapshotTests(unittest.TestCase):
     def test_verify_success_detaches_symbolic_result_from_late_core_mutation(self):
         for expert_id, required_postcondition in DIALECTS.items():
             with self.subTest(expert_id=expert_id):
+                nested_details = {
+                    "phase": "reader",
+                    "observations": ["balanced-after-repair"],
+                    "provenance": {"engine": "symbolic"},
+                }
                 nested_result = {
                     "ok": True,
                     "results": ["verified(false)"],
                     "trace": ["structural-check"],
+                    "details": nested_details,
                     "model_calls": 0,
                     "effect_receipts": [],
                 }
@@ -210,10 +216,22 @@ class LispAuthoritySnapshotTests(unittest.TestCase):
                 nested_result["ok"] = False
                 nested_result["results"][0] = "forged-late-result"
                 nested_result["trace"].append("forged-late-trace")
+                nested_details["phase"] = "forged-late-phase"
+                nested_details["observations"].append("forged-late-observation")
+                nested_details["provenance"]["engine"] = "forged-late-engine"
 
                 self.assertIs(result.data["result"]["ok"], True)
                 self.assertEqual(result.data["result"]["results"], ["verified(false)"])
                 self.assertEqual(result.data["result"]["trace"], ["structural-check"])
+                self.assertEqual(result.data["result"]["details"]["phase"], "reader")
+                self.assertEqual(
+                    result.data["result"]["details"]["observations"],
+                    ["balanced-after-repair"],
+                )
+                self.assertEqual(
+                    result.data["result"]["details"]["provenance"],
+                    {"engine": "symbolic"},
+                )
                 self.assertEqual(budget.model_calls_used, 0)
 
 
