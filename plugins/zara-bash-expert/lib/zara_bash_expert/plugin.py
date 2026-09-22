@@ -236,6 +236,26 @@ def _validate_source_lock() -> None:
         raise BashExpertAdapterError("source-lock-host-mismatch")
 
 
+def _provenance_evidence_ref() -> str:
+    payload = {
+        "expert_id": EXPERT_ID,
+        "expert_version": PLUGIN_VERSION,
+        "manifest_digest": MANIFEST_DIGEST,
+        "source_reference": SOURCE_REFERENCE,
+        "upstream_contract": UPSTREAM_CONTRACT,
+        "zara_contract": f"{ZARA_CONTRACT_REPOSITORY}#{ZARA_CONTRACT_ISSUE}",
+        "zara_schema_pr": ZARA_CONTRACT_SCHEMA_PR,
+    }
+    encoded = json.dumps(
+        payload,
+        allow_nan=False,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return "evidence:expert-provenance:sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
 def _reject_json_constant(_value: str) -> None:
     raise ValueError("non-finite JSON number")
 
@@ -632,6 +652,22 @@ class ZaraBashExpertPlugin(ServicePlugin):
             registry_generation=registry_generation,
             runtime_generation=runtime_generation,
         )
+        if result["verdict"] == "succeeded":
+            evidence = result["evidence_refs"]
+            provenance_ref = _provenance_evidence_ref()
+            if provenance_ref not in evidence:
+                if len(evidence) >= MAX_EVIDENCE_REFS:
+                    raise BashExpertAdapterError("provenance-evidence-budget-exceeded")
+                result = dict(result)
+                result["evidence_refs"] = [*evidence, provenance_ref]
+                _validate_result(
+                    result,
+                    request_id=request_id,
+                    activation_id=activation_id,
+                    expert_operation=expert_operation,
+                    registry_generation=registry_generation,
+                    runtime_generation=runtime_generation,
+                )
 
         try:
             encoded = self._json(result)
