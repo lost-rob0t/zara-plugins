@@ -34,8 +34,10 @@ from .language_composition import (
     CoreLanguageFamilyCompositionInvoker,
     LanguageFamilyCompositionInvoker,
 )
+from .lisp_activation_fence import install_lisp_activation_handle_type_fence
 from .lisp_evidence_fence import install_lisp_evidence_type_fence
 
+install_lisp_activation_handle_type_fence()
 install_lisp_evidence_type_fence()
 
 from .lisp_output_contract import (
