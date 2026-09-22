@@ -157,22 +157,19 @@ def _validate_activation_id(value: str) -> None:
         raise BashExpertAdapterError("invalid-activation-id")
 
 
-def _json_integer(value: int | float, field: str, minimum: int, maximum: int) -> int:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+def _json_integer(value: object, field: str, minimum: int, maximum: int) -> int:
+    if type(value) is not int:
         raise BashExpertAdapterError(f"invalid-{field}")
-    if isinstance(value, float) and (not math.isfinite(value) or not value.is_integer()):
+    if not minimum <= value <= maximum:
         raise BashExpertAdapterError(f"invalid-{field}")
-    normalized = int(value)
-    if not minimum <= normalized <= maximum:
-        raise BashExpertAdapterError(f"invalid-{field}")
-    return normalized
+    return value
 
 
-def _validate_generation(value: int | float, field: str) -> int:
+def _validate_generation(value: object, field: str) -> int:
     return _json_integer(value, field, 0, MAX_GENERATION)
 
 
-def _validate_limit(value: int | float, field: str, maximum: int) -> int:
+def _validate_limit(value: object, field: str, maximum: int) -> int:
     return _json_integer(value, field, 1, maximum)
 
 
@@ -375,7 +372,7 @@ class ZaraBashExpertPlugin(ServicePlugin):
 
     @staticmethod
     def _decode_input(input_json: str) -> dict[str, Any]:
-        if not isinstance(input_json, str):
+        if type(input_json) is not str:
             raise BashExpertAdapterError("input-must-be-json-text")
         if len(input_json.encode("utf-8")) > MAX_INPUT_BYTES:
             raise BashExpertAdapterError("input-too-large")
@@ -430,12 +427,12 @@ class ZaraBashExpertPlugin(ServicePlugin):
         request_id: str,
         activation_id: str,
         expert_operation: str,
-        expected_registry_generation: int | float,
-        expected_runtime_generation: int | float,
+        expected_registry_generation: int,
+        expected_runtime_generation: int,
         input_json: str = "{}",
-        timeout_ms: int | float = MAX_TIMEOUT_MS,
-        max_results: int | float = MAX_RESULTS,
-        max_output_bytes: int | float = MAX_OUTPUT_BYTES,
+        timeout_ms: int = MAX_TIMEOUT_MS,
+        max_results: int = MAX_RESULTS,
+        max_output_bytes: int = MAX_OUTPUT_BYTES,
     ) -> str:
         if type(expert_operation) is not str or expert_operation not in ALLOWED_OPERATIONS:
             raise BashExpertAdapterError("unsupported-expert-operation")

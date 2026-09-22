@@ -500,9 +500,9 @@ class ZaraJavaExpertPlugin(ServicePlugin):
     ) -> str:
         if expert_operation not in ALLOWED_OPERATIONS:
             raise JavaExpertAdapterError("unsupported-expert-operation")
-        if not isinstance(request_id, str) or REQUEST_ID_RE.fullmatch(request_id) is None:
+        if type(request_id) is not str or REQUEST_ID_RE.fullmatch(request_id) is None:
             raise JavaExpertAdapterError("invalid-request-id")
-        if not isinstance(activation_id, str) or ACTIVATION_ID_RE.fullmatch(activation_id) is None:
+        if type(activation_id) is not str or ACTIVATION_ID_RE.fullmatch(activation_id) is None:
             raise JavaExpertAdapterError("invalid-activation-id")
         registry_generation = _validate_generation(
             expected_registry_generation, "registry-generation"
@@ -540,7 +540,7 @@ class ZaraJavaExpertPlugin(ServicePlugin):
             raise
         except Exception as error:
             raise JavaExpertAdapterError("expert-host-invocation-failed") from error
-        if not isinstance(result, Mapping):
+        if type(result) is not dict:
             raise JavaExpertAdapterError("invalid-expert-result")
         _validate_result(
             result,

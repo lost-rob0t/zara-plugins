@@ -211,13 +211,13 @@ def _validate_generation(value: object, field: str) -> int:
 
 
 def _validate_request_id(value: object) -> str:
-    if not isinstance(value, str) or REQUEST_ID_RE.fullmatch(value) is None:
+    if type(value) is not str or REQUEST_ID_RE.fullmatch(value) is None:
         raise JavaScriptExpertAdapterError("invalid-request-id")
     return value
 
 
 def _validate_activation_id(value: object) -> str:
-    if not isinstance(value, str) or ACTIVATION_ID_RE.fullmatch(value) is None:
+    if type(value) is not str or ACTIVATION_ID_RE.fullmatch(value) is None:
         raise JavaScriptExpertAdapterError("invalid-activation-id")
     return value
 
@@ -557,7 +557,7 @@ class ZaraJavaScriptExpertPlugin(ServicePlugin):
             raise
         except Exception as error:
             raise JavaScriptExpertAdapterError("expert-host-invocation-failed") from error
-        if not isinstance(result, Mapping):
+        if type(result) is not dict:
             raise JavaScriptExpertAdapterError("invalid-expert-result")
         _validate_result(
             result,
