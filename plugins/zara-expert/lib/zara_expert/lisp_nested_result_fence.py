@@ -8,13 +8,15 @@ from .composition import CompositionError
 
 
 def _guard_nested_container_identity(value: Any) -> None:
-    """Reject non-canonical mutable containers before symbolic projection.
+    """Reject non-canonical host identities before symbolic projection.
 
     The Lisp output contract recursively snapshots built-in dict/list/tuple
     containers after the existing semantic validators succeed. A subclass or
     arbitrary Mapping would otherwise survive that snapshot by identity and stay
-    mutable from the host side. This guard owns only Python wire/container
-    identity; Prolog-RLM remains the parser/reader/repair semantic authority.
+    mutable from the host side. String subclasses also survive by identity and
+    may override equality/hash behavior seen by conversation projection. This
+    guard owns only Python wire/container/scalar identity; Prolog-RLM remains the
+    parser/reader/repair semantic authority.
     """
 
     if isinstance(value, Mapping):
@@ -27,10 +29,12 @@ def _guard_nested_container_identity(value: Any) -> None:
         raise CompositionError("Lisp symbolic result list must be a built-in list")
     if isinstance(value, tuple) and type(value) is not tuple:
         raise CompositionError("Lisp symbolic result tuple must be a built-in tuple")
+    if isinstance(value, str) and type(value) is not str:
+        raise CompositionError("Lisp symbolic result string must be a built-in string")
 
 
 def install_lisp_nested_result_container_fence() -> None:
-    """Layer canonical nested-container identity onto the existing snapshot."""
+    """Layer canonical nested host identity onto the existing snapshot."""
 
     if getattr(_output, "_LISP_NESTED_RESULT_CONTAINER_FENCE_INSTALLED", False):
         return
