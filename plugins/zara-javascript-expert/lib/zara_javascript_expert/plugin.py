@@ -568,11 +568,22 @@ class ZaraJavaScriptExpertPlugin(ServicePlugin):
             runtime_generation=runtime_generation,
         )
         try:
-            encoded = self._json(dict(result))
+            encoded = self._json(result)
+            snapshot = json.loads(encoded, parse_constant=_reject_json_constant)
         except (TypeError, ValueError, RecursionError) as error:
             raise JavaScriptExpertAdapterError("invalid-expert-result-json") from error
         if len(encoded.encode("utf-8")) > MAX_OUTPUT_BYTES:
             raise JavaScriptExpertAdapterError("expert-result-too-large")
+        if type(snapshot) is not dict:
+            raise JavaScriptExpertAdapterError("invalid-expert-result")
+        _validate_result(
+            snapshot,
+            request_id=request_id,
+            activation_id=activation_id,
+            expert_operation=expert_operation,
+            registry_generation=registry_generation,
+            runtime_generation=runtime_generation,
+        )
         return encoded
 
     def tools(self):
