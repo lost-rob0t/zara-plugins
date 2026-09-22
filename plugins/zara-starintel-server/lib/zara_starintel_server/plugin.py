@@ -1,4 +1,4 @@
-"""Zara service plugin exposing the complete StarIntel Server HTTP API."""
+"""Zara service plugin exposing StarIntel Server and the StarKB service expert."""
 
 from __future__ import annotations
 
@@ -10,9 +10,10 @@ from zara.plugins import PluginMetadata, ServicePlugin
 
 from .client import StarIntelClient, StarIntelError
 from .config import StarIntelConfig
+from .star_kb import EXPERT_ID, SOURCE_REFERENCE, StarKB, descriptor as star_kb_descriptor
 
 
-PLUGIN_VERSION = "0.1.0"
+PLUGIN_VERSION = "0.2.0"
 
 
 def _json_value(value: str, label: str, default: Any) -> Any:
@@ -37,22 +38,82 @@ class ZaraStarIntelServerPlugin(ServicePlugin):
         name="zara-starintel-server",
         version=PLUGIN_VERSION,
         api_version="1",
-        description="Use every HTTP API operation allowed by a StarIntel Server credential",
+        description="Agentic StarKB expert plus bounded live StarIntel Server API access",
     )
 
     def __init__(self) -> None:
         self._config = StarIntelConfig()
         self._client = StarIntelClient(self._config)
+        self._star_kb = StarKB(self._client, self._config)
+        self._expert_published = False
 
     def start(self, runtime) -> None:
         self._config = StarIntelConfig.load(runtime.configuration)
         self._client = StarIntelClient(self._config)
+        self._star_kb = StarKB(self._client, self._config)
+        self._expert_published = False
+
+        registrar = getattr(runtime, "register_symbol", None)
+        if callable(registrar):
+            item = star_kb_descriptor(available=self._star_kb.available)
+            registrar(
+                EXPERT_ID,
+                "expert",
+                item,
+                docs=item["description"],
+                capabilities=("star-kb.run",),
+                source=SOURCE_REFERENCE,
+            )
+            self._expert_published = True
 
     def stop(self) -> None:
+        self._expert_published = False
         return None
 
     def tools(self):
         return (
+            StructuredTool.from_function(
+                func=self.star_kb_descriptor,
+                name="star-kb.descriptor",
+                description=(
+                    "Return the ZARA-EXPERT/1 descriptor for the StarKB StarIntel "
+                    "service expert, including availability, operations and limits."
+                ),
+            ),
+            StructuredTool.from_function(
+                func=self.star_kb_observe,
+                name="star-kb.observe",
+                description=(
+                    "Observe live StarIntel capabilities and operation discovery for "
+                    "agent planning. This performs no write operation."
+                ),
+            ),
+            StructuredTool.from_function(
+                func=self.star_kb_plan,
+                name="star-kb.plan",
+                description=(
+                    "Build a bounded StarKB plan by ranking the live StarIntel client "
+                    "manifest against a goal. Write-capable operations are excluded "
+                    "unless explicitly admitted."
+                ),
+            ),
+            StructuredTool.from_function(
+                func=self.star_kb_run,
+                name="star-kb.run",
+                description=(
+                    "Run a bounded StarKB plan over live StarIntel operations. It is "
+                    "dry-run by default; writes require allow_writes=true and, by "
+                    "default, an Idempotency-Key binding."
+                ),
+            ),
+            StructuredTool.from_function(
+                func=self.star_kb_explain,
+                name="star-kb.explain",
+                description=(
+                    "Explain StarKB's read-only live-manifest operation selection for "
+                    "a StarIntel goal."
+                ),
+            ),
             StructuredTool.from_function(
                 func=self.starintel_status,
                 name="starintel_status",
@@ -98,6 +159,67 @@ class ZaraStarIntelServerPlugin(ServicePlugin):
             ),
         )
 
+    def star_kb_descriptor(self) -> str:
+        return json.dumps(
+            star_kb_descriptor(available=self._star_kb.available),
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+
+    def star_kb_observe(self, refresh: bool = False) -> str:
+        return json.dumps(
+            self._star_kb.observe(refresh=refresh),
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+
+    def star_kb_plan(
+        self,
+        goal: str,
+        max_steps: int = 4,
+        allow_writes: bool = False,
+        refresh: bool = False,
+    ) -> str:
+        return json.dumps(
+            self._star_kb.plan(
+                goal,
+                max_steps=max_steps,
+                allow_writes=allow_writes,
+                refresh=refresh,
+            ),
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+
+    def star_kb_run(
+        self,
+        goal: str,
+        bindings_json: str = "{}",
+        max_steps: int = 4,
+        allow_writes: bool = False,
+        dry_run: bool = True,
+        require_idempotency: bool = True,
+    ) -> str:
+        return json.dumps(
+            self._star_kb.run(
+                goal,
+                bindings=_json_mapping(bindings_json, "bindings_json"),
+                max_steps=max_steps,
+                allow_writes=allow_writes,
+                dry_run=dry_run,
+                require_idempotency=require_idempotency,
+            ),
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+
+    def star_kb_explain(self, goal: str, max_steps: int = 4) -> str:
+        return json.dumps(
+            self._star_kb.explain(goal, max_steps=max_steps),
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+
     def starintel_status(self, include_health: bool = True) -> str:
         status: dict[str, Any] = {
             "enabled": self._config.enabled,
@@ -111,6 +233,11 @@ class ZaraStarIntelServerPlugin(ServicePlugin):
             "timeout_seconds": self._config.timeout_seconds,
             "max_request_bytes": self._config.max_request_bytes,
             "max_response_bytes": self._config.max_response_bytes,
+            "star_kb": {
+                "expert_id": EXPERT_ID,
+                "available": self._star_kb.available,
+                "published": self._expert_published,
+            },
         }
         if (
             include_health

@@ -107,6 +107,36 @@ class Runtime:
         self.configuration = configuration
 
 
+class RuntimeWithSymbols(Runtime):
+    def __init__(self, configuration):
+        super().__init__(configuration)
+        self.symbols = []
+
+    def register_symbol(
+        self,
+        symbol,
+        kind,
+        value,
+        *,
+        priority=0,
+        docs="",
+        capabilities=(),
+        source="",
+    ):
+        self.symbols.append(
+            {
+                "symbol": symbol,
+                "kind": kind,
+                "value": value,
+                "priority": priority,
+                "docs": docs,
+                "capabilities": tuple(capabilities),
+                "source": source,
+            }
+        )
+        return len(self.symbols)
+
+
 class ZaraStarIntelServerPluginTest(unittest.TestCase):
     def test_registers_discovery_operation_and_generic_tools(self):
         plugin = ZaraStarIntelServerPlugin()
@@ -114,6 +144,11 @@ class ZaraStarIntelServerPluginTest(unittest.TestCase):
         self.assertEqual(
             [tool.name for tool in tools],
             [
+                "star-kb.descriptor",
+                "star-kb.observe",
+                "star-kb.plan",
+                "star-kb.run",
+                "star-kb.explain",
                 "starintel_status",
                 "starintel_capabilities",
                 "starintel_api_operations",
@@ -121,6 +156,7 @@ class ZaraStarIntelServerPluginTest(unittest.TestCase):
                 "starintel_api_request",
             ],
         )
+        self.assertIn("dry-run", tools[3].description.lower())
         self.assertIn("destructive", tools[-1].description.lower())
 
     def test_start_loads_secret_safe_configuration(self):
@@ -141,6 +177,22 @@ class ZaraStarIntelServerPluginTest(unittest.TestCase):
         self.assertTrue(status["bootstrap_secret_configured"])
         self.assertNotIn("api-secret", encoded)
         self.assertNotIn("bootstrap-secret", encoded)
+
+    def test_start_publishes_star_kb_expert_symbol(self):
+        runtime = RuntimeWithSymbols(
+            {"base_url": "https://starintel.example"}
+        )
+        plugin = ZaraStarIntelServerPlugin()
+        plugin.start(runtime)
+
+        self.assertEqual(len(runtime.symbols), 1)
+        symbol = runtime.symbols[0]
+        self.assertEqual(symbol["symbol"], "zara:expert/star-kb")
+        self.assertEqual(symbol["kind"], "expert")
+        self.assertEqual(symbol["value"]["reasoning_kind"], "service")
+        self.assertEqual(symbol["capabilities"], ("star-kb.run",))
+        status = json.loads(plugin.starintel_status(include_health=False))
+        self.assertTrue(status["star_kb"]["published"])
 
     def test_status_can_check_remote_health(self):
         plugin = ZaraStarIntelServerPlugin()

@@ -1,6 +1,6 @@
 # zara-starintel-server
 
-`zara-starintel-server` gives Zara access to the complete HTTP surface exposed by a StarIntel Server. It uses the server's live discovery documents instead of freezing one client version into the plugin:
+`zara-starintel-server` is now both the bounded StarIntel HTTP integration and the **StarKB** service expert (`zara:expert/star-kb`). StarKB turns live StarIntel discovery into a bounded agent loop: observe capabilities, plan against the current operation manifest, explain the selected operations, and execute admitted steps without inventing routes. The raw HTTP surface remains available underneath it.\n\nIt uses the server's live discovery documents instead of freezing one client version into the plugin:
 
 - `GET /api/v1/capabilities`
 - `GET /client-manifest.json`
@@ -9,6 +9,18 @@
 - any same-origin legacy or newly deployed route through the bounded generic request tool
 
 The plugin does not bypass StarIntel authorization. Zara can do everything permitted by the configured API key's scopes, including document and target operations, user and credential administration, and destructive operations.
+
+## StarKB agent/expert
+
+StarKB publishes a `ZARA-EXPERT/1` service descriptor through Zara's canonical symbol registry when that registry is available. Its public service capabilities are:
+
+- `star-kb.descriptor` — inspect the service-expert descriptor and current availability.
+- `star-kb.observe` — read live server capabilities and the operation manifest.
+- `star-kb.plan` — deterministically rank live operations against a goal. Write-capable operations are excluded by default.
+- `star-kb.explain` — explain the read-only operation selection.
+- `star-kb.run` — execute an admitted bounded plan. It defaults to dry-run; write operations require explicit admission and, by default, an `Idempotency-Key`.
+
+The planner is zero-model and manifest-grounded. It does not fabricate API routes, bypass StarIntel scopes, or turn discovery metadata into authority. Zara Core still owns plugin activation, capability authorization, cancellation, and approval boundaries.
 
 ## Zara tools
 
