@@ -487,6 +487,13 @@ def _validate_result(
         raise BashExpertAdapterError("read-only-effect-proof-missing")
     if receipts:
         raise BashExpertAdapterError("read-only-effect-leak")
+
+    error_code = result.get("error_code")
+    terminal_error = error_code in {"cancelled", "stale_generation"}
+    if verdict == "succeeded" and terminal_error:
+        raise BashExpertAdapterError("terminal-fence")
+    if terminal_error and (data or evidence_refs):
+        raise BashExpertAdapterError("terminal-fence")
     if verdict == "cancelled":
         if data or evidence_refs:
             raise BashExpertAdapterError("cancelled-expert-output-leak")
