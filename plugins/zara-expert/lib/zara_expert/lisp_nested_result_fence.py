@@ -7,16 +7,21 @@ from . import lisp_output_contract as _output
 from .composition import CompositionError
 
 
+_CANONICAL_SCALAR_TYPES = (type(None), bool, int, float, str)
+
+
 def _guard_nested_container_identity(value: Any) -> None:
     """Reject non-canonical host identities before symbolic projection.
 
     The Lisp output contract recursively snapshots built-in dict/list/tuple
     containers after the existing semantic validators succeed. A subclass or
     arbitrary Mapping would otherwise survive that snapshot by identity and stay
-    mutable from the host side. String subclasses also survive by identity and
-    may override equality/hash behavior seen by conversation projection. This
-    guard owns only Python wire/container/scalar identity; Prolog-RLM remains the
-    parser/reader/repair semantic authority.
+    mutable from the host side. Unsupported host values (for example sets or
+    bytearrays) would also survive by identity even though they are not canonical
+    durable symbolic wire values. String/numeric subclasses can override equality
+    or conversion behavior seen by conversation projection. This guard owns only
+    Python wire/container/scalar identity; Prolog-RLM remains the parser/reader/
+    repair semantic authority.
     """
 
     if isinstance(value, Mapping):
@@ -25,12 +30,21 @@ def _guard_nested_container_identity(value: Any) -> None:
                 "Lisp symbolic result mapping must be a built-in dict"
             )
         return
-    if isinstance(value, list) and type(value) is not list:
-        raise CompositionError("Lisp symbolic result list must be a built-in list")
-    if isinstance(value, tuple) and type(value) is not tuple:
-        raise CompositionError("Lisp symbolic result tuple must be a built-in tuple")
-    if isinstance(value, str) and type(value) is not str:
+    if isinstance(value, list):
+        if type(value) is not list:
+            raise CompositionError("Lisp symbolic result list must be a built-in list")
+        return
+    if isinstance(value, tuple):
+        if type(value) is not tuple:
+            raise CompositionError("Lisp symbolic result tuple must be a built-in tuple")
+        return
+    if type(value) in _CANONICAL_SCALAR_TYPES:
+        return
+    if isinstance(value, str):
         raise CompositionError("Lisp symbolic result string must be a built-in string")
+    raise CompositionError(
+        "Lisp symbolic result value must use canonical built-in wire types"
+    )
 
 
 def install_lisp_nested_result_container_fence() -> None:
