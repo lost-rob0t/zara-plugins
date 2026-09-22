@@ -55,6 +55,7 @@ jobs:
           git -C .ci/zara-core-nix-bash-clarification config core.sparseCheckout true
           mkdir -p .ci/zara-core-nix-bash-clarification/.git/info
           printf '%s\n' \
+            '/main.pl' \
             '/zara/' \
             '/modules/' \
             '/android/app/src/main/java/ai/zara/app/history/' \
