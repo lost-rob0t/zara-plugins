@@ -18,6 +18,7 @@ _RECEIPT_STRING_FIELDS = (
 )
 _RECEIPT_BOOL_FIELDS = ("verified", "fresh")
 _POSTCONDITION_STRING_FIELDS = _RECEIPT_STRING_FIELDS + ("observed_generation",)
+_REPAIR_OPERATIONS = frozenset({"repair.verify", "repair.apply"})
 
 
 def _require_string_references(value: Any, label: str) -> None:
@@ -211,6 +212,63 @@ def _guard_repair_verify_input_identity(
         raise ExpertError("Lisp expert source_generation must be a string")
 
 
+def _guard_core_repair_input_wire(
+    operation: Any,
+    input_data: Any,
+) -> None:
+    """Fence repair authority inputs before activation/Core invocation.
+
+    The existing payload validator owns shape/schema errors. This fence only
+    rejects otherwise-accepted Python subclasses that can override iteration,
+    equality, or encoding at the repair authority boundary. Zara Core remains
+    the owner of edit schema, approval, capability execution, generation checks,
+    and fresh postcondition verification; Prolog-RLM remains the Lisp parser and
+    structural-repair semantic owner.
+    """
+
+    if type(operation) is not str or operation not in _REPAIR_OPERATIONS:
+        return
+    if not isinstance(input_data, Mapping):
+        return
+    if type(input_data) is not dict:
+        raise CompositionError("Lisp repair input must be a built-in dict")
+
+    if operation == "repair.verify":
+        arguments = input_data.get("arguments", [])
+        if not isinstance(arguments, list):
+            return
+        if type(arguments) is not list:
+            raise CompositionError("Lisp repair.verify arguments must be a built-in list")
+        if any(isinstance(item, str) and type(item) is not str for item in arguments):
+            raise CompositionError("Lisp repair.verify arguments must contain built-in strings")
+        source_generation = input_data.get("source_generation")
+        if isinstance(source_generation, str) and type(source_generation) is not str:
+            raise CompositionError(
+                "Lisp repair.verify source_generation must be a built-in string"
+            )
+        return
+
+    repair = input_data.get("repair")
+    if isinstance(repair, dict) and type(repair) is not dict:
+        raise CompositionError("Lisp repair.apply repair must be a built-in dict")
+    if type(repair) is dict and "replacement" in repair:
+        replacement = repair["replacement"]
+        if isinstance(replacement, str) and type(replacement) is not str:
+            raise CompositionError(
+                "Lisp repair.apply replacement must be a built-in string"
+            )
+    expected_preimage = input_data.get("expected_preimage")
+    if isinstance(expected_preimage, str) and type(expected_preimage) is not str:
+        raise CompositionError(
+            "Lisp repair.apply expected_preimage must be a built-in string"
+        )
+    source_generation = input_data.get("source_generation")
+    if isinstance(source_generation, str) and type(source_generation) is not str:
+        raise CompositionError(
+            "Lisp repair.apply source_generation must be a built-in string"
+        )
+
+
 def install_lisp_evidence_type_fence() -> None:
     """Install narrow pre-normalization fences on the existing Lisp adapters.
 
@@ -218,7 +276,7 @@ def install_lisp_evidence_type_fence() -> None:
     safe only after provenance has already been established. At the Core/plugin
     boundary an arbitrary object could otherwise stringify to a canonical-looking
     evidence reference. The verified-outcome path has the same rule for symbolic
-    result terms, receipt-binding inputs, receipt identity fields, and receipt
+    result terms, repair input bindings, receipt identity fields, and receipt
     evidence containers: only canonical built-in strings/lists/dicts/bools may
     influence verified success. Keep existing composition/runtime ownership intact
     and do not duplicate parser semantics.
@@ -229,6 +287,7 @@ def install_lisp_evidence_type_fence() -> None:
 
     original_handler = _base._handler_outcome_to_invocation_result
     original_core = _base._validated_core_result
+    original_payload = _base._validated_lisp_payload
     original_make_handler = _family.make_lisp_expert_handler
     original_verified_postcondition_ref = _family._verified_postcondition_ref
 
@@ -239,6 +298,10 @@ def install_lisp_evidence_type_fence() -> None:
     def fenced_core(expert_id: str, operation: str, input_data: Mapping[str, Any], outcome: Any):
         _guard_core_outcome(outcome)
         return original_core(expert_id, operation, input_data, outcome)
+
+    def fenced_payload(expert_id: str, operation: str, input_data: Mapping[str, Any]):
+        _guard_core_repair_input_wire(operation, input_data)
+        return original_payload(expert_id, operation, input_data)
 
     def fenced_verified_postcondition_ref(
         receipt: Any,
@@ -296,6 +359,7 @@ def install_lisp_evidence_type_fence() -> None:
 
     _base._handler_outcome_to_invocation_result = fenced_handler
     _base._validated_core_result = fenced_core
+    _base._validated_lisp_payload = fenced_payload
     _family._core_evidence_refs = _strict_family_core_evidence_refs
     _family._pending_postcondition = _strict_family_pending_postcondition
     _family._verified_postcondition_ref = fenced_verified_postcondition_ref
