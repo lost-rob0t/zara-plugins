@@ -153,7 +153,7 @@ class NixBashResultSnapshotTests(unittest.TestCase):
 
                 module._validate_result = validate_then_poison
                 try:
-                    with self.assertRaisesRegex(error_type, "zero-model-proof-missing"):
+                    with self.assertRaisesRegex(error_type, "unknown-expert-usage-field"):
                         _invoke(module, runtime, source)
                 finally:
                     module._validate_result = original_validate
