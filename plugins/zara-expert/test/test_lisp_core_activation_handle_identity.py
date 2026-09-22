@@ -29,6 +29,18 @@ class ForgedText(str):
         return False
 
 
+class ForgedInt(int):
+    """Integer-shaped activation generation with caller-controlled equality."""
+
+    def __eq__(self, other):
+        del other
+        return True
+
+    def __ne__(self, other):
+        del other
+        return False
+
+
 class CoreLimits:
     def __init__(self, *, max_model_calls):
         self.max_model_calls = max_model_calls
@@ -60,6 +72,21 @@ def current_fence():
     )
 
 
+def canonical_handle(requested_expert_id, **overrides):
+    fields = {
+        "activation_id": "act:1234567890abcdef",
+        "principal": "user:test",
+        "workspace": "project",
+        "expert_id": requested_expert_id,
+        "expert_version": "1.0.0",
+        "manifest_digest": "sha256:lisp-expert-test",
+        "registry_generation": 7,
+        "runtime_generation": 11,
+    }
+    fields.update(overrides)
+    return SimpleNamespace(**fields)
+
+
 class LispCoreActivationHandleIdentityTests(unittest.TestCase):
     def _assert_rejected_before_core_invoke(self, expert_id, handle):
         registry = RecordingRegistry()
@@ -86,20 +113,44 @@ class LispCoreActivationHandleIdentityTests(unittest.TestCase):
     def test_rejects_forged_activation_expert_identity_before_core_invoke(self):
         for expert_id in LISP_EXPERTS:
             with self.subTest(expert_id=expert_id):
-                handle = SimpleNamespace(
+                handle = canonical_handle(
+                    expert_id,
                     expert_id=ForgedText("zara:expert/not-the-requested-expert"),
-                    workspace="project",
                 )
                 self._assert_rejected_before_core_invoke(expert_id, handle)
 
     def test_rejects_forged_activation_workspace_before_core_invoke(self):
         for expert_id in LISP_EXPERTS:
             with self.subTest(expert_id=expert_id):
-                handle = SimpleNamespace(
-                    expert_id=expert_id,
+                handle = canonical_handle(
+                    expert_id,
                     workspace=ForgedText("wrong-project"),
                 )
                 self._assert_rejected_before_core_invoke(expert_id, handle)
+
+    def test_rejects_forged_activation_bound_identity_scalars_before_core_invoke(self):
+        fields = (
+            ("activation_id", ForgedText("act:forged")),
+            ("principal", ForgedText("user:other")),
+            ("expert_version", ForgedText("999.0.0")),
+            ("manifest_digest", ForgedText("sha256:forged")),
+        )
+        for expert_id in LISP_EXPERTS:
+            for field, forged in fields:
+                with self.subTest(expert_id=expert_id, field=field):
+                    self._assert_rejected_before_core_invoke(
+                        expert_id,
+                        canonical_handle(expert_id, **{field: forged}),
+                    )
+
+    def test_rejects_forged_activation_generation_scalars_before_core_invoke(self):
+        for expert_id in LISP_EXPERTS:
+            for field in ("registry_generation", "runtime_generation"):
+                with self.subTest(expert_id=expert_id, field=field):
+                    self._assert_rejected_before_core_invoke(
+                        expert_id,
+                        canonical_handle(expert_id, **{field: ForgedInt(7)}),
+                    )
 
 
 if __name__ == "__main__":
