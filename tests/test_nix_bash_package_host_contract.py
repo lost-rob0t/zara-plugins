@@ -1,10 +1,9 @@
-"""Keep the Nix/Bash package admission surface on canonical zara-expert operations.
+"""Keep Nix/Bash product packages on the canonical zara-expert contract.
 
-The product packages are adapters to the registered-predicate host.  They must
-not publish a second operation vocabulary that the canonical host cannot run.
-This contract test intentionally reads the package literals without importing
-Zara provider/runtime code, then compares them to zara-expert's single shared
-language operation schema.
+The product packages are adapters to the registered-predicate host. They must
+not publish a second operation vocabulary or descriptor identity that canonical
+Core cannot execute. This test reads package literals without importing provider
+or runtime code and compares them to zara-expert's single shared language owner.
 """
 
 from __future__ import annotations
@@ -19,7 +18,11 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "plugins" / "zara-expert" / "lib"))
 
-from zara_expert.language_family import language_expert_schemas
+from zara_expert.language_family import (
+    descriptor,
+    language_expert_schemas,
+    language_family_specs,
+)
 
 
 PACKAGE_PLUGINS = {
@@ -40,7 +43,34 @@ def _literal_assignment(path: Path, name: str) -> Any:
     raise AssertionError(f"{path}: missing literal assignment {name}")
 
 
+def _canonical_descriptor(language: str) -> dict[str, Any]:
+    matches = [spec for spec in language_family_specs() if spec.key == language]
+    if len(matches) != 1:
+        raise AssertionError(f"expected one canonical {language} expert spec")
+    return descriptor(matches[0], available=True)
+
+
 class NixBashPackageHostContractTests(unittest.TestCase):
+    def test_package_descriptor_identity_is_canonical_host_identity(self) -> None:
+        for language, path in PACKAGE_PLUGINS.items():
+            with self.subTest(language=language):
+                canonical = _canonical_descriptor(language)
+                self.assertEqual(_literal_assignment(path, "EXPERT_ID"), canonical["expert_id"])
+                self.assertEqual(
+                    _literal_assignment(path, "PLUGIN_VERSION"),
+                    canonical["expert_version"],
+                    f"{language} package version identity drifted from canonical host",
+                )
+                self.assertEqual(
+                    _literal_assignment(path, "MANIFEST_DIGEST"),
+                    canonical["manifest_digest"],
+                    f"{language} package manifest identity drifted from canonical host",
+                )
+                self.assertEqual(
+                    _literal_assignment(path, "SOURCE_REFERENCE"),
+                    canonical["source_reference"],
+                )
+
     def test_package_operation_vocabulary_and_inputs_are_canonical_host_contract(self) -> None:
         canonical = language_expert_schemas()
         self.assertTrue(canonical)
