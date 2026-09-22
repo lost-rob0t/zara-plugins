@@ -79,7 +79,7 @@ class NixExpertPluginTests(unittest.TestCase):
         self.assertEqual(descriptor["protocol"], "ZARA-EXPERT/1")
         self.assertEqual(descriptor["expert_id"], "zara:expert/nix")
         self.assertEqual(descriptor["manifest_digest"], EXPECTED_MANIFEST_DIGEST)
-        self.assertEqual(descriptor["source_reference"], "source:dotfiles-nix-expert-v1")
+        self.assertEqual(descriptor["source_reference"], "dotfiles:.zara/experts/nix")
         self.assertEqual(descriptor["reasoning_kind"], "symbolic")
         self.assertEqual(descriptor["fallback_policy"], "fail_closed")
         self.assertEqual(descriptor["delegation_policy"], "never")
@@ -87,7 +87,7 @@ class NixExpertPluginTests(unittest.TestCase):
         self.assertEqual(descriptor["supported_engines"], ["swipl"])
         self.assertEqual(
             descriptor["applicability"],
-            {"keywords": ["flake", "home-manager", "nix", "nixos"]},
+            {"keywords": ["nix", "nixos", "flake", "home-manager"]},
         )
         self.assertNotIn("placement", descriptor)
         self.assertNotIn("required_observations", descriptor)

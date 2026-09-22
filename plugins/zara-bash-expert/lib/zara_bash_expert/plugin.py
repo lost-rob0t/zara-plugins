@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from langchain_core.tools import StructuredTool
@@ -13,6 +15,11 @@ from zara.plugins import PluginMetadata, ServicePlugin
 PLUGIN_VERSION = "0.1.0"
 PROTOCOL = "ZARA-EXPERT/1"
 EXPERT_ID = "zara:expert/bash"
+SOURCE_REFERENCE = "dotfiles:.zara/experts/bash"
+UPSTREAM_CONTRACT = "lost-rob0t/prolog-rlm#502"
+SOURCE_ISSUE = 287
+LANGUAGE_EXTENSIONS = (".sh", ".bash")
+LANGUAGE_KEYWORDS = ("bash", "shell", "sh")
 HOST_CAPABILITY = "expert.invoke"
 MANIFEST_DIGEST = "sha256:ec1ff72739eeaa11b7fc0fef282378066fb30ecb4d58fd8ebc5d5852a9d1cef4"
 MAX_INPUT_BYTES = 65536
@@ -113,6 +120,73 @@ USAGE_FIELDS = frozenset({"model_calls"})
 
 class BashExpertAdapterError(RuntimeError):
     """Fail-closed adapter error. No shell execution or model fallback is permitted."""
+
+
+def _source_lock_path() -> Path:
+    return Path(__file__).resolve().parents[2] / "expert-source.lock.json"
+
+
+def _validate_source_lock() -> None:
+    try:
+        raw = _source_lock_path().read_bytes()
+    except OSError as error:
+        raise BashExpertAdapterError("source-lock-unavailable") from error
+    if "sha256:" + hashlib.sha256(raw).hexdigest() != MANIFEST_DIGEST:
+        raise BashExpertAdapterError("source-lock-digest-mismatch")
+    try:
+        lock = json.loads(raw, parse_constant=_reject_json_constant)
+    except (TypeError, UnicodeDecodeError, ValueError) as error:
+        raise BashExpertAdapterError("source-lock-invalid") from error
+    if type(lock) is not dict:
+        raise BashExpertAdapterError("source-lock-invalid")
+
+    canonical = lock.get("canonical_source")
+    runtime_contract = lock.get("runtime_contract")
+    runtime_repo, runtime_issue = UPSTREAM_CONTRACT.rsplit("#", 1)
+    if not (
+        type(lock.get("schema_version")) is int
+        and lock.get("schema_version") == 1
+        and type(lock.get("expert_id")) is str
+        and lock.get("expert_id") == EXPERT_ID
+        and type(lock.get("adapter_version")) is str
+        and lock.get("adapter_version") == PLUGIN_VERSION
+        and type(canonical) is dict
+        and canonical.get("repository") == "lost-rob0t/dotfiles"
+        and canonical.get("path") == SOURCE_REFERENCE.removeprefix("dotfiles:")
+        and type(canonical.get("issue")) is int
+        and canonical.get("issue") == SOURCE_ISSUE
+        and type(canonical.get("commit")) is str
+        and re.fullmatch(r"[a-f0-9]{40}", canonical["commit"]) is not None
+        and type(runtime_contract) is dict
+        and runtime_contract.get("repository") == runtime_repo
+        and type(runtime_contract.get("issue")) is int
+        and str(runtime_contract.get("issue")) == runtime_issue
+    ):
+        raise BashExpertAdapterError("source-lock-identity-mismatch")
+
+    try:
+        from zara_expert import language_family as language_family_module
+    except ImportError:
+        return
+    try:
+        specs = tuple(
+            spec
+            for spec in language_family_module.language_family_specs()
+            if getattr(spec, "key", None) == "bash"
+        )
+    except Exception as error:
+        raise BashExpertAdapterError("source-lock-host-unavailable") from error
+    if len(specs) != 1:
+        raise BashExpertAdapterError("source-lock-host-mismatch")
+    spec = specs[0]
+    if not (
+        getattr(spec, "expert_id", None) == EXPERT_ID
+        and getattr(spec, "source_reference", None) == SOURCE_REFERENCE
+        and getattr(spec, "upstream_issue", None) == UPSTREAM_CONTRACT
+        and tuple(getattr(spec, "extensions", ())) == LANGUAGE_EXTENSIONS
+        and tuple(getattr(spec, "applicability_keywords", ())) == LANGUAGE_KEYWORDS
+    ):
+        raise BashExpertAdapterError("source-lock-host-mismatch")
 
 
 def _reject_json_constant(_value: str) -> None:
@@ -401,6 +475,7 @@ class ZaraBashExpertPlugin(ServicePlugin):
         return value
 
     def descriptor(self) -> str:
+        _validate_source_lock()
         return self._json(
             {
                 "protocol": PROTOCOL,
@@ -410,15 +485,13 @@ class ZaraBashExpertPlugin(ServicePlugin):
                 "manifest_digest": MANIFEST_DIGEST,
                 "name": "BashExpert",
                 "description": "Deterministic Bash parse, startup, source-graph, quoting, and style inspection.",
-                "source_reference": "source:dotfiles-bash-expert-v1",
+                "source_reference": SOURCE_REFERENCE,
                 "reasoning_kind": "symbolic",
                 "operations": [
                     _operation_descriptor(operation)
                     for operation in sorted(ALLOWED_OPERATIONS)
                 ],
-                "applicability": {
-                    "keywords": ["bash", "bashrc", "quoting", "shell"]
-                },
+                "applicability": {"keywords": list(LANGUAGE_KEYWORDS)},
                 "required_capabilities": [HOST_CAPABILITY],
                 "possible_effects": ["none"],
                 "supported_engines": ["swipl"],
@@ -449,6 +522,7 @@ class ZaraBashExpertPlugin(ServicePlugin):
         max_results: int = MAX_RESULTS,
         max_output_bytes: int = MAX_OUTPUT_BYTES,
     ) -> str:
+        _validate_source_lock()
         if type(expert_operation) is not str or expert_operation not in ALLOWED_OPERATIONS:
             raise BashExpertAdapterError("unsupported-expert-operation")
         _validate_request_id(request_id)
