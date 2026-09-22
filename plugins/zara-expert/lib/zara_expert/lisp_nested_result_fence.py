@@ -13,10 +13,10 @@ def _guard_nested_container_identity(value: Any) -> None:
     The Lisp output contract recursively snapshots built-in dict/list/tuple
     containers after the existing semantic validators succeed. A subclass or
     arbitrary Mapping would otherwise survive that snapshot by identity and stay
-    mutable from the host side. String subclasses also survive by identity and
-    may override equality/hash behavior seen by conversation projection. This
-    guard owns only Python wire/container/scalar identity; Prolog-RLM remains the
-    parser/reader/repair semantic authority.
+    mutable from the host side. Scalar subclasses accepted by the shared inert
+    JSON-like validator can likewise carry host-controlled equality/hash behavior
+    into durable/public projection. This guard owns only Python wire/container/
+    scalar identity; Prolog-RLM remains the parser/reader/repair semantic authority.
     """
 
     if isinstance(value, Mapping):
@@ -31,6 +31,10 @@ def _guard_nested_container_identity(value: Any) -> None:
         raise CompositionError("Lisp symbolic result tuple must be a built-in tuple")
     if isinstance(value, str) and type(value) is not str:
         raise CompositionError("Lisp symbolic result string must be a built-in string")
+    if isinstance(value, (int, float)) and type(value) not in (int, float, bool):
+        raise CompositionError(
+            "Lisp symbolic result scalar must use an exact built-in wire type"
+        )
 
 
 def install_lisp_nested_result_container_fence() -> None:
