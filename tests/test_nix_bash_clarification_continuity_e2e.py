@@ -176,6 +176,11 @@ class NixBashClarificationContinuityE2ETests(
                 dialogue_state={
                     "active_project": PROJECT_ID,
                     "selected_experts": ["zara:expert/nix", "zara:expert/bash"],
+                    # The canonical runtime uses these markers to prove that
+                    # persisted dialogue/evidence belongs to the live project.
+                    # Without them it intentionally fences the state as stale.
+                    "prolog_context_project_id": PROJECT_ID,
+                    "prolog_context_project_generation": 1,
                 },
                 expert_evidence=expert_evidence,
                 renderer_provenance=SYMBOLIC_RENDERER,
