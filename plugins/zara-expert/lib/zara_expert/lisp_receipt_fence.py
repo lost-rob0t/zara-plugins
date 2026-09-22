@@ -29,7 +29,7 @@ def _guard_receipt_object(receipt: Mapping[Any, Any], label: str) -> None:
         raise CompositionError(f"{label} must be a built-in dict")
 
     for key, value in receipt.items():
-        if isinstance(key, str) and type(key) is not str:
+        if type(key) is not str:
             raise CompositionError(f"{label} keys must be built-in strings")
         if isinstance(value, str) and type(value) is not str:
             raise CompositionError(f"{label} string values must be built-in strings")
