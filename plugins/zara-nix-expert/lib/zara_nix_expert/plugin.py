@@ -373,7 +373,7 @@ class ZaraNixExpertPlugin(ServicePlugin):
 
     @staticmethod
     def _decode_input(input_json: str) -> dict[str, Any]:
-        if not isinstance(input_json, str):
+        if type(input_json) is not str:
             raise NixExpertAdapterError("input-must-be-json-text")
         if len(input_json.encode("utf-8")) > MAX_INPUT_BYTES:
             raise NixExpertAdapterError("input-too-large")
