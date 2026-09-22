@@ -143,6 +143,26 @@ def _validate_source_lock() -> None:
         raise NimExpertAdapterError("source-lock-host-mismatch")
 
 
+def _provenance_evidence_ref() -> str:
+    payload = {
+        "expert_id": EXPERT_ID,
+        "expert_version": PLUGIN_VERSION,
+        "manifest_digest": MANIFEST_DIGEST,
+        "source_reference": SOURCE_REFERENCE,
+        "upstream_contract": UPSTREAM_CONTRACT,
+        "zara_contract": f"{ZARA_CONTRACT_REPOSITORY}#{ZARA_CONTRACT_ISSUE}",
+        "zara_schema_pr": ZARA_CONTRACT_SCHEMA_PR,
+    }
+    encoded = json.dumps(
+        payload,
+        allow_nan=False,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return "evidence:expert-provenance:sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
 def _validate_generation(value: object, field: str) -> int:
     if type(value) is not int or not 0 <= value <= MAX_GENERATION:
         raise NimExpertAdapterError(f"invalid-{field}")
@@ -315,6 +335,15 @@ class ZaraNimExpertPlugin(ServicePlugin):
         if type(result) is not dict:
             raise NimExpertAdapterError("invalid-expert-result")
         _validate_result(result, request_id=request_id, activation_id=activation_id, operation=expert_operation, registry_generation=registry_generation, runtime_generation=runtime_generation)
+        if result["verdict"] == "succeeded":
+            evidence = result["evidence_refs"]
+            provenance_ref = _provenance_evidence_ref()
+            if provenance_ref not in evidence:
+                if len(evidence) >= MAX_EVIDENCE_REFS:
+                    raise NimExpertAdapterError("provenance-evidence-budget-exceeded")
+                result = dict(result)
+                result["evidence_refs"] = [*evidence, provenance_ref]
+                _validate_result(result, request_id=request_id, activation_id=activation_id, operation=expert_operation, registry_generation=registry_generation, runtime_generation=runtime_generation)
         try:
             encoded = json.dumps(result, allow_nan=False, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
             snapshot = json.loads(encoded, parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()))
