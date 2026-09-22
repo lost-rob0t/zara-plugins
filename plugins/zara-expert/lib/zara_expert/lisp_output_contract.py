@@ -277,6 +277,28 @@ def _validate_predicate_output(
         _invalid("Lisp repair.verify postcondition_evidence must be an object")
 
 
+def _snapshot_symbolic_result(data: dict[str, Any]) -> None:
+    """Detach the validated symbolic result from late Core/host mutation.
+
+    The Lisp parser/reader semantics remain upstream. This only takes ownership
+    of the already-validated built-in result object and its evidence-bearing
+    sequence fields before conversation state can persist or render it.
+    """
+
+    nested = data.get("result")
+    if type(nested) is not dict:
+        return
+
+    snapshot = dict(nested)
+    for field in ("results", "trace", "effect_receipts"):
+        value = snapshot.get(field)
+        if type(value) is list:
+            snapshot[field] = list(value)
+        elif type(value) is tuple:
+            snapshot[field] = tuple(value)
+    data["result"] = snapshot
+
+
 def _snapshot_authority_projection(
     operation: str,
     result: InvocationResult,
@@ -294,6 +316,7 @@ def _snapshot_authority_projection(
         return result
 
     data = dict(result.data)
+    _snapshot_symbolic_result(data)
     for field in ("effect_receipt", "postcondition_evidence"):
         value = data.get(field)
         if type(value) is dict:
