@@ -94,6 +94,16 @@ def successful_verify_result(expert_id, required_postcondition, nested_result, p
     )
 
 
+def successful_predicate_result(nested_result):
+    return SimpleNamespace(
+        verdict=SimpleNamespace(value="succeeded"),
+        data={"result": nested_result},
+        evidence_refs=("ev:core:lisp",),
+        usage={"model_calls": 0},
+        effect_receipts=(),
+    )
+
+
 class LispAuthoritySnapshotTests(unittest.TestCase):
     def test_effect_success_detaches_authority_projection_from_core_owned_mutable_dicts(self):
         for expert_id, required_postcondition in DIALECTS.items():
@@ -231,6 +241,58 @@ class LispAuthoritySnapshotTests(unittest.TestCase):
                 self.assertEqual(
                     result.data["result"]["details"]["provenance"],
                     {"engine": "symbolic"},
+                )
+                self.assertEqual(budget.model_calls_used, 0)
+
+    def test_predicate_success_detaches_symbolic_result_from_late_core_mutation(self):
+        for expert_id in DIALECTS:
+            with self.subTest(expert_id=expert_id):
+                nested_details = {
+                    "balanced": True,
+                    "forms": [{"kind": "list", "depth": 1}],
+                }
+                nested_result = {
+                    "ok": True,
+                    "results": ["balanced(true)"],
+                    "trace": ["structural-check"],
+                    "details": nested_details,
+                    "model_calls": 0,
+                    "effect_receipts": [],
+                }
+                registry = RecordingCoreRegistry(successful_predicate_result(nested_result))
+                handle = SimpleNamespace(expert_id=expert_id, workspace="project")
+                invoker = CoreLispFamilyCompositionInvoker(
+                    registry,
+                    activation_for=lambda _expert_id, _fence: handle,
+                    limits_factory=CoreLimits,
+                )
+                budget = SharedSymbolicBudget(max_invocations=1, max_model_calls=0)
+
+                result = invoker(
+                    expert_id,
+                    "structural.check",
+                    {"arguments": ["(print 1)"]},
+                    budget=budget,
+                    fence=current_fence(),
+                    parent_path=(),
+                )
+
+                self.assertEqual(result.status, "succeeded")
+                self.assertEqual(budget.model_calls_used, 0)
+                self.assertEqual(registry.calls[0][3].max_model_calls, 0)
+
+                nested_result["ok"] = False
+                nested_result["results"][0] = "forged-late-result"
+                nested_result["trace"].append("forged-late-trace")
+                nested_details["balanced"] = False
+                nested_details["forms"][0]["depth"] = 99
+
+                self.assertIs(result.data["result"]["ok"], True)
+                self.assertEqual(result.data["result"]["results"], ["balanced(true)"])
+                self.assertEqual(result.data["result"]["trace"], ["structural-check"])
+                self.assertEqual(
+                    result.data["result"]["details"],
+                    {"balanced": True, "forms": [{"kind": "list", "depth": 1}]},
                 )
                 self.assertEqual(budget.model_calls_used, 0)
 
