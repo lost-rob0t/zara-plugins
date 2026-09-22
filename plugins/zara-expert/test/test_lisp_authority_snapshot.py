@@ -71,6 +71,29 @@ def successful_apply_result(expert_id, required_postcondition, receipt, postcond
     )
 
 
+def successful_verify_result(expert_id, required_postcondition, nested_result, postcondition_ref):
+    candidate = "(print 1)"
+    candidate_sha256 = hashlib.sha256(candidate.encode("utf-8")).hexdigest()
+    postcondition = {
+        "receipt_ref": postcondition_ref,
+        "required_postcondition": required_postcondition,
+        "source_generation": "project:4",
+        "candidate_sha256": candidate_sha256,
+    }
+    return SimpleNamespace(
+        verdict=SimpleNamespace(value="succeeded"),
+        data={
+            "result": nested_result,
+            "verified": True,
+            "verified_outcome_ref": postcondition_ref,
+            "postcondition_evidence": postcondition,
+        },
+        evidence_refs=(postcondition_ref,),
+        usage={"model_calls": 0},
+        effect_receipts=(),
+    )
+
+
 class LispAuthoritySnapshotTests(unittest.TestCase):
     def test_effect_success_detaches_authority_projection_from_core_owned_mutable_dicts(self):
         for expert_id, required_postcondition in DIALECTS.items():
@@ -136,6 +159,61 @@ class LispAuthoritySnapshotTests(unittest.TestCase):
                     result.data["postcondition_evidence"]["receipt_ref"],
                     postcondition_ref,
                 )
+                self.assertEqual(budget.model_calls_used, 0)
+
+    def test_verify_success_detaches_symbolic_result_from_late_core_mutation(self):
+        for expert_id, required_postcondition in DIALECTS.items():
+            with self.subTest(expert_id=expert_id):
+                nested_result = {
+                    "ok": True,
+                    "results": ["verified(false)"],
+                    "trace": ["structural-check"],
+                    "model_calls": 0,
+                    "effect_receipts": [],
+                }
+                postcondition_ref = (
+                    "zara.verified-outcome/v1:outcome:postcondition/"
+                    + expert_id.rsplit("/", 1)[-1]
+                    + "-project-5"
+                )
+                core_result = successful_verify_result(
+                    expert_id,
+                    required_postcondition,
+                    nested_result,
+                    postcondition_ref,
+                )
+                registry = RecordingCoreRegistry(core_result)
+                handle = SimpleNamespace(expert_id=expert_id, workspace="project")
+                invoker = CoreLispFamilyCompositionInvoker(
+                    registry,
+                    activation_for=lambda _expert_id, _fence: handle,
+                    limits_factory=CoreLimits,
+                )
+                budget = SharedSymbolicBudget(max_invocations=1, max_model_calls=0)
+
+                result = invoker(
+                    expert_id,
+                    "repair.verify",
+                    {
+                        "arguments": ["(print 1", "(print 1)"],
+                        "source_generation": "project:4",
+                    },
+                    budget=budget,
+                    fence=current_fence(),
+                    parent_path=(),
+                )
+
+                self.assertEqual(result.status, "succeeded")
+                self.assertEqual(budget.model_calls_used, 0)
+                self.assertEqual(registry.calls[0][3].max_model_calls, 0)
+
+                nested_result["ok"] = False
+                nested_result["results"][0] = "forged-late-result"
+                nested_result["trace"].append("forged-late-trace")
+
+                self.assertIs(result.data["result"]["ok"], True)
+                self.assertEqual(result.data["result"]["results"], ["verified(false)"])
+                self.assertEqual(result.data["result"]["trace"], ["structural-check"])
                 self.assertEqual(budget.model_calls_used, 0)
 
 
