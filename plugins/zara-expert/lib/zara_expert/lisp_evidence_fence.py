@@ -68,7 +68,7 @@ def _require_plain_postcondition_evidence(data: Any) -> None:
         return
     if type(postcondition) is not dict:
         raise CompositionError("Lisp postcondition evidence must be a built-in dict")
-    if any(isinstance(key, str) and type(key) is not str for key in postcondition):
+    if any(type(key) is not str for key in postcondition):
         raise CompositionError(
             "Lisp postcondition evidence keys must be built-in strings"
         )
