@@ -39,6 +39,16 @@ class AuthorityForgingString(str):
     __hash__ = str.__hash__
 
 
+class AuthorityForgingValue:
+    """Non-string object that can impersonate an authority-bearing scalar."""
+
+    def __eq__(self, other):
+        return True
+
+    def __ne__(self, other):
+        return False
+
+
 class CoreLimits:
     def __init__(self, *, max_model_calls):
         self.max_model_calls = max_model_calls
@@ -227,6 +237,27 @@ class LispCoreEffectReceiptIdentityTests(unittest.TestCase):
                         "source_generation": "project:8",
                     }
                     receipt[field] = value
+                    self._invoke(
+                        expert_id,
+                        "repair.apply",
+                        {
+                            "repair": {"replacement": "(print 1)"},
+                            "expected_preimage": "(print 1",
+                            "source_generation": "project:8",
+                        },
+                        successful_apply_outcome(expert_id, receipt=receipt),
+                    )
+
+    def test_rejects_non_string_effect_receipt_authority_values_that_forge_equality(self):
+        for expert_id in DIALECT_REPAIR_EXPERTS:
+            for field in ("receipt_id", "capability", "source_generation"):
+                with self.subTest(expert_id=expert_id, field=field):
+                    receipt = {
+                        "receipt_id": "edit:42",
+                        "capability": "filesystem_write",
+                        "source_generation": "project:8",
+                    }
+                    receipt[field] = AuthorityForgingValue()
                     self._invoke(
                         expert_id,
                         "repair.apply",
