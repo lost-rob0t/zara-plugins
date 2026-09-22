@@ -87,8 +87,8 @@ jobs:
             -u HF_TOKEN \
             strace -f -e trace=network -o "$trace" \
             python3 -m unittest discover -s tests -t . -p 'test_nix_bash_durable_persistence_e2e.py'
-          if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
-            echo 'unexpected IPv4/IPv6 network syscall during Nix/Bash durable persistence E2E' >&2
+          if grep -Eq '(connect|sendto|sendmsg)\(.*sa_family=AF_INET6?' "$trace"; then
+            echo 'unexpected outbound IPv4/IPv6 network syscall during Nix/Bash durable persistence E2E' >&2
             cat "$trace" >&2
             exit 1
           fi
