@@ -61,9 +61,9 @@ PYTHON = _load_plugin("zara-python-expert", "zara_python_expert")
 NIM = _load_plugin("zara-nim-expert", "zara_nim_expert")
 
 CASES = (
-    (PROLOG, "p(x)."),
-    (PYTHON, "x = 1"),
-    (NIM, "let x = 1"),
+    (PROLOG, PROLOG.PrologExpertAdapterError, "p(x)."),
+    (PYTHON, PYTHON.PythonExpertAdapterError, "x = 1"),
+    (NIM, NIM.NimExpertAdapterError, "let x = 1"),
 )
 
 
@@ -71,7 +71,6 @@ class _Runtime:
     def __init__(self, module) -> None:
         self.module = module
         self.requests: list[dict[str, object]] = []
-        self.last_result: dict[str, object] | None = None
 
     def resolve_capability(self, capability: str) -> str:
         if capability != "expert.invoke":
@@ -80,7 +79,7 @@ class _Runtime:
 
     def invoke_capability(self, _handle: str, request: dict[str, object]):
         self.requests.append(request)
-        result: dict[str, object] = {
+        return {
             "protocol": self.module.PROTOCOL,
             "request_id": request["request_id"],
             "invocation_id": INVOCATION_ID,
@@ -100,8 +99,6 @@ class _Runtime:
             "error_message": "",
             "replayed": False,
         }
-        self.last_result = result
-        return result
 
 
 def _invoke(module, runtime: _Runtime, source: str) -> str:
@@ -123,30 +120,42 @@ def _invoke(module, runtime: _Runtime, source: str) -> str:
 
 
 class PrologPythonNimResultSnapshotTests(unittest.TestCase):
-    def test_projection_uses_one_validated_stable_snapshot(self) -> None:
-        for module, source in CASES:
+    def test_post_validation_mutation_fails_closed_before_projection(self) -> None:
+        for module, error_type, source in CASES:
             with self.subTest(expert_id=module.EXPERT_ID):
                 runtime = _Runtime(module)
                 original_validate = module._validate_result
+                calls = 0
 
                 def validate_then_poison(result, **kwargs):
+                    nonlocal calls
+                    calls += 1
                     original_validate(result, **kwargs)
-                    result["usage"]["model_calls"] = 1
-                    result["usage"]["provider_calls"] = 1
-                    result["effect_receipts"].append({"effect": "forbidden"})
-                    result["evidence_refs"].append("fixture:late-poison")
-                    result["data"]["result"]["provider"] = "forbidden"
+                    if calls == 1:
+                        result["usage"]["model_calls"] = 1
+                        result["usage"]["provider_calls"] = 1
+                        result["effect_receipts"].append({"effect": "forbidden"})
+                        result["evidence_refs"].append("fixture:late-poison")
+                        result["data"]["result"]["provider"] = "forbidden"
 
                 module._validate_result = validate_then_poison
                 try:
-                    projected = json.loads(_invoke(module, runtime, source))
+                    with self.assertRaisesRegex(error_type, "zero-model-proof-missing"):
+                        _invoke(module, runtime, source)
                 finally:
                     module._validate_result = original_validate
 
+                self.assertGreaterEqual(calls, 2)
+                self.assertEqual(runtime.requests[0]["limits"]["max_model_calls"], 0)
+
+    def test_unmutated_result_remains_zero_model_and_read_only(self) -> None:
+        for module, _error_type, source in CASES:
+            with self.subTest(expert_id=module.EXPERT_ID):
+                runtime = _Runtime(module)
+                projected = json.loads(_invoke(module, runtime, source))
                 self.assertEqual(projected["usage"], {"model_calls": 0})
                 self.assertEqual(projected["effect_receipts"], [])
                 self.assertEqual(projected["evidence_refs"], ["fixture:evidence"])
-                self.assertNotIn("provider", projected["data"]["result"])
                 self.assertEqual(runtime.requests[0]["limits"]["max_model_calls"], 0)
 
 
