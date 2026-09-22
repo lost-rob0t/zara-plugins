@@ -182,33 +182,41 @@ class NixExpertPluginTests(unittest.TestCase):
 
         self.assertEqual(runtime.requests, [])
 
-    def test_generation_zero_and_integral_json_numbers_are_canonical(self) -> None:
+    def test_generation_and_limit_wire_values_require_builtin_integers(self) -> None:
         runtime = FakeRuntime()
         plugin = ZaraNixExpertPlugin()
         plugin.start(runtime)
 
-        plugin.invoke(
-            "req:zero",
-            ACTIVATION_ID,
-            "parse",
-            0.0,
-            0.0,
-            '{"source":"{}"}',
-            timeout_ms=2500.0,
-            max_results=8.0,
-            max_output_bytes=32768.0,
+        cases = (
+            ({"expected_registry_generation": 0.0}, "invalid-registry-generation"),
+            ({"expected_runtime_generation": 0.0}, "invalid-runtime-generation"),
+            ({"timeout_ms": 2500.0}, "invalid-timeout-ms"),
+            ({"max_results": 8.0}, "invalid-max-results"),
+            ({"max_output_bytes": 32768.0}, "invalid-max-output-bytes"),
         )
-        request = runtime.requests[-1]
-        self.assertEqual(request["expected_registry_generation"], 0)
-        self.assertEqual(request["expected_runtime_generation"], 0)
-        self.assertIs(type(request["limits"]["timeout_ms"]), int)
+        for overrides, error in cases:
+            arguments = {
+                "request_id": "req:zero",
+                "activation_id": ACTIVATION_ID,
+                "expert_operation": "parse",
+                "expected_registry_generation": 0,
+                "expected_runtime_generation": 0,
+                "input_json": '{"source":"{}"}',
+                "timeout_ms": 2500,
+                "max_results": 8,
+                "max_output_bytes": 32768,
+            }
+            arguments.update(overrides)
+            with self.subTest(error=error):
+                with self.assertRaisesRegex(NixExpertAdapterError, error):
+                    plugin.invoke(**arguments)
 
         with self.assertRaisesRegex(NixExpertAdapterError, "invalid-registry-generation"):
             plugin.invoke("req-1", ACTIVATION_ID, "parse", True, 1)
         with self.assertRaisesRegex(NixExpertAdapterError, "invalid-runtime-generation"):
             plugin.invoke("req-1", ACTIVATION_ID, "parse", 1, 1.5)
 
-        self.assertEqual(len(runtime.requests), 1)
+        self.assertEqual(runtime.requests, [])
 
     def test_noncanonical_activation_id_is_rejected_before_host(self) -> None:
         runtime = FakeRuntime()

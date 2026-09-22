@@ -378,8 +378,10 @@ def _validate_result(
         "manifest_digest": MANIFEST_DIGEST,
         "expert_operation": expert_operation,
     }
-    if any(result.get(key) != value for key, value in expected.items()):
-        raise KotlinExpertAdapterError("expert-result-identity-mismatch")
+    for key, value in expected.items():
+        actual = result.get(key)
+        if type(actual) is not str or actual != value:
+            raise KotlinExpertAdapterError("expert-result-identity-mismatch")
     resolved_registry_generation = result.get("resolved_registry_generation")
     resolved_runtime_generation = result.get("resolved_runtime_generation")
     if (
@@ -547,7 +549,7 @@ class ZaraKotlinExpertPlugin(ServicePlugin):
             raise
         except Exception as error:
             raise KotlinExpertAdapterError("expert-host-invocation-failed") from error
-        if not isinstance(result, Mapping):
+        if type(result) is not dict:
             raise KotlinExpertAdapterError("invalid-expert-result")
         _validate_result(
             result,

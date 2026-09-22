@@ -396,7 +396,8 @@ def _validate_result(
         "expert_operation": expert_operation,
     }
     for key, value in expected.items():
-        if result.get(key) != value:
+        actual = result.get(key)
+        if type(actual) is not str or actual != value:
             raise JavaScriptExpertAdapterError("expert-result-identity-mismatch")
     resolved_registry_generation = result.get("resolved_registry_generation")
     resolved_runtime_generation = result.get("resolved_runtime_generation")
@@ -556,7 +557,7 @@ class ZaraJavaScriptExpertPlugin(ServicePlugin):
             raise
         except Exception as error:
             raise JavaScriptExpertAdapterError("expert-host-invocation-failed") from error
-        if not isinstance(result, Mapping):
+        if type(result) is not dict:
             raise JavaScriptExpertAdapterError("invalid-expert-result")
         _validate_result(
             result,
