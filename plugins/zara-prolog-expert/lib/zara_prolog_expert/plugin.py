@@ -321,7 +321,7 @@ class ZaraPrologExpertPlugin(ServicePlugin):
             raise
         except Exception as error:
             raise PrologExpertAdapterError("expert-host-invocation-failed") from error
-        if not isinstance(result, Mapping):
+        if type(result) is not dict:
             raise PrologExpertAdapterError("invalid-expert-result")
         _validate_result(result, request_id=request_id, activation_id=activation_id, operation=expert_operation, registry_generation=registry_generation, runtime_generation=runtime_generation)
         try:

@@ -1,0 +1,65 @@
+name: Prolog Python Nim Result Container Fence E2E
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/zara-prolog-expert/**'
+      - 'plugins/zara-python-expert/**'
+      - 'plugins/zara-nim-expert/**'
+      - 'tests/test_prolog_python_nim_result_container_identity.py'
+      - '.github/workflows/prolog-python-nim-result-container-fence-e2e.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prolog-python-nim-result-container-fence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  canonical-result-container-fence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact pull-request head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify exact source checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha }}'
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$expected"
+
+      - name: Install network audit tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends strace
+
+      - name: Prove lane3 result containers fail closed without providers
+        shell: bash
+        run: |
+          set -euo pipefail
+          trace="$RUNNER_TEMP/prolog-python-nim-result-container-network.trace"
+          env \
+            -u OPENAI_API_KEY \
+            -u ANTHROPIC_API_KEY \
+            -u OPENROUTER_API_KEY \
+            -u GOOGLE_API_KEY \
+            -u GEMINI_API_KEY \
+            -u GROQ_API_KEY \
+            -u ZAI_API_KEY \
+            -u AZURE_OPENAI_API_KEY \
+            -u HF_TOKEN \
+            strace -f -e trace=network -o "$trace" \
+            python3 -m unittest discover -s tests -t . -p 'test_prolog_python_nim_result_container_identity.py'
+          if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
+            echo 'unexpected IPv4/IPv6 network syscall during result-container fence E2E' >&2
+            cat "$trace" >&2
+            exit 1
+          fi
