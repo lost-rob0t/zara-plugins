@@ -97,6 +97,10 @@ class StatefulDelegationRequest(DelegationRequest):
         return super().__getattribute__(name)
 
 
+class RouteText(str):
+    pass
+
+
 class DotfilesStyleLanguageChainTests(unittest.TestCase):
     def setUp(self):
         self.fence = InvocationFence(
@@ -236,6 +240,37 @@ class DotfilesStyleLanguageChainTests(unittest.TestCase):
                 fence=self.fence,
                 parent_path=(),
             )
+
+    def test_style_chain_rejects_noncanonical_route_text_before_dispatch(self):
+        for expert_id, operation in (
+            (RouteText("zara:expert/nix"), "inspect"),
+            ("zara:expert/nix", RouteText("inspect")),
+            (RouteText(STYLE_EXPERT_ID), "resolve"),
+            (STYLE_EXPERT_ID, RouteText("resolve")),
+        ):
+            with self.subTest(expert_id=expert_id, operation=operation):
+                language = RecordingInvoker(
+                    InvocationResult(status="succeeded", model_calls=0)
+                )
+                style = RecordingInvoker(
+                    InvocationResult(status="succeeded", model_calls=0)
+                )
+                chain = DotfilesStyleLanguageChainInvoker(language, style)
+
+                with self.assertRaisesRegex(
+                    CompositionError, "route identity must use exact text"
+                ):
+                    chain(
+                        expert_id,
+                        operation,
+                        {},
+                        budget=SharedSymbolicBudget(max_model_calls=0),
+                        fence=self.fence,
+                        parent_path=(),
+                    )
+
+                self.assertEqual(language.calls, [])
+                self.assertEqual(style.calls, [])
 
     def test_style_chain_rejects_stateful_invocation_result_subclass_before_projection(self):
         language = RecordingInvoker(StatefulInvocationResult())
