@@ -71,28 +71,36 @@ class NixBashPackageHostContractTests(unittest.TestCase):
                     canonical["source_reference"],
                 )
 
-    def test_package_operation_vocabulary_and_inputs_are_canonical_host_contract(self) -> None:
+    def test_package_operation_vocabulary_and_schemas_are_canonical_host_contract(self) -> None:
         canonical = language_expert_schemas()
         self.assertTrue(canonical)
         canonical_operations = frozenset(canonical)
 
         for language, path in PACKAGE_PLUGINS.items():
             with self.subTest(language=language):
-                package_fields = _literal_assignment(path, "OPERATION_FIELDS")
-                self.assertIs(type(package_fields), dict)
+                package_inputs = _literal_assignment(path, "OPERATION_FIELDS")
+                package_outputs = _literal_assignment(path, "OPERATION_OUTPUT_FIELDS")
+                self.assertIs(type(package_inputs), dict)
+                self.assertIs(type(package_outputs), dict)
                 self.assertEqual(
-                    frozenset(package_fields),
+                    frozenset(package_inputs),
                     canonical_operations,
                     (
                         f"{language} package publishes a private operation vocabulary; "
                         "reuse zara_expert.language_family.language_expert_schemas()"
                     ),
                 )
-                for operation, fields in package_fields.items():
+                self.assertEqual(frozenset(package_outputs), canonical_operations)
+                for operation in canonical_operations:
                     self.assertEqual(
-                        {"fields": [dict(field) for field in fields]},
+                        {"fields": [dict(field) for field in package_inputs[operation]]},
                         canonical[operation]["input_schema"],
                         f"{language}:{operation} input schema drifted from canonical host",
+                    )
+                    self.assertEqual(
+                        {"fields": [dict(field) for field in package_outputs[operation]]},
+                        canonical[operation]["output_schema"],
+                        f"{language}:{operation} output schema drifted from canonical host",
                     )
 
     def test_package_does_not_rename_canonical_operations_before_expert_invoke(self) -> None:
