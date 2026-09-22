@@ -17,6 +17,7 @@ _RECEIPT_STRING_FIELDS = (
     "required_postcondition",
 )
 _RECEIPT_BOOL_FIELDS = ("verified", "fresh")
+_POSTCONDITION_STRING_FIELDS = _RECEIPT_STRING_FIELDS + ("observed_generation",)
 
 
 def _require_string_references(value: Any, label: str) -> None:
@@ -36,19 +37,29 @@ def _require_string_references(value: Any, label: str) -> None:
 
 
 def _require_plain_postcondition_evidence(data: Any) -> None:
-    """Keep verified-outcome receipt evidence on the canonical object wire type.
+    """Keep verified-outcome evidence on canonical host-language wire types.
 
     Output validation reads postcondition bindings more than once before the
-    result is persisted/rendered. A Mapping subclass can change those bindings
-    between reads. Reject non-built-in mappings before the existing receipt
+    result is persisted/rendered. Mapping and string subclasses can change those
+    bindings or equality semantics between checks. Reject non-built-in receipt
+    containers and authority-bearing scalar strings before the existing receipt
     grammar is evaluated; Core remains the sole verifier/receipt authority.
     """
 
     if not isinstance(data, Mapping):
         return
     postcondition = data.get("postcondition_evidence")
-    if postcondition is not None and type(postcondition) is not dict:
+    if postcondition is None:
+        return
+    if type(postcondition) is not dict:
         raise CompositionError("Lisp postcondition evidence must be a built-in dict")
+    for field in _POSTCONDITION_STRING_FIELDS:
+        if field not in postcondition:
+            continue
+        if type(postcondition[field]) is not str:
+            raise CompositionError(
+                f"Lisp postcondition evidence {field} must be a built-in string"
+            )
 
 
 def _guard_handler_outcome(outcome: Any) -> None:
