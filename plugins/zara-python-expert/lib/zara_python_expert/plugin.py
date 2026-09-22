@@ -276,9 +276,15 @@ def _validate_result(result: Mapping[str, object], *, request_id: str, activatio
         for item in evidence
     ):
         raise PythonExpertAdapterError("invalid-expert-evidence")
+    data = result.get("data")
+    terminal_error = result.get("error_code") in {"cancelled", "stale_generation"}
+    if verdict == "succeeded" and terminal_error:
+        raise PythonExpertAdapterError("terminal-fence")
+    if terminal_error and (data or evidence):
+        raise PythonExpertAdapterError("terminal-fence")
     if verdict == "cancelled" and evidence:
         raise PythonExpertAdapterError("cancelled-expert-output-leak")
-    _validate_output(operation, verdict, result.get("data"))
+    _validate_output(operation, verdict, data)
 
 
 def _operation_descriptor(operation: str) -> dict[str, object]:
