@@ -6,7 +6,9 @@ import importlib.util
 import json
 import os
 import shutil
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from typing import Any
@@ -31,18 +33,45 @@ _PRODUCT_CASES = {
 }
 
 
+class _PluginMetadata:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class _ServicePlugin:
+    pass
+
+
 def _load_product_adapter(language: str):
     package, module_name, _source = _PRODUCT_CASES[language]
-    path = REPO_ROOT / "plugins" / package / "lib" / module_name / "plugin.py"
-    spec = importlib.util.spec_from_file_location(
-        f"prolog_python_nim_replay_{module_name}",
-        path,
-    )
-    if spec is None or spec.loader is None:
-        raise AssertionError(f"cannot load product adapter: {path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    dependency_names = ("zara", "zara.plugins")
+    previous = {name: sys.modules.get(name) for name in dependency_names}
+
+    zara = types.ModuleType("zara")
+    zara_plugins = types.ModuleType("zara.plugins")
+    zara_plugins.PluginMetadata = _PluginMetadata
+    zara_plugins.ServicePlugin = _ServicePlugin
+    zara.plugins = zara_plugins
+    sys.modules["zara"] = zara
+    sys.modules["zara.plugins"] = zara_plugins
+
+    try:
+        path = REPO_ROOT / "plugins" / package / "lib" / module_name / "plugin.py"
+        spec = importlib.util.spec_from_file_location(
+            f"prolog_python_nim_replay_{module_name}",
+            path,
+        )
+        if spec is None or spec.loader is None:
+            raise AssertionError(f"cannot load product adapter: {path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        for name, value in previous.items():
+            if value is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = value
 
 
 class _ProductRuntime:
