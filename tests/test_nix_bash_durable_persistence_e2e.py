@@ -295,7 +295,7 @@ class NixBashDurablePersistenceE2ETests(unittest.TestCase):
             reopened.save_symbolic_projection(
                 SymbolicConversationProjection(
                     conversation_id=record.id,
-                    projection_generation=3,
+                    projection_generation=2,
                     runtime_generation=3,
                     turn_id="turn:nix-bash:late",
                     outcome="success",
