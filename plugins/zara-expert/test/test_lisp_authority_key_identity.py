@@ -72,10 +72,9 @@ def current_fence():
     )
 
 
-def successful_apply_result(expert_id, required_postcondition, suffix, *, receipt, postcondition):
-    receipt_ref = "zara.verified-outcome/v1:outcome:postcondition/" + suffix
+def canonical_postcondition(expert_id, required_postcondition, suffix):
     replacement = "(print 1)"
-    canonical_postcondition = {
+    return {
         "checker": "canonical-dialect-verifier",
         "expert_id": expert_id,
         "verified": True,
@@ -84,16 +83,18 @@ def successful_apply_result(expert_id, required_postcondition, suffix, *, receip
         "observed_generation": "project:5",
         "candidate_sha256": hashlib.sha256(replacement.encode("utf-8")).hexdigest(),
         "required_postcondition": required_postcondition,
-        "receipt_ref": receipt_ref,
+        "receipt_ref": "zara.verified-outcome/v1:outcome:postcondition/" + suffix,
     }
-    canonical_postcondition.update(postcondition)
+
+
+def successful_apply_result(*, receipt, postcondition):
     return SimpleNamespace(
         verdict=SimpleNamespace(value="succeeded"),
         data={
             "effect_receipt": receipt,
-            "postcondition_evidence": canonical_postcondition,
+            "postcondition_evidence": postcondition,
         },
-        evidence_refs=(receipt_ref,),
+        evidence_refs=(postcondition["receipt_ref"],),
         usage={"model_calls": 0},
         effect_receipts=(receipt,),
     )
@@ -135,11 +136,12 @@ class LispAuthorityKeyIdentityTests(unittest.TestCase):
                     AuthorityForgingKey("source_generation"): "project:4",
                 }
                 result = successful_apply_result(
-                    expert_id,
-                    required_postcondition,
-                    suffix,
                     receipt=receipt,
-                    postcondition={},
+                    postcondition=canonical_postcondition(
+                        expert_id,
+                        required_postcondition,
+                        suffix,
+                    ),
                 )
                 registry, budget = invoke_apply(expert_id, result)
                 self.assertEqual(len(registry.calls), 1)
@@ -154,16 +156,17 @@ class LispAuthorityKeyIdentityTests(unittest.TestCase):
                     "capability": "filesystem_write",
                     "source_generation": "project:4",
                 }
-                result = successful_apply_result(
+                postcondition = canonical_postcondition(
                     expert_id,
                     required_postcondition,
                     suffix,
-                    receipt=receipt,
-                    postcondition={
-                        AuthorityForgingKey("source_generation"): "project:4",
-                    },
                 )
-                del result.data["postcondition_evidence"]["source_generation"]
+                source_generation = postcondition.pop("source_generation")
+                postcondition[AuthorityForgingKey("source_generation")] = source_generation
+                result = successful_apply_result(
+                    receipt=receipt,
+                    postcondition=postcondition,
+                )
                 registry, budget = invoke_apply(expert_id, result)
                 self.assertEqual(len(registry.calls), 1)
                 self.assertEqual(registry.calls[0][3], 0)
