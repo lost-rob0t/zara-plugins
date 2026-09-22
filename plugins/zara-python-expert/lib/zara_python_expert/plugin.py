@@ -339,6 +339,16 @@ class ZaraPythonExpertPlugin(ServicePlugin):
         if type(result) is not dict:
             raise PythonExpertAdapterError("invalid-expert-result")
         _validate_result(result, request_id=request_id, activation_id=activation_id, operation=expert_operation, registry_generation=registry_generation, runtime_generation=runtime_generation)
+        try:
+            result = json.loads(
+                json.dumps(result, allow_nan=False, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()),
+            )
+        except (TypeError, ValueError, RecursionError) as error:
+            raise PythonExpertAdapterError("invalid-expert-result-json") from error
+        if type(result) is not dict:
+            raise PythonExpertAdapterError("invalid-expert-result")
+        _validate_result(result, request_id=request_id, activation_id=activation_id, operation=expert_operation, registry_generation=registry_generation, runtime_generation=runtime_generation)
         if result["verdict"] == "succeeded":
             evidence = result["evidence_refs"]
             if any(item.startswith("evidence:expert-provenance:sha256:") for item in evidence):
