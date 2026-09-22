@@ -314,7 +314,8 @@ def _validate_result(
         "expert_operation": expert_operation,
     }
     for field, expected in expected_identity.items():
-        if result.get(field) != expected:
+        actual = result.get(field)
+        if type(actual) is not str or actual != expected:
             raise NixExpertAdapterError("expert-result-identity-mismatch")
     resolved_registry_generation = result.get("resolved_registry_generation")
     if (
