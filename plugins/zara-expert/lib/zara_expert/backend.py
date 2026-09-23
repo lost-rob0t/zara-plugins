@@ -9,12 +9,15 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from .domain import ExpertError, _is_registered_predicate_capability
 
 
+_NAMESPACE_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
+_PREDICATE_RE = re.compile(r"^[a-z][a-zA-Z0-9_]{0,63}$")
 _VARIABLE_RE = re.compile(r"^[A-Z_][a-zA-Z0-9_]{0,63}$")
+_MAX_ARGUMENTS = 16
 
 
 class SwiplBackend:
@@ -40,8 +43,77 @@ class SwiplBackend:
         if namespace != capability.namespace:
             raise ExpertError("registered predicate capability namespace mismatch")
 
-        timeout_value = request["timeout_seconds"]
-        max_results_value = request["max_results"]
+        timeout, max_results = self._validate_bounds(
+            request["timeout_seconds"],
+            request["max_results"],
+        )
+        source_files = [*request.get("knowledge_bases", ()), *request.get("state_files", ())]
+        return self._run_registered(
+            namespace=namespace,
+            predicate=capability.predicate,
+            arity=capability.arity,
+            operation=operation,
+            arguments=request.get("arguments"),
+            source_files=source_files,
+            timeout=timeout,
+            max_results=max_results,
+        )
+
+    def run_core_binding(
+        self,
+        binding: Any,
+        *,
+        operation: str,
+        arguments: Any,
+        knowledge_bases: Iterable[str | Path],
+        state_files: Iterable[str | Path],
+        timeout_seconds: float,
+        max_results: int,
+    ) -> dict[str, Any]:
+        """Execute one binding selected by Zara Core's isolated authority owner.
+
+        This is a child-side adapter seam for ``RegisteredPredicateBinding``. The
+        caller cannot supply a raw predicate through the plugin request path: the
+        predicate identity comes from the Core-owned binding object passed into
+        the isolated executor. This method does not register, mint, reload, or
+        select bindings and therefore is not an authority owner.
+        """
+
+        if operation not in {"query", "explain"}:
+            raise ExpertError(f"unsupported expert operation: {operation!r}")
+        namespace = getattr(binding, "namespace", None)
+        predicate = getattr(binding, "predicate", None)
+        arity = getattr(binding, "arity", None)
+        self._validate_binding_identity(namespace, predicate, arity)
+        timeout, max_results = self._validate_bounds(timeout_seconds, max_results)
+        source_files = [*knowledge_bases, *state_files]
+        return self._run_registered(
+            namespace=namespace,
+            predicate=predicate,
+            arity=arity,
+            operation=operation,
+            arguments=arguments,
+            source_files=source_files,
+            timeout=timeout,
+            max_results=max_results,
+        )
+
+    @staticmethod
+    def _validate_binding_identity(namespace: Any, predicate: Any, arity: Any) -> None:
+        if not isinstance(namespace, str) or not _NAMESPACE_RE.fullmatch(namespace):
+            raise ExpertError("Core predicate binding namespace is invalid")
+        if not isinstance(predicate, str) or not _PREDICATE_RE.fullmatch(predicate):
+            raise ExpertError("Core predicate binding predicate is invalid")
+        if (
+            isinstance(arity, bool)
+            or not isinstance(arity, int)
+            or arity < 0
+            or arity > _MAX_ARGUMENTS
+        ):
+            raise ExpertError("Core predicate binding arity is invalid")
+
+    @staticmethod
+    def _validate_bounds(timeout_value: Any, max_results_value: Any) -> tuple[float, int]:
         if (
             isinstance(timeout_value, bool)
             or not isinstance(timeout_value, (int, float))
@@ -52,10 +124,22 @@ class SwiplBackend:
             or max_results_value <= 0
         ):
             raise ExpertError("expert execution bounds are invalid")
-        timeout = float(timeout_value)
-        max_results = max_results_value
-        goal = self._build_goal(capability, request.get("arguments"))
-        source_files = [*request.get("knowledge_bases", ()), *request.get("state_files", ())]
+        return float(timeout_value), max_results_value
+
+    def _run_registered(
+        self,
+        *,
+        namespace: str,
+        predicate: str,
+        arity: int,
+        operation: str,
+        arguments: Any,
+        source_files: Iterable[str | Path],
+        timeout: float,
+        max_results: int,
+    ) -> dict[str, Any]:
+        self._validate_binding_identity(namespace, predicate, arity)
+        goal = self._build_registered_goal(predicate, arity, arguments)
 
         command = [self.program, "-q", "-f", "none"]
         for source in source_files:
@@ -98,14 +182,21 @@ class SwiplBackend:
     def _build_goal(cls, capability: Any, arguments: Any) -> str:
         if not _is_registered_predicate_capability(capability):
             raise ExpertError("backend requires a registered predicate capability")
+        return cls._build_registered_goal(capability.predicate, capability.arity, arguments)
+
+    @classmethod
+    def _build_registered_goal(cls, predicate: str, arity: int, arguments: Any) -> str:
+        cls._validate_binding_identity("registered", predicate, arity)
         if not isinstance(arguments, list):
             raise ExpertError("invalid expert argument descriptor")
-        if capability.arity != len(arguments):
-            raise ExpertError("expert predicate descriptor arity mismatch")
+        if arity != len(arguments):
+            raise ExpertError(
+                f"expert predicate arity mismatch: registered {arity}, received {len(arguments)}"
+            )
         if not arguments:
-            return capability.predicate
+            return predicate
         encoded = ",".join(cls._encode_argument(argument) for argument in arguments)
-        return f"{capability.predicate}({encoded})"
+        return f"{predicate}({encoded})"
 
     @staticmethod
     def _encode_argument(argument: Any) -> str:
