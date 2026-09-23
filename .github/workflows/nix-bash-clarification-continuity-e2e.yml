@@ -44,11 +44,11 @@ jobs:
           git -C .ci/dotfiles-nix-bash-clarification checkout --detach FETCH_HEAD
           test "$(git -C .ci/dotfiles-nix-bash-clarification rev-parse HEAD)" = "$revision"
 
-      - name: Fetch exact current Zara Core conversation authority
+      - name: Fetch exact Zara Core clarification-continuity candidate
         shell: bash
         run: |
           set -euo pipefail
-          revision=00b3d7ce39f925b504f9094908e97ff42ae7a169
+          revision=90fe62ba41af323f788e3046741cf5bcdc7bf848
           rm -rf .ci/zara-core-nix-bash-clarification
           git init .ci/zara-core-nix-bash-clarification
           git -C .ci/zara-core-nix-bash-clarification remote add origin https://github.com/lost-rob0t/zara.git
