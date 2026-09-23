@@ -102,10 +102,6 @@ class RequestIdentityTypeFenceTests(unittest.TestCase):
             else module.BashExpertAdapterError
         )
 
-    @staticmethod
-    def _operation(module) -> str:
-        return "parse" if module is BASH else "parse"
-
     def _invoke(
         self,
         module,
@@ -118,10 +114,12 @@ class RequestIdentityTypeFenceTests(unittest.TestCase):
         plugin.invoke(
             request_id=request_id,
             activation_id=activation_id,
-            expert_operation=self._operation(module),
+            expert_operation="inspect",
             expected_registry_generation=EXPECTED_GENERATION,
             expected_runtime_generation=EXPECTED_GENERATION,
-            input_json=json.dumps({"source": "x = 1"}),
+            input_json=json.dumps(
+                {"source": "x = 1", "source_generation": "fixture:1"}
+            ),
         )
 
     def _assert_module_rejects_forged_identity(self, module) -> None:

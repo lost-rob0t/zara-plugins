@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REQUEST_ID = "req-result-identity-type-fence"
 ACTIVATION_ID = "act:" + ("c" * 32)
 INVOCATION_ID = "inv:" + ("d" * 32)
-EXPERT_OPERATION = "parse"
+EXPERT_OPERATION = "inspect"
 EXPECTED_GENERATION = 1
 
 
@@ -158,7 +158,10 @@ class ResultIdentityTypeFenceTests(unittest.TestCase):
                         expert_operation=EXPERT_OPERATION,
                         expected_registry_generation=EXPECTED_GENERATION,
                         expected_runtime_generation=EXPECTED_GENERATION,
-                        input_json='{"source":"let x = 1; in x"}',
+                        input_json=(
+                            '{"source":"let x = 1; in x",'
+                            '"source_generation":"fixture:identity:1"}'
+                        ),
                     )
 
                 self.assertEqual(len(runtime.requests), 1)
