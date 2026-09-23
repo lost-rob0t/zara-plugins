@@ -12,7 +12,7 @@ from zara_nix_expert.plugin import NixExpertAdapterError, ZaraNixExpertPlugin
 
 
 ACTIVATION_ID = "act:" + ("a" * 32)
-MANIFEST_DIGEST = "sha256:a5c349600eabd8add0f336c4932caf27d7cc9b222ca6c0f197f352fc56b2f0cf"
+MANIFEST_DIGEST = "sha256:c5a71709af3cae413de5151dfc9fc1e2e19bcb9fb209ac6cc4c6815f381c3ef8"
 
 
 class UsageRuntime:
@@ -31,7 +31,7 @@ class UsageRuntime:
             "invocation_id": "inv:" + ("a" * 32),
             "activation_id": request["activation_id"],
             "expert_id": request["expert_id"],
-            "expert_version": "0.1.0",
+            "expert_version": "1",
             "manifest_digest": MANIFEST_DIGEST,
             "expert_operation": request["expert_operation"],
             "resolved_registry_generation": request["expected_registry_generation"],
@@ -50,10 +50,10 @@ def invoke_with_usage(usage: object) -> None:
     plugin.invoke(
         "req-usage",
         ACTIVATION_ID,
-        "parse",
+        "inspect",
         7,
         3,
-        '{"source":"{}"}',
+        '{"source":"{}","source_generation":"fixture:nix:1"}',
         timeout_ms=2500,
         max_results=8,
         max_output_bytes=32768,

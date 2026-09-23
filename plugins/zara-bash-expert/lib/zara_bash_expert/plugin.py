@@ -12,7 +12,8 @@ from langchain_core.tools import StructuredTool
 from zara.plugins import PluginMetadata, ServicePlugin
 
 
-PLUGIN_VERSION = "0.1.0"
+PACKAGE_VERSION = "0.1.0"
+PLUGIN_VERSION = "1"
 PROTOCOL = "ZARA-EXPERT/1"
 EXPERT_ID = "zara:expert/bash"
 SOURCE_REFERENCE = "dotfiles:.zara/experts/bash"
@@ -21,7 +22,8 @@ SOURCE_ISSUE = 287
 LANGUAGE_EXTENSIONS = (".sh", ".bash")
 LANGUAGE_KEYWORDS = ("bash", "shell", "sh")
 HOST_CAPABILITY = "expert.invoke"
-MANIFEST_DIGEST = "sha256:ec1ff72739eeaa11b7fc0fef282378066fb30ecb4d58fd8ebc5d5852a9d1cef4"
+SOURCE_LOCK_DIGEST = "sha256:ec1ff72739eeaa11b7fc0fef282378066fb30ecb4d58fd8ebc5d5852a9d1cef4"
+MANIFEST_DIGEST = "sha256:8b341e589cb6611312855437475c8e03bf03eef77fdb636f429d7e4021b8ee61"
 MAX_INPUT_BYTES = 65536
 MAX_OUTPUT_BYTES = 65536
 MAX_TIMEOUT_MS = 3000
@@ -39,39 +41,87 @@ MAX_GENERATION = 2147483647
 REQUEST_ID_RE = re.compile(r"^[!-~]{1,128}$")
 ACTIVATION_ID_RE = re.compile(r"^act:[a-f0-9]{32}$")
 INVOCATION_ID_RE = re.compile(r"^inv:[a-f0-9]{32}$")
-ALLOWED_OPERATIONS = frozenset(
-    {
-        "parse",
-        "inspect_startup",
-        "inspect_source_graph",
-        "diagnose_quoting",
-        "style_check",
-        "check_plan",
-    }
-)
 OPERATION_FIELDS: dict[str, tuple[dict[str, object], ...]] = {
-    "parse": (
-        {"name": "source", "type": "string", "required": True},
-        {"name": "path", "type": "string", "required": False},
-    ),
-    "inspect_startup": (
+    "match": (
         {"name": "path", "type": "string", "required": True},
+        {"name": "source_generation", "type": "reference", "required": True},
     ),
-    "inspect_source_graph": (
-        {"name": "path", "type": "string", "required": True},
-    ),
-    "diagnose_quoting": (
+    "inspect": (
         {"name": "source", "type": "string", "required": True},
-        {"name": "path", "type": "string", "required": False},
+        {"name": "source_generation", "type": "reference", "required": True},
     ),
-    "style_check": (
+    "diagnose": (
         {"name": "source", "type": "string", "required": True},
-        {"name": "path", "type": "string", "required": False},
+        {"name": "source_generation", "type": "reference", "required": True},
     ),
-    "check_plan": (
-        {"name": "path", "type": "string", "required": True},
+    "repair.preview": (
+        {"name": "source", "type": "string", "required": True},
+        {"name": "source_generation", "type": "reference", "required": True},
+        {"name": "diagnostic_ref", "type": "reference", "required": True},
+    ),
+    "repair.verify": (
+        {"name": "original_source", "type": "string", "required": True},
+        {"name": "candidate_source", "type": "string", "required": True},
+        {"name": "source_generation", "type": "reference", "required": True},
+    ),
+    "style.rules": (
+        {"name": "source", "type": "string", "required": True},
+        {"name": "project_style", "type": "reference", "required": True},
+    ),
+    "explain": (
+        {"name": "decision_ref", "type": "reference", "required": True},
+        {"name": "source_generation", "type": "reference", "required": True},
+    ),
+    "repair.apply": (
+        {"name": "repair", "type": "object", "required": True},
+        {"name": "expected_preimage", "type": "string", "required": True},
+        {"name": "source_generation", "type": "reference", "required": True},
     ),
 }
+OPERATION_OUTPUT_FIELDS: dict[str, tuple[dict[str, object], ...]] = {
+    "match": (
+        {"name": "applicable", "type": "boolean", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
+    ),
+    "inspect": (
+        {"name": "result", "type": "object", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
+    ),
+    "diagnose": (
+        {"name": "diagnostics", "type": "list", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
+    ),
+    "repair.preview": (
+        {"name": "repair", "type": "object", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
+    ),
+    "repair.verify": (
+        {"name": "verified", "type": "boolean", "required": True},
+        {"name": "postcondition_evidence", "type": "object", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
+    ),
+    "style.rules": (
+        {"name": "style_rules", "type": "list", "required": True},
+        {"name": "style_provenance", "type": "list", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
+    ),
+    "explain": (
+        {"name": "explanation", "type": "object", "required": True},
+        {"name": "evidence_refs", "type": "list", "required": False},
+        {"name": "explanation_refs", "type": "list", "required": False},
+    ),
+    "repair.apply": (
+        {"name": "effect_receipt", "type": "object", "required": True},
+        {"name": "postcondition_evidence", "type": "object", "required": True},
+    ),
+}
+ALLOWED_OPERATIONS = frozenset(OPERATION_FIELDS)
 RESULT_VERDICTS = frozenset(
     {"succeeded", "failed", "unknown", "blocked", "unsupported", "cancelled", "error"}
 )
@@ -161,7 +211,7 @@ def _validate_source_lock() -> None:
         raw = _source_lock_path().read_bytes()
     except OSError as error:
         raise BashExpertAdapterError("source-lock-unavailable") from error
-    if "sha256:" + hashlib.sha256(raw).hexdigest() != MANIFEST_DIGEST:
+    if "sha256:" + hashlib.sha256(raw).hexdigest() != SOURCE_LOCK_DIGEST:
         raise BashExpertAdapterError("source-lock-digest-mismatch")
     try:
         lock = json.loads(
@@ -185,7 +235,7 @@ def _validate_source_lock() -> None:
         and type(lock.get("expert_id")) is str
         and lock.get("expert_id") == EXPERT_ID
         and type(lock.get("adapter_version")) is str
-        and lock.get("adapter_version") == PLUGIN_VERSION
+        and lock.get("adapter_version") == PACKAGE_VERSION
         and type(canonical) is dict
         and set(canonical) == CANONICAL_SOURCE_FIELDS
         and canonical.get("repository") == "lost-rob0t/dotfiles"
@@ -226,12 +276,18 @@ def _validate_source_lock() -> None:
     if len(specs) != 1:
         raise BashExpertAdapterError("source-lock-host-mismatch")
     spec = specs[0]
+    try:
+        canonical_descriptor = language_family_module.descriptor(spec, available=True)
+    except Exception as error:
+        raise BashExpertAdapterError("source-lock-host-unavailable") from error
     if not (
         getattr(spec, "expert_id", None) == EXPERT_ID
         and getattr(spec, "source_reference", None) == SOURCE_REFERENCE
         and getattr(spec, "upstream_issue", None) == UPSTREAM_CONTRACT
         and tuple(getattr(spec, "extensions", ())) == LANGUAGE_EXTENSIONS
         and tuple(getattr(spec, "applicability_keywords", ())) == LANGUAGE_KEYWORDS
+        and canonical_descriptor.get("expert_version") == PLUGIN_VERSION
+        and canonical_descriptor.get("manifest_digest") == MANIFEST_DIGEST
     ):
         raise BashExpertAdapterError("source-lock-host-mismatch")
 
@@ -332,7 +388,17 @@ def _validate_operation_input(operation: str, payload: Mapping[str, object]) -> 
     for name, field in declared.items():
         if field["required"] and name not in payload:
             raise BashExpertAdapterError("missing-operation-input")
-        if name in payload and field["type"] == "string" and not isinstance(payload[name], str):
+        if name not in payload:
+            continue
+        value = payload[name]
+        field_type = field["type"]
+        if field_type in {"string", "reference"}:
+            if type(value) is not str:
+                raise BashExpertAdapterError("invalid-operation-input")
+        elif field_type == "object":
+            if type(value) is not dict:
+                raise BashExpertAdapterError("invalid-operation-input")
+        else:
             raise BashExpertAdapterError("invalid-operation-input")
 
 
@@ -340,7 +406,7 @@ def _operation_descriptor(operation: str) -> dict[str, object]:
     return {
         "operation_id": operation,
         "input_schema": {"fields": [dict(field) for field in OPERATION_FIELDS[operation]]},
-        "output_schema": {"fields": []},
+        "output_schema": {"fields": [dict(field) for field in OPERATION_OUTPUT_FIELDS[operation]]},
     }
 
 
@@ -502,7 +568,7 @@ def _validate_result(
 class ZaraBashExpertPlugin(ServicePlugin):
     metadata = PluginMetadata(
         name="zara-bash-expert",
-        version=PLUGIN_VERSION,
+        version=PACKAGE_VERSION,
         api_version="1",
         description="Pure-symbolic BashExpert adapter over the canonical Zara expert host",
     )
@@ -567,7 +633,7 @@ class ZaraBashExpertPlugin(ServicePlugin):
                 ],
                 "applicability": {"keywords": list(LANGUAGE_KEYWORDS)},
                 "required_capabilities": [HOST_CAPABILITY],
-                "possible_effects": ["none"],
+                "possible_effects": ["filesystem_write"],
                 "supported_engines": ["swipl"],
                 "supported_platforms": ["desktop", "server"],
                 "fallback_policy": "fail_closed",
