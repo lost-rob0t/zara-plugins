@@ -555,15 +555,27 @@ def _validate_result(
         raise TypeScriptExpertAdapterError("read-only-effect-proof-missing")
     if receipts:
         raise TypeScriptExpertAdapterError("read-only-effect-leak")
+
+    data_value = result.get("data")
+    evidence_value = result.get("evidence_refs")
+    error_code = result.get("error_code")
+    terminal_error = error_code in {"cancelled", "stale_generation"}
+    if verdict == "succeeded" and terminal_error:
+        raise TypeScriptExpertAdapterError("terminal-fence")
+    if terminal_error:
+        if isinstance(data_value, Mapping) and data_value:
+            raise TypeScriptExpertAdapterError("terminal-fence")
+        if isinstance(evidence_value, (list, tuple)) and evidence_value:
+            raise TypeScriptExpertAdapterError("terminal-fence")
     if verdict == "cancelled":
-        data = result.get("data")
-        evidence_refs = result.get("evidence_refs")
-        if not isinstance(data, Mapping) or data:
+        if not isinstance(data_value, Mapping) or data_value:
             raise TypeScriptExpertAdapterError("cancelled-expert-output-leak")
-        if not isinstance(evidence_refs, (list, tuple)) or evidence_refs:
+        if not isinstance(evidence_value, (list, tuple)) or evidence_value:
             raise TypeScriptExpertAdapterError("cancelled-expert-output-leak")
-    _validate_operation_output(expert_operation, verdict, result.get("data"))
-    _validate_result_payload(result)
+    _validate_operation_output(expert_operation, verdict, data_value)
+    data, evidence_refs = _validate_result_payload(result)
+    if terminal_error and (data or evidence_refs):
+        raise TypeScriptExpertAdapterError("terminal-fence")
 
 
 class ZaraTypeScriptExpertPlugin(ServicePlugin):
