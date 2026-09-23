@@ -124,6 +124,16 @@ class LispAuthoritySnapshotTests(unittest.TestCase):
                     receipt,
                     postcondition_ref,
                 )
+                receipt_metadata = {
+                    "executor": {"kind": "canonical-core"},
+                    "observations": ["write-complete"],
+                }
+                postcondition_metadata = {
+                    "verifier": {"kind": "dialect-reader"},
+                    "observations": ["fresh-reader-pass"],
+                }
+                receipt["metadata"] = receipt_metadata
+                postcondition["metadata"] = postcondition_metadata
                 registry = RecordingCoreRegistry(core_result)
                 handle = SimpleNamespace(expert_id=expert_id, workspace="project")
                 invoker = CoreLispFamilyCompositionInvoker(
@@ -152,22 +162,40 @@ class LispAuthoritySnapshotTests(unittest.TestCase):
 
                 receipt["receipt_id"] = "edit:forged-late"
                 receipt["source_generation"] = "project:forged-late"
+                receipt_metadata["executor"]["kind"] = "forged-late-executor"
+                receipt_metadata["observations"].append("forged-late-observation")
                 postcondition["verified"] = False
                 postcondition["fresh"] = False
                 postcondition["receipt_ref"] = (
                     "zara.verified-outcome/v1:outcome:postcondition/forged-late"
                 )
+                postcondition_metadata["verifier"]["kind"] = "forged-late-verifier"
+                postcondition_metadata["observations"].append("forged-late-observation")
 
                 self.assertEqual(result.data["effect_receipt"]["receipt_id"], "edit:42")
                 self.assertEqual(
                     result.data["effect_receipt"]["source_generation"],
                     "project:4",
                 )
+                self.assertEqual(
+                    result.data["effect_receipt"]["metadata"],
+                    {
+                        "executor": {"kind": "canonical-core"},
+                        "observations": ["write-complete"],
+                    },
+                )
                 self.assertIs(result.data["postcondition_evidence"]["verified"], True)
                 self.assertIs(result.data["postcondition_evidence"]["fresh"], True)
                 self.assertEqual(
                     result.data["postcondition_evidence"]["receipt_ref"],
                     postcondition_ref,
+                )
+                self.assertEqual(
+                    result.data["postcondition_evidence"]["metadata"],
+                    {
+                        "verifier": {"kind": "dialect-reader"},
+                        "observations": ["fresh-reader-pass"],
+                    },
                 )
                 self.assertEqual(budget.model_calls_used, 0)
 
