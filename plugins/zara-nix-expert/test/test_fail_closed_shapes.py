@@ -10,10 +10,14 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
 from zara_nix_expert import NixExpertAdapterError, create_plugin
-from zara_nix_expert.plugin import MANIFEST_DIGEST
+from zara_nix_expert.plugin import MANIFEST_DIGEST, PLUGIN_VERSION
 
 
 ACTIVATION_ID = "act:" + ("e" * 32)
+INSPECT_INPUT = {
+    "source": "{ pkgs, ... }: {}",
+    "source_generation": "source:1",
+}
 
 
 class FalseyReceiptList(list):
@@ -39,7 +43,7 @@ class RecordingRuntime:
             "invocation_id": "inv:" + ("d" * 32),
             "activation_id": request["activation_id"],
             "expert_id": request["expert_id"],
-            "expert_version": "0.1.0",
+            "expert_version": PLUGIN_VERSION,
             "manifest_digest": MANIFEST_DIGEST,
             "expert_operation": request["expert_operation"],
             "resolved_registry_generation": request["expected_registry_generation"],
@@ -72,7 +76,7 @@ class NixExpertFailClosedShapeTests(unittest.TestCase):
                         operation,
                         1,
                         1,
-                        json.dumps({"path": "flake.nix"}),
+                        json.dumps(INSPECT_INPUT),
                     )
         self.assertEqual(self.runtime.resolved, [])
         self.assertEqual(self.runtime.requests, [])
@@ -83,10 +87,10 @@ class NixExpertFailClosedShapeTests(unittest.TestCase):
             self.plugin.invoke(
                 "req:nix-verdict",
                 ACTIVATION_ID,
-                "inspect_flake",
+                "inspect",
                 1,
                 1,
-                json.dumps({"path": "flake.nix"}),
+                json.dumps(INSPECT_INPUT),
             )
 
         self.assertEqual(self.runtime.resolved, ["expert.invoke"])
@@ -104,10 +108,10 @@ class NixExpertFailClosedShapeTests(unittest.TestCase):
             self.plugin.invoke(
                 "req:nix-effect-shape",
                 ACTIVATION_ID,
-                "inspect_flake",
+                "inspect",
                 1,
                 1,
-                json.dumps({"path": "flake.nix"}),
+                json.dumps(INSPECT_INPUT),
             )
 
         self.assertEqual(self.runtime.resolved, ["expert.invoke"])

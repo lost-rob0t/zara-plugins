@@ -12,7 +12,7 @@ from zara_bash_expert.plugin import BashExpertAdapterError, ZaraBashExpertPlugin
 
 
 ACTIVATION_ID = "act:" + ("b" * 32)
-MANIFEST_DIGEST = "sha256:ec1ff72739eeaa11b7fc0fef282378066fb30ecb4d58fd8ebc5d5852a9d1cef4"
+MANIFEST_DIGEST = "sha256:8b341e589cb6611312855437475c8e03bf03eef77fdb636f429d7e4021b8ee61"
 
 
 class UsageRuntime:
@@ -31,7 +31,7 @@ class UsageRuntime:
             "invocation_id": "inv:" + ("b" * 32),
             "activation_id": request["activation_id"],
             "expert_id": request["expert_id"],
-            "expert_version": "0.1.0",
+            "expert_version": "1",
             "manifest_digest": MANIFEST_DIGEST,
             "expert_operation": request["expert_operation"],
             "resolved_registry_generation": request["expected_registry_generation"],
@@ -50,10 +50,10 @@ def invoke_with_usage(usage: object) -> None:
     plugin.invoke(
         "req-usage",
         ACTIVATION_ID,
-        "parse",
+        "inspect",
         7,
         3,
-        '{"source":"echo ok"}',
+        '{"source":"echo ok","source_generation":"fixture:bash:1"}',
         timeout_ms=2500,
         max_results=8,
         max_output_bytes=32768,
