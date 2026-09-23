@@ -22,7 +22,7 @@ if _ZARA_CORE_ROOT:
     sys.path.insert(0, str(Path(_ZARA_CORE_ROOT).resolve()))
     from zara.principals import PrincipalContext
 
-    # Conversation persistence only needs the authenticated principal type.  Keep
+    # Conversation persistence only needs the authenticated principal type. Keep
     # this acceptance on the canonical conversation owner without importing the
     # unrelated LangGraph/provider server stack.
     server_facade = types.ModuleType("zara.server")
@@ -130,7 +130,6 @@ class NixBashClarificationContinuityE2ETests(
             )
             principal = PrincipalContext(
                 principal_id="user:nix-bash-clarification",
-                tenant_id="tenant:nix-bash-clarification",
             )
             expert_projection = self._persist_real_expert_answer(
                 store,
