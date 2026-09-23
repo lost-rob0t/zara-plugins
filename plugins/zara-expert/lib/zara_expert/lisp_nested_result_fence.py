@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from typing import Any
 
@@ -17,8 +18,10 @@ def _guard_nested_container_identity(value: Any) -> None:
     they must be exact built-in strings rather than host-controlled subclasses.
     Scalar subclasses accepted by the shared inert JSON-like validator can
     likewise carry host-controlled equality/hash behavior into durable/public
-    projection. This guard owns only Python wire/container/scalar identity;
-    Prolog-RLM remains the parser/reader/repair semantic authority.
+    projection. Exact built-in floats must additionally be finite so durable
+    Desktop/Android JSON semantics cannot diverge on NaN or infinities. This
+    guard owns only Python wire/container/scalar identity; Prolog-RLM remains the
+    parser/reader/repair semantic authority.
     """
 
     if isinstance(value, Mapping):
@@ -40,6 +43,10 @@ def _guard_nested_container_identity(value: Any) -> None:
     if isinstance(value, (int, float)) and type(value) not in (int, float, bool):
         raise CompositionError(
             "Lisp symbolic result scalar must use an exact built-in wire type"
+        )
+    if type(value) is float and not math.isfinite(value):
+        raise CompositionError(
+            "Lisp symbolic result numbers must be finite JSON values"
         )
 
 

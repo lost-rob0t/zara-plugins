@@ -16,6 +16,7 @@ from zara_bash_expert.plugin import BashExpertAdapterError, MANIFEST_DIGEST
 
 
 ACTIVATION_ID = "act:" + ("d" * 32)
+MATCH_PAYLOAD = {"path": ".bashrc", "source_generation": "fixture:bash:1"}
 
 
 class RecordingRuntime:
@@ -36,7 +37,7 @@ class RecordingRuntime:
             "invocation_id": "inv:" + ("b" * 32),
             "activation_id": request["activation_id"],
             "expert_id": request["expert_id"],
-            "expert_version": "0.1.0",
+            "expert_version": "1",
             "manifest_digest": MANIFEST_DIGEST,
             "expert_operation": request["expert_operation"],
             "resolved_registry_generation": request["expected_registry_generation"],
@@ -81,12 +82,26 @@ class BashExpertTypedBoundaryTests(unittest.TestCase):
     def test_rejects_missing_extra_and_wrong_typed_fields_before_host(self) -> None:
         for payload, error in (
             ({}, "missing-required-input-field"),
-            ({"path": ".bashrc", "argv": ["bash", "-c", "echo pwned"]}, "unexpected-input-field"),
-            ({"path": {"value": ".bashrc"}}, "invalid-input-field-type"),
+            (
+                {
+                    "path": ".bashrc",
+                    "source_generation": "fixture:bash:1",
+                    "argv": ["bash", "-c", "echo pwned"],
+                },
+                "unexpected-input-field",
+            ),
+            (
+                {"path": {"value": ".bashrc"}, "source_generation": "fixture:bash:1"},
+                "invalid-input-field-type",
+            ),
+            (
+                {"path": ".bashrc", "source_generation": {"bad": True}},
+                "invalid-input-field-type",
+            ),
         ):
             with self.subTest(payload=payload):
                 with self.assertRaisesRegex(BashExpertAdapterError, error):
-                    self.invoke("inspect_startup", payload)
+                    self.invoke("match", payload)
         self.assertEqual(self.runtime.resolved, [])
         self.assertEqual(self.runtime.requests, [])
 
@@ -94,7 +109,10 @@ class BashExpertTypedBoundaryTests(unittest.TestCase):
         for path in ("", ".bashrc\x00ignored"):
             with self.subTest(path=path):
                 with self.assertRaisesRegex(BashExpertAdapterError, "invalid-input-path"):
-                    self.invoke("inspect_startup", {"path": path})
+                    self.invoke(
+                        "match",
+                        {"path": path, "source_generation": "fixture:bash:1"},
+                    )
         self.assertEqual(self.runtime.resolved, [])
         self.assertEqual(self.runtime.requests, [])
 
@@ -109,7 +127,7 @@ class BashExpertTypedBoundaryTests(unittest.TestCase):
             with self.subTest(field=field, value=value):
                 self.runtime.result_mutation = {field: value}
                 with self.assertRaisesRegex(BashExpertAdapterError, "stale-expert-result"):
-                    self.invoke("inspect_startup", {"path": ".bashrc"})
+                    self.invoke("match", MATCH_PAYLOAD)
                 request = self.runtime.requests[-1]
                 self.assertIs(type(request["expected_registry_generation"]), int)
                 self.assertIs(type(request["expected_runtime_generation"]), int)
@@ -133,7 +151,7 @@ class BashExpertTypedBoundaryTests(unittest.TestCase):
                 with self.assertRaisesRegex(
                     BashExpertAdapterError, "cancelled-expert-output-leak"
                 ):
-                    self.invoke("inspect_startup", {"path": ".bashrc"})
+                    self.invoke("match", MATCH_PAYLOAD)
                 request = self.runtime.requests[-1]
                 self.assertEqual(request["limits"]["max_model_calls"], 0)
         self.assertEqual(len(self.runtime.requests), len(cases))
@@ -144,7 +162,7 @@ class BashExpertTypedBoundaryTests(unittest.TestCase):
             "data": {},
             "evidence_refs": [],
         }
-        result = json.loads(self.invoke("inspect_startup", {"path": ".bashrc"}))
+        result = json.loads(self.invoke("match", MATCH_PAYLOAD))
         self.assertEqual(result["verdict"], "cancelled")
         self.assertEqual(result["data"], {})
         self.assertEqual(result["evidence_refs"], [])
@@ -152,11 +170,11 @@ class BashExpertTypedBoundaryTests(unittest.TestCase):
         self.assertEqual(result["effect_receipts"], [])
 
     def test_valid_typed_input_reaches_canonical_host_with_zero_model_limit(self) -> None:
-        result = json.loads(self.invoke("inspect_startup", {"path": ".bashrc"}))
+        result = json.loads(self.invoke("match", MATCH_PAYLOAD))
         self.assertEqual(self.runtime.resolved, ["expert.invoke"])
         self.assertEqual(len(self.runtime.requests), 1)
         request = self.runtime.requests[0]
-        self.assertEqual(request["input"], {"path": ".bashrc"})
+        self.assertEqual(request["input"], MATCH_PAYLOAD)
         self.assertEqual(request["limits"]["max_model_calls"], 0)
         self.assertEqual(result["usage"]["model_calls"], 0)
         self.assertEqual(result["effect_receipts"], [])
