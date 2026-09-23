@@ -124,16 +124,43 @@ def _invoke(module, evidence_refs: list[str]) -> tuple[str, _Runtime]:
 
 
 class CoreEvidenceBoundsTests(unittest.TestCase):
-    def test_exact_core_evidence_bounds_are_accepted(self) -> None:
+    def test_total_evidence_budget_accepts_host_refs_plus_provenance(self) -> None:
         exact_ref = "e:" + ("a" * (CORE_MAX_EVIDENCE_REF_LENGTH - 2))
-        refs = [exact_ref] * CORE_MAX_EVIDENCE_REFS
+        refs = [exact_ref] * (CORE_MAX_EVIDENCE_REFS - 1)
 
         for module, _error_type in CASES:
             with self.subTest(expert_id=module.EXPERT_ID):
                 encoded, runtime = _invoke(module, refs)
                 result = json.loads(encoded)
-                self.assertEqual(result["evidence_refs"], refs)
+                self.assertEqual(
+                    result["evidence_refs"],
+                    [*refs, module._provenance_evidence_ref()],
+                )
+                self.assertEqual(len(result["evidence_refs"]), CORE_MAX_EVIDENCE_REFS)
                 self.assertEqual(result["usage"]["model_calls"], 0)
+                self.assertEqual(runtime.requests[0]["limits"]["max_model_calls"], 0)
+
+    def test_host_cannot_consume_reserved_provenance_slot(self) -> None:
+        refs = ["source:fixture"] * CORE_MAX_EVIDENCE_REFS
+
+        for module, error_type in CASES:
+            with self.subTest(expert_id=module.EXPERT_ID):
+                runtime = _Runtime(module, refs)
+                plugin = module.create_plugin()
+                plugin.start(runtime)
+                with self.assertRaisesRegex(
+                    error_type,
+                    "provenance-evidence-budget-exceeded",
+                ):
+                    plugin.invoke(
+                        REQUEST_ID,
+                        ACTIVATION_ID,
+                        EXPERT_OPERATION,
+                        EXPECTED_GENERATION,
+                        EXPECTED_GENERATION,
+                        INPUT_JSON,
+                    )
+                self.assertEqual(len(runtime.requests), 1)
                 self.assertEqual(runtime.requests[0]["limits"]["max_model_calls"], 0)
 
     def test_more_than_core_max_evidence_refs_fails_closed(self) -> None:
