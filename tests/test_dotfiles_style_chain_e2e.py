@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DOTFILES_ROOT = os.environ.get("ZARA_DOTFILES_CHAIN_ROOT")
 ZARA_CORE_ROOT = os.environ.get("ZARA_CORE_CURRENT_ROOT")
 PROLOG_RLM_ROOT = os.environ.get("PROLOG_RLM_ROOT")
-EXPECTED_DOTFILES_COMMIT = "4fc75059cd0eb242559e0ec2786e7d78875a310d"
+EXPECTED_DOTFILES_COMMIT = "43dc6196070d6e5d83a3d0026891e0d28caa3c8f"
 EXPECTED_ZARA_CORE_COMMIT = "4f30f9f18c06ba3a5daf11122e0e2a8af30f7095"
 EXPECTED_PROLOG_RLM_COMMIT = "4715b5ee53d0e7a26c55705ea85c0d16c3916504"
 ZARA_EXPERT_LIB = REPO_ROOT / "plugins" / "zara-expert" / "lib"
@@ -77,7 +77,7 @@ class DotfilesStyleChainE2ETests(unittest.TestCase):
         cls.prolog_rlm_root = Path(PROLOG_RLM_ROOT).resolve()
         if shutil.which("swipl") is None:
             raise AssertionError("SWI-Prolog is required for Dotfiles style-chain E2E")
-        _checkout_head(cls.dotfiles_root, EXPECTED_DOTFILES_COMMIT, "Dotfiles pending producer")
+        _checkout_head(cls.dotfiles_root, EXPECTED_DOTFILES_COMMIT, "Dotfiles merged producer")
         _checkout_head(cls.zara_core_root, EXPECTED_ZARA_CORE_COMMIT, "current Zara Core")
         _checkout_head(cls.prolog_rlm_root, EXPECTED_PROLOG_RLM_COMMIT, "Prolog-RLM")
 
