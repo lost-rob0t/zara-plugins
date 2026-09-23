@@ -38,12 +38,14 @@ from .lisp_activation_fence import install_lisp_activation_handle_type_fence
 from .lisp_evidence_fence import install_lisp_evidence_type_fence
 from .lisp_data_evidence_fence import install_lisp_data_evidence_type_fence
 from .lisp_verdict_fence import install_lisp_verdict_type_fence
+from .lisp_usage_fence import install_lisp_usage_ledger_type_fence
 from .lisp_receipt_fence import install_lisp_effect_receipt_type_fence
 
 install_lisp_activation_handle_type_fence()
 install_lisp_evidence_type_fence()
 install_lisp_data_evidence_type_fence()
 install_lisp_verdict_type_fence()
+install_lisp_usage_ledger_type_fence()
 install_lisp_effect_receipt_type_fence()
 
 from .lisp_output_contract import (
