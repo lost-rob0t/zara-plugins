@@ -100,7 +100,7 @@ class DuplicateJsonKeyFenceTests(unittest.TestCase):
             plugin.invoke(
                 request_id=REQUEST_ID,
                 activation_id=ACTIVATION_ID,
-                expert_operation="parse",
+                expert_operation="inspect",
                 expected_registry_generation=1,
                 expected_runtime_generation=1,
                 input_json=input_json,

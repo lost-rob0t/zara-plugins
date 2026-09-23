@@ -19,13 +19,13 @@ CASES = {
         "zara-nix-expert",
         "zara_nix_expert",
         "Nix",
-        {"source": "{ x = 1; }"},
+        {"source": "{ x = 1; }", "source_generation": "fixture:nix:1"},
     ),
     "bash": (
         "zara-bash-expert",
         "zara_bash_expert",
         "Bash",
-        {"source": "printf '%s\\n' ok"},
+        {"source": "printf '%s\\n' ok", "source_generation": "fixture:bash:1"},
     ),
 }
 
@@ -125,7 +125,7 @@ class NixBashTerminalFenceSemanticsTests(unittest.TestCase):
                         plugin.invoke(
                             f"request-{language}-{error_code}",
                             ACTIVATION_ID,
-                            "parse",
+                            "inspect",
                             7,
                             11,
                             json.dumps(payload),
@@ -148,7 +148,7 @@ class NixBashTerminalFenceSemanticsTests(unittest.TestCase):
                     plugin.invoke(
                         f"request-{language}-stale-late-output",
                         ACTIVATION_ID,
-                        "parse",
+                        "inspect",
                         7,
                         11,
                         json.dumps(payload),

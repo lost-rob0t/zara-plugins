@@ -1,0 +1,79 @@
+name: Nix Bash Package Host Contract
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/zara-nix-expert/**'
+      - 'plugins/zara-bash-expert/**'
+      - 'plugins/zara-expert/**'
+      - 'tests/test_nix_bash_package_host_contract.py'
+      - 'flake.nix'
+      - 'flake.lock'
+      - 'plugins.json'
+      - '.github/workflows/nix-bash-package-host-contract.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-bash-package-host-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-host-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Prove packages reuse canonical zara-expert operation contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          env \
+            -u OPENAI_API_KEY \
+            -u ANTHROPIC_API_KEY \
+            -u OPENROUTER_API_KEY \
+            -u GOOGLE_API_KEY \
+            -u GEMINI_API_KEY \
+            -u GROQ_API_KEY \
+            -u ZAI_API_KEY \
+            -u AZURE_OPENAI_API_KEY \
+            -u HF_TOKEN \
+            python3 -m unittest discover -s tests -t . -p 'test_nix_bash_package_host_contract.py'
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Prove installed Nix packages preserve source-owned expert authority
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          verify_package() {
+            local plugin="$1"
+            local module="$2"
+            local out
+            out="$(nix build ".#${plugin}" --no-link --print-out-paths)"
+
+            local installed_plugin="$out/share/zara/plugins/$plugin"
+            local runtime="$out/share/zara/runtime/$plugin"
+
+            test -f "$runtime/entrypoint.py"
+            test -d "$runtime/lib"
+            test -L "$runtime/expert-source.lock.json"
+            test -f "$installed_plugin/expert-source.lock.json"
+            cmp \
+              "plugins/$plugin/expert-source.lock.json" \
+              "$installed_plugin/expert-source.lock.json"
+            cmp \
+              "$installed_plugin/expert-source.lock.json" \
+              "$runtime/expert-source.lock.json"
+            cmp \
+              "plugins/$plugin/lib/$module/plugin.py" \
+              "$installed_plugin/lib/$module/plugin.py"
+          }
+
+          verify_package zara-nix-expert zara_nix_expert
+          verify_package zara-bash-expert zara_bash_expert

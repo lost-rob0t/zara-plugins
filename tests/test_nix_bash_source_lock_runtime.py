@@ -24,15 +24,15 @@ CASES = {
         "zara-nix-expert",
         "zara_nix_expert",
         "Nix",
-        "parse",
-        {"source": "{ x = 1; }"},
+        "inspect",
+        {"source": "{ x = 1; }", "source_generation": "fixture:nix:1"},
     ),
     "bash": (
         "zara-bash-expert",
         "zara_bash_expert",
         "Bash",
-        "parse",
-        {"source": "printf '%s\\n' ok"},
+        "inspect",
+        {"source": "printf '%s\\n' ok", "source_generation": "fixture:bash:1"},
     ),
 }
 

@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REQUEST_ID = "req-nix-bash-result-snapshot"
 ACTIVATION_ID = "act:" + ("a" * 32)
 INVOCATION_ID = "inv:" + ("b" * 32)
-EXPERT_OPERATION = "parse"
+EXPERT_OPERATION = "inspect"
 EXPECTED_GENERATION = 1
 
 
@@ -151,7 +151,9 @@ def _invoke(module, runtime: _Runtime, source: str) -> str:
         expert_operation=EXPERT_OPERATION,
         expected_registry_generation=EXPECTED_GENERATION,
         expected_runtime_generation=EXPECTED_GENERATION,
-        input_json=json.dumps({"source": source}),
+        input_json=json.dumps(
+            {"source": source, "source_generation": "fixture:result-snapshot:1"}
+        ),
     )
 
 
