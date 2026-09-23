@@ -45,6 +45,15 @@ class SwiplBackendTests(unittest.TestCase):
         host.register("alpha", [], predicates={"thing": 1})
         return host
 
+    @staticmethod
+    def _closure_value_or_none(function, name: str):
+        cells = function.__closure__ or ()
+        freevars = function.__code__.co_freevars
+        return {
+            freevar: cell.cell_contents
+            for freevar, cell in zip(freevars, cells)
+        }.get(name)
+
     def test_raw_backend_predicate_selection_is_not_authority(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -78,6 +87,48 @@ class SwiplBackendTests(unittest.TestCase):
             self.assertFalse(
                 hasattr(backend, "register_predicate") or hasattr(backend, "issue_capability"),
                 "raw backend must not expose a replacement authority-minting API",
+            )
+
+    def test_closure_introspection_cannot_recover_capability_mint(self):
+        issue = self._closure_value_or_none(ExpertHost.register, "issue")
+        if issue is None:
+            return
+
+        forged = issue("alpha", "shell", 1)
+        self.assertFalse(
+            expert_domain._is_registered_predicate_capability(forged),
+            "generic same-process code recovered a backend-accepted predicate authority from a Python closure",
+        )
+
+    def test_closure_introspection_cannot_substitute_registered_predicate_authority(self):
+        issue = self._closure_value_or_none(ExpertHost.register, "issue")
+        registries = self._closure_value_or_none(ExpertHost._run, "registries")
+        if issue is None or registries is None:
+            return
+
+        class RecordingBackend:
+            def __init__(self):
+                self.requests = []
+
+            def run(self, request):
+                self.requests.append(request)
+                return {"ok": True, "results": [], "trace": []}
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            backend = RecordingBackend()
+            host = ExpertHost(backend, state_root=root / "state")
+            host.register("alpha", [], predicates={"thing": 1})
+
+            forged = issue("alpha", "shell", 1)
+            registries[host]["alpha"]["thing"] = forged
+
+            with self.assertRaises(ExpertError):
+                host.query("alpha", "thing", ["echo pwned"])
+            self.assertEqual(
+                backend.requests,
+                [],
+                "recovered same-process closure state substituted executable predicate authority before backend admission",
             )
 
     def test_registered_predicate_metadata_cannot_be_mutated_into_shell_authority(self):
