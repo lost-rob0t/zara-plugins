@@ -70,7 +70,7 @@ def _single_result(result: Mapping[str, Any], *, predicate: str) -> str:
             f"Dotfiles StyleExpert predicate {predicate!r} must return exactly one result"
         )
     value = raw[0]
-    if not isinstance(value, str):
+    if type(value) is not str:
         raise CompositionError(
             f"Dotfiles StyleExpert predicate {predicate!r} returned non-text"
         )
@@ -185,6 +185,8 @@ def _compose_dotfiles_style(
     fence: InvocationFence,
     charge_evidence: bool,
 ) -> DotfilesStyleComposition:
+    if type(language) is not str:
+        raise CompositionError("Dotfiles StyleExpert language must be exact text")
     if language not in _SUPPORTED_LANGUAGES:
         raise CompositionError(f"unsupported Dotfiles StyleExpert language: {language!r}")
     budget.assert_zero_model_usage()
