@@ -360,6 +360,12 @@ def _validate_generation(value: object, field: str) -> int:
     return value
 
 
+def _validate_limit(value: object, field: str, maximum: int) -> int:
+    if type(value) is not int or not 1 <= value <= maximum:
+        raise JavaScriptExpertAdapterError(f"invalid-{field}")
+    return value
+
+
 def _validate_request_id(value: object) -> str:
     if type(value) is not str or REQUEST_ID_RE.fullmatch(value) is None:
         raise JavaScriptExpertAdapterError("invalid-request-id")
@@ -682,6 +688,9 @@ class ZaraJavaScriptExpertPlugin(ServicePlugin):
         expected_registry_generation: int,
         expected_runtime_generation: int,
         input_json: str = "{}",
+        timeout_ms: int = MAX_TIMEOUT_MS,
+        max_results: int = MAX_RESULTS,
+        max_output_bytes: int = MAX_OUTPUT_BYTES,
     ) -> str:
         _validate_source_lock()
         if expert_operation not in ALLOWED_OPERATIONS:
@@ -693,6 +702,11 @@ class ZaraJavaScriptExpertPlugin(ServicePlugin):
         )
         runtime_generation = _validate_generation(
             expected_runtime_generation, "runtime-generation"
+        )
+        timeout = _validate_limit(timeout_ms, "timeout-ms", MAX_TIMEOUT_MS)
+        results_limit = _validate_limit(max_results, "max-results", MAX_RESULTS)
+        output_limit = _validate_limit(
+            max_output_bytes, "max-output-bytes", MAX_OUTPUT_BYTES
         )
         payload = self._decode_input(input_json)
         _validate_operation_input(expert_operation, payload)
@@ -712,9 +726,9 @@ class ZaraJavaScriptExpertPlugin(ServicePlugin):
             "expected_runtime_generation": runtime_generation,
             "input": payload,
             "limits": {
-                "timeout_ms": MAX_TIMEOUT_MS,
-                "max_results": MAX_RESULTS,
-                "max_output_bytes": MAX_OUTPUT_BYTES,
+                "timeout_ms": timeout,
+                "max_results": results_limit,
+                "max_output_bytes": output_limit,
                 "max_model_calls": 0,
             },
         }
@@ -774,7 +788,7 @@ class ZaraJavaScriptExpertPlugin(ServicePlugin):
             snapshot = json.loads(encoded, parse_constant=_reject_json_constant)
         except (TypeError, ValueError, RecursionError) as error:
             raise JavaScriptExpertAdapterError("invalid-expert-result-json") from error
-        if len(encoded.encode("utf-8")) > MAX_OUTPUT_BYTES:
+        if len(encoded.encode("utf-8")) > output_limit:
             raise JavaScriptExpertAdapterError("expert-result-too-large")
         if type(snapshot) is not dict:
             raise JavaScriptExpertAdapterError("invalid-expert-result")
