@@ -121,9 +121,9 @@ def _query_matches(host: ExpertHost, predicate: str, path: str) -> tuple[str, ..
     if result.get("ok") is not True:
         raise ExpertError(f"DotfilesExpert predicate {predicate!r} failed")
     raw = result.get("results")
-    if isinstance(raw, (str, bytes)) or not isinstance(raw, list):
+    if type(raw) is not list or any(type(item) is not str for item in raw):
         raise ExpertError("DotfilesExpert host returned malformed results")
-    return tuple(str(item) for item in raw)
+    return tuple(raw)
 
 
 def invoke_dotfiles_operation(
