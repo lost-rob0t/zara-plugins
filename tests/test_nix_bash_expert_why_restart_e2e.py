@@ -33,7 +33,7 @@ from tests import test_nix_bash_durable_persistence_e2e as durable
 
 
 CURRENT_DOTFILES = "3309c54ecb5f65c29374de6c60d2135a9ea2f94b"
-CURRENT_ZARA_CORE = "c848bc756a672a796d43774dd9d678db1cc6e9de"
+CURRENT_ZARA_CORE = "a00c25fb562ec619bafa3845285cf8ce6da0e814"
 PROJECT_ID = "workspace:nix-bash:expert-why-restart"
 SYMBOLIC_RENDERER = "symbolic-dcg/v1"
 
