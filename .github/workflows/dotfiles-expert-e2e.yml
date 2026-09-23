@@ -5,6 +5,8 @@ on:
     paths:
       - 'plugins/zara-expert/**'
       - 'tests/test_dotfiles_zara_core_e2e.py'
+      - 'tests/test_dotfiles_style_expert_e2e.py'
+      - 'tests/test_dotfiles_style_chain_e2e.py'
       - '.github/workflows/dotfiles-expert-e2e.yml'
 
 permissions:
@@ -19,10 +21,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Check out repository
+      - name: Check out exact PR head
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Fetch exact canonical DotfilesExpert producer
+      - name: Verify exact source checkout
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+
+      - name: Fetch exact stable DotfilesExpert producer
         shell: bash
         run: |
           set -euo pipefail
@@ -44,6 +56,29 @@ jobs:
           git -C .ci/dotfiles-expert checkout --detach FETCH_HEAD
           test "$(git -C .ci/dotfiles-expert rev-parse HEAD)" = "$revision"
 
+      - name: Fetch exact merged Dotfiles StyleExpert producer
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=43dc6196070d6e5d83a3d0026891e0d28caa3c8f
+          rm -rf .ci/dotfiles-style-expert
+          git init .ci/dotfiles-style-expert
+          git -C .ci/dotfiles-style-expert remote add origin https://github.com/lost-rob0t/dotfiles.git
+          git -C .ci/dotfiles-style-expert config core.sparseCheckout true
+          mkdir -p .ci/dotfiles-style-expert/.git/info
+          printf '%s\n' \
+            '/.zara/experts/dotfiles/' \
+            '/.zara/experts/nix/' \
+            '/.zara/experts/bash/' \
+            '/.zara/experts/language/' \
+            '/.zara/experts/style/' \
+            '/.zara/style/' \
+            '/.prolog/kb/' \
+            > .ci/dotfiles-style-expert/.git/info/sparse-checkout
+          git -C .ci/dotfiles-style-expert fetch --depth=1 origin "$revision"
+          git -C .ci/dotfiles-style-expert checkout --detach FETCH_HEAD
+          test "$(git -C .ci/dotfiles-style-expert rev-parse HEAD)" = "$revision"
+
       - name: Fetch exact canonical Zara Core
         shell: bash
         run: |
@@ -58,6 +93,21 @@ jobs:
           git -C .ci/zara-core fetch --depth=1 origin "$revision"
           git -C .ci/zara-core checkout --detach FETCH_HEAD
           test "$(git -C .ci/zara-core rev-parse HEAD)" = "$revision"
+
+      - name: Fetch exact current Zara Core for complete composition chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=4f30f9f18c06ba3a5daf11122e0e2a8af30f7095
+          rm -rf .ci/zara-core-current
+          git init .ci/zara-core-current
+          git -C .ci/zara-core-current remote add origin https://github.com/lost-rob0t/zara.git
+          git -C .ci/zara-core-current config core.sparseCheckout true
+          mkdir -p .ci/zara-core-current/.git/info
+          printf '%s\n' '/zara/' > .ci/zara-core-current/.git/info/sparse-checkout
+          git -C .ci/zara-core-current fetch --depth=1 origin "$revision"
+          git -C .ci/zara-core-current checkout --detach FETCH_HEAD
+          test "$(git -C .ci/zara-core-current rev-parse HEAD)" = "$revision"
 
       - name: Fetch exact generic Prolog-RLM style runtime
         shell: bash
@@ -114,7 +164,35 @@ jobs:
           python3 plugins/zara-expert/test/test_catalog_composition.py
           python3 plugins/zara-expert/test/test_dotfiles_family.py
           python3 plugins/zara-expert/test/test_dotfiles_style.py
+          python3 plugins/zara-expert/test/test_dotfiles_style_expert.py
+          python3 plugins/zara-expert/test/test_dotfiles_style_meta_composition.py
+          python3 plugins/zara-expert/test/test_dotfiles_style_chain.py
           python3 plugins/zara-expert/test/test_style_runtime.py
+
+      - name: Prove real canonical StyleExpert producer stays zero-model and offline
+        env:
+          ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles-style-expert
+        shell: bash
+        run: |
+          set -euo pipefail
+          trace="$RUNNER_TEMP/dotfiles-style-expert-network.trace"
+          env \
+            -u OPENAI_API_KEY \
+            -u ANTHROPIC_API_KEY \
+            -u OPENROUTER_API_KEY \
+            -u GOOGLE_API_KEY \
+            -u GEMINI_API_KEY \
+            -u GROQ_API_KEY \
+            -u ZAI_API_KEY \
+            -u AZURE_OPENAI_API_KEY \
+            -u HF_TOKEN \
+            strace -f -e trace=network -o "$trace" \
+            python3 -m unittest discover -s tests -t . -p 'test_dotfiles_style_expert_e2e.py'
+          if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
+            echo 'unexpected IPv4/IPv6 network syscall during pure-symbolic StyleExpert E2E' >&2
+            cat "$trace" >&2
+            exit 1
+          fi
 
       - name: Prove real Dotfiles root and child delegation through canonical Core
         env:
@@ -136,6 +214,33 @@ jobs:
             python3 -m unittest discover -s tests -t . -p 'test_dotfiles_zara_core_e2e.py'
           if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
             echo 'unexpected IPv4/IPv6 network syscall during pure-symbolic DotfilesExpert E2E' >&2
+            cat "$trace" >&2
+            exit 1
+          fi
+
+      - name: Prove one DotfilesExpert to language to StyleExpert zero-model chain
+        env:
+          ZARA_DOTFILES_CHAIN_ROOT: ${{ github.workspace }}/.ci/dotfiles-style-expert
+          ZARA_CORE_CURRENT_ROOT: ${{ github.workspace }}/.ci/zara-core-current
+          PROLOG_RLM_ROOT: ${{ github.workspace }}/.ci/prolog-rlm
+        shell: bash
+        run: |
+          set -euo pipefail
+          trace="$RUNNER_TEMP/dotfiles-style-chain-network.trace"
+          env \
+            -u OPENAI_API_KEY \
+            -u ANTHROPIC_API_KEY \
+            -u OPENROUTER_API_KEY \
+            -u GOOGLE_API_KEY \
+            -u GEMINI_API_KEY \
+            -u GROQ_API_KEY \
+            -u ZAI_API_KEY \
+            -u AZURE_OPENAI_API_KEY \
+            -u HF_TOKEN \
+            strace -f -e trace=network -o "$trace" \
+            python3 -m unittest discover -s tests -t . -p 'test_dotfiles_style_chain_e2e.py'
+          if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
+            echo 'unexpected IPv4/IPv6 network syscall during pure-symbolic Dotfiles style chain E2E' >&2
             cat "$trace" >&2
             exit 1
           fi
