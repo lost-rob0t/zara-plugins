@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REQUEST_ID = "req-generation-type"
 ACTIVATION_ID = "act:" + ("c" * 32)
 INVOCATION_ID = "inv:" + ("d" * 32)
-EXPERT_OPERATION = "parse"
+EXPERT_OPERATION = "inspect"
 EXPECTED_GENERATION = 1
 
 
@@ -77,19 +77,18 @@ BASH = _load_plugin("zara-bash-expert", "zara_bash_expert")
 
 def _result(
     *,
-    expert_id: str,
-    manifest_digest: str,
+    module,
     registry_generation: object = EXPECTED_GENERATION,
     runtime_generation: object = EXPECTED_GENERATION,
 ) -> dict[str, object]:
     return {
-        "protocol": "ZARA-EXPERT/1",
+        "protocol": module.PROTOCOL,
         "request_id": REQUEST_ID,
         "invocation_id": INVOCATION_ID,
         "activation_id": ACTIVATION_ID,
-        "expert_id": expert_id,
-        "expert_version": "0.1.0",
-        "manifest_digest": manifest_digest,
+        "expert_id": module.EXPERT_ID,
+        "expert_version": module.PLUGIN_VERSION,
+        "manifest_digest": module.MANIFEST_DIGEST,
         "expert_operation": EXPERT_OPERATION,
         "resolved_registry_generation": registry_generation,
         "resolved_runtime_generation": runtime_generation,
@@ -102,22 +101,14 @@ def _result(
 
 
 class StrictResultGenerationTypeTests(unittest.TestCase):
-    def _assert_boolean_generation_rejected(
-        self,
-        *,
-        module,
-    ) -> None:
+    def _assert_boolean_generation_rejected(self, *, module) -> None:
         cases = (
             {"registry_generation": True},
             {"runtime_generation": True},
         )
         for mutation in cases:
             with self.subTest(expert_id=module.EXPERT_ID, mutation=mutation):
-                result = _result(
-                    expert_id=module.EXPERT_ID,
-                    manifest_digest=module.MANIFEST_DIGEST,
-                    **mutation,
-                )
+                result = _result(module=module, **mutation)
                 with self.assertRaisesRegex(
                     module.NixExpertAdapterError
                     if module is NIX

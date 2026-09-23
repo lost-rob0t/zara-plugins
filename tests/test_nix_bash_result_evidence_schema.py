@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REQUEST_ID = "req-result-evidence-schema"
 ACTIVATION_ID = "act:" + ("d" * 32)
 INVOCATION_ID = "inv:" + ("c" * 32)
-EXPERT_OPERATION = "parse"
+EXPERT_OPERATION = "inspect"
 EXPECTED_GENERATION = 1
 
 
@@ -75,15 +75,15 @@ NIX = _load_plugin("zara-nix-expert", "zara_nix_expert")
 BASH = _load_plugin("zara-bash-expert", "zara_bash_expert")
 
 
-def _result(*, expert_id: str, manifest_digest: str) -> dict[str, object]:
+def _result(module) -> dict[str, object]:
     return {
-        "protocol": "ZARA-EXPERT/1",
+        "protocol": module.PROTOCOL,
         "request_id": REQUEST_ID,
         "invocation_id": INVOCATION_ID,
         "activation_id": ACTIVATION_ID,
-        "expert_id": expert_id,
-        "expert_version": "0.1.0",
-        "manifest_digest": manifest_digest,
+        "expert_id": module.EXPERT_ID,
+        "expert_version": module.PLUGIN_VERSION,
+        "manifest_digest": module.MANIFEST_DIGEST,
         "expert_operation": EXPERT_OPERATION,
         "resolved_registry_generation": EXPECTED_GENERATION,
         "resolved_runtime_generation": EXPECTED_GENERATION,
@@ -97,10 +97,7 @@ def _result(*, expert_id: str, manifest_digest: str) -> dict[str, object]:
 
 class ResultEvidenceSchemaTests(unittest.TestCase):
     def _assert_rejected(self, module, mutation: dict[str, object], error: str) -> None:
-        result = _result(
-            expert_id=module.EXPERT_ID,
-            manifest_digest=module.MANIFEST_DIGEST,
-        )
+        result = _result(module)
         result.update(mutation)
         adapter_error = (
             module.NixExpertAdapterError

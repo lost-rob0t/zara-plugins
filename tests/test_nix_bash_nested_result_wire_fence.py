@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REQUEST_ID = "req-nested-result-wire-fence"
 ACTIVATION_ID = "act:" + ("d" * 32)
 INVOCATION_ID = "inv:" + ("b" * 32)
-EXPERT_OPERATION = "parse"
+EXPERT_OPERATION = "inspect"
 EXPECTED_GENERATION = 1
 
 
@@ -149,7 +149,9 @@ class NestedResultWireFenceTests(unittest.TestCase):
                 expert_operation=EXPERT_OPERATION,
                 expected_registry_generation=EXPECTED_GENERATION,
                 expected_runtime_generation=EXPECTED_GENERATION,
-                input_json=json.dumps({"source": "x = 1"}),
+                input_json=json.dumps(
+                    {"source": "x = 1", "source_generation": "fixture:1"}
+                ),
             )
 
     def test_nix_rejects_mutating_data_dict_subclass_before_projection(self) -> None:
