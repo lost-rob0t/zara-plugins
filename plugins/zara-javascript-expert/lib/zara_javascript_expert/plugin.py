@@ -214,6 +214,17 @@ def _reject_json_constant(_value: str) -> None:
     raise ValueError("non-finite JSON number")
 
 
+def _reject_duplicate_object_pairs(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    value: dict[str, object] = {}
+    for key, child in pairs:
+        if type(key) is not str or key in value:
+            raise JavaScriptExpertAdapterError("ambiguous-input-json")
+        value[key] = child
+    return value
+
+
 def _validate_source_lock() -> None:
     try:
         raw = _source_lock_path().read_bytes()
@@ -613,7 +624,11 @@ class ZaraJavaScriptExpertPlugin(ServicePlugin):
         if len(input_json.encode("utf-8")) > MAX_INPUT_BYTES:
             raise JavaScriptExpertAdapterError("input-too-large")
         try:
-            value = json.loads(input_json, parse_constant=_reject_json_constant)
+            value = json.loads(
+                input_json,
+                parse_constant=_reject_json_constant,
+                object_pairs_hook=_reject_duplicate_object_pairs,
+            )
         except (TypeError, ValueError) as error:
             raise JavaScriptExpertAdapterError("invalid-input-json") from error
         if not isinstance(value, dict):
