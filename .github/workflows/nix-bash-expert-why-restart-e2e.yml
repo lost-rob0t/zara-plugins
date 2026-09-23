@@ -1,0 +1,96 @@
+name: Nix Bash Expert Why Restart E2E
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/zara-nix-expert/**'
+      - 'plugins/zara-bash-expert/**'
+      - 'plugins/zara-expert/**'
+      - 'tests/test_nix_bash_durable_persistence_e2e.py'
+      - 'tests/test_nix_bash_expert_why_restart_e2e.py'
+      - '.github/workflows/nix-bash-expert-why-restart-e2e.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-bash-expert-why-restart-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  expert-why-restart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Fetch exact current Dotfiles Nix Bash brains
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=3309c54ecb5f65c29374de6c60d2135a9ea2f94b
+          rm -rf .ci/dotfiles-nix-bash-expert-why
+          git init .ci/dotfiles-nix-bash-expert-why
+          git -C .ci/dotfiles-nix-bash-expert-why remote add origin https://github.com/lost-rob0t/dotfiles.git
+          git -C .ci/dotfiles-nix-bash-expert-why config core.sparseCheckout true
+          mkdir -p .ci/dotfiles-nix-bash-expert-why/.git/info
+          printf '%s\n' \
+            '/.zara/experts/nix/' \
+            '/.zara/experts/bash/' \
+            '/.zara/experts/language/' \
+            > .ci/dotfiles-nix-bash-expert-why/.git/info/sparse-checkout
+          git -C .ci/dotfiles-nix-bash-expert-why fetch --depth=1 origin "$revision"
+          git -C .ci/dotfiles-nix-bash-expert-why checkout --detach FETCH_HEAD
+          test "$(git -C .ci/dotfiles-nix-bash-expert-why rev-parse HEAD)" = "$revision"
+
+      - name: Fetch exact Zara Core expert-followup candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=c848bc756a672a796d43774dd9d678db1cc6e9de
+          rm -rf .ci/zara-core-nix-bash-expert-why
+          git init .ci/zara-core-nix-bash-expert-why
+          git -C .ci/zara-core-nix-bash-expert-why remote add origin https://github.com/lost-rob0t/zara.git
+          git -C .ci/zara-core-nix-bash-expert-why fetch --depth=1 origin "$revision"
+          git -C .ci/zara-core-nix-bash-expert-why checkout --detach FETCH_HEAD
+          test "$(git -C .ci/zara-core-nix-bash-expert-why rev-parse HEAD)" = "$revision"
+
+      - name: Install symbolic runtime and network audit tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends swi-prolog-nox strace
+          python3 -m pip install \
+            'numpy>=1.26' \
+            'soundfile>=0.12' \
+            'pyswip>=0.3.1' \
+            'pykka>=3.1' \
+            'langchain-core>=0.2'
+
+      - name: Prove persisted Nix Bash expert answer drives zero-model why follow-up
+        env:
+          ZARA_DOTFILES_ROOT: ${{ github.workspace }}/.ci/dotfiles-nix-bash-expert-why
+          ZARA_CURRENT_CORE_ROOT: ${{ github.workspace }}/.ci/zara-core-nix-bash-expert-why
+        shell: bash
+        run: |
+          set -euo pipefail
+          trace="$RUNNER_TEMP/nix-bash-expert-why-restart-network.trace"
+          env \
+            -u OPENAI_API_KEY \
+            -u ANTHROPIC_API_KEY \
+            -u OPENROUTER_API_KEY \
+            -u GOOGLE_API_KEY \
+            -u GEMINI_API_KEY \
+            -u GROQ_API_KEY \
+            -u ZAI_API_KEY \
+            -u AZURE_OPENAI_API_KEY \
+            -u HF_TOKEN \
+            strace -f -e trace=network -o "$trace" \
+            python3 -m unittest discover -s tests -t . -p 'test_nix_bash_expert_why_restart_e2e.py'
+          if grep -Eq 'socket\(AF_INET6?,' "$trace"; then
+            echo 'unexpected IPv4/IPv6 network syscall during Nix/Bash expert why restart E2E' >&2
+            cat "$trace" >&2
+            exit 1
+          fi
