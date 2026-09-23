@@ -33,7 +33,7 @@ from tests import test_nix_bash_durable_persistence_e2e as durable
 
 
 CURRENT_DOTFILES = "3309c54ecb5f65c29374de6c60d2135a9ea2f94b"
-CURRENT_ZARA_CORE = "90fe62ba41af323f788e3046741cf5bcdc7bf848"
+CURRENT_ZARA_CORE = "549b0bfd939cd613482da7d24b73800e5ae006ea"
 PROJECT_ID = "workspace:nix-bash:clarification-continuity"
 SYMBOLIC_RENDERER = "symbolic-dcg/v1"
 
