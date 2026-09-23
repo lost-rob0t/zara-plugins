@@ -268,7 +268,7 @@ def _validate_result(result: Mapping[str, object], *, request_id: str, activatio
     if type(invocation_id) is not str or INVOCATION_ID_RE.fullmatch(invocation_id) is None:
         raise NimExpertAdapterError("invalid-expert-invocation-id")
     expected = {"protocol": PROTOCOL, "request_id": request_id, "activation_id": activation_id, "expert_id": EXPERT_ID, "expert_version": PLUGIN_VERSION, "manifest_digest": MANIFEST_DIGEST, "expert_operation": operation}
-    if any(result.get(key) != value for key, value in expected.items()):
+    if any(type(result.get(key)) is not str or result.get(key) != value for key, value in expected.items()):
         raise NimExpertAdapterError("expert-result-identity-mismatch")
     if type(result.get("resolved_registry_generation")) is not int or result.get("resolved_registry_generation") != registry_generation:
         raise NimExpertAdapterError("stale-expert-result")
