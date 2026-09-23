@@ -170,13 +170,28 @@ def _validate_generation(value: object, field: str) -> int:
     return value
 
 
+def _reject_input_duplicate_object_pairs(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise NimExpertAdapterError("ambiguous-input-json")
+        result[key] = value
+    return result
+
+
 def _decode_input(input_json: str, operation: str) -> dict[str, Any]:
     if type(input_json) is not str:
         raise NimExpertAdapterError("input-must-be-json-text")
     if len(input_json.encode("utf-8")) > MAX_INPUT_BYTES:
         raise NimExpertAdapterError("input-too-large")
     try:
-        payload = json.loads(input_json, parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()))
+        payload = json.loads(
+            input_json,
+            parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()),
+            object_pairs_hook=_reject_input_duplicate_object_pairs,
+        )
     except (TypeError, ValueError) as error:
         raise NimExpertAdapterError("invalid-input-json") from error
     if type(payload) is not dict:
