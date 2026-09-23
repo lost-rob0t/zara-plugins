@@ -29,6 +29,10 @@ class FakeHost:
         }
 
 
+class _TextSubclass(str):
+    pass
+
+
 class DotfilesFamilyTests(unittest.TestCase):
     def test_descriptor_is_symbolic_zero_model_and_child_delegating(self):
         item = descriptor(available=True)
@@ -65,6 +69,53 @@ class DotfilesFamilyTests(unittest.TestCase):
         self.assertEqual(result["data"]["specialist_expert_id"], "zara:expert/nix")
         self.assertEqual(result["model_calls"], 0)
         self.assertEqual(result["effect_receipts"], [])
+
+    def test_registered_predicate_results_require_exact_text_before_nix_selection(self):
+        for forged in (_TextSubclass("nix_path('flake.nix')"), 1):
+            with self.subTest(forged_type=type(forged).__name__):
+                host = FakeHost({("nix_path", "flake.nix"): (forged,)})
+                with self.assertRaisesRegex(
+                    ExpertError,
+                    "DotfilesExpert host returned malformed results",
+                ):
+                    invoke_dotfiles_operation(
+                        host,
+                        "inspect",
+                        {
+                            "path": "flake.nix",
+                            "source": "{ x = 1; }",
+                            "source_generation": "generation-1",
+                        },
+                    )
+                self.assertEqual(
+                    host.calls,
+                    [("dotfiles-expert", "nix_path", ("flake.nix",))],
+                )
+
+    def test_registered_predicate_results_require_exact_text_before_bash_selection(self):
+        for forged in (_TextSubclass("bash_path('setup.sh')"), 1):
+            with self.subTest(forged_type=type(forged).__name__):
+                host = FakeHost({("bash_path", "setup.sh"): (forged,)})
+                with self.assertRaisesRegex(
+                    ExpertError,
+                    "DotfilesExpert host returned malformed results",
+                ):
+                    invoke_dotfiles_operation(
+                        host,
+                        "inspect",
+                        {
+                            "path": "setup.sh",
+                            "source": "echo ok",
+                            "source_generation": "generation-1",
+                        },
+                    )
+                self.assertEqual(
+                    host.calls,
+                    [
+                        ("dotfiles-expert", "nix_path", ("setup.sh",)),
+                        ("dotfiles-expert", "bash_path", ("setup.sh",)),
+                    ],
+                )
 
     def test_ambiguous_or_unknown_path_is_known_fail_closed(self):
         ambiguous = FakeHost(
