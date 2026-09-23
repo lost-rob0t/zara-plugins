@@ -535,7 +535,7 @@ def _validate_result(
         raise KotlinExpertAdapterError("invalid-expert-verdict")
     _validate_result_usage(result)
     receipts = result.get("effect_receipts")
-    if not isinstance(receipts, (list, tuple)):
+    if type(receipts) is not list:
         raise KotlinExpertAdapterError("read-only-effect-proof-missing")
     if receipts:
         raise KotlinExpertAdapterError("read-only-effect-leak")

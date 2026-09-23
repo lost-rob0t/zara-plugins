@@ -552,7 +552,7 @@ def _validate_result(
         raise JavaScriptExpertAdapterError("invalid-expert-verdict")
     _validate_result_usage(result)
     receipts = result.get("effect_receipts")
-    if not isinstance(receipts, (list, tuple)):
+    if type(receipts) is not list:
         raise JavaScriptExpertAdapterError("read-only-effect-proof-missing")
     if receipts:
         raise JavaScriptExpertAdapterError("read-only-effect-leak")

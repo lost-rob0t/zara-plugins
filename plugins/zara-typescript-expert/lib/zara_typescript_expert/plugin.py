@@ -551,7 +551,7 @@ def _validate_result(
         raise TypeScriptExpertAdapterError("invalid-expert-verdict")
     _validate_result_usage(result)
     receipts = result.get("effect_receipts")
-    if not isinstance(receipts, (list, tuple)):
+    if type(receipts) is not list:
         raise TypeScriptExpertAdapterError("read-only-effect-proof-missing")
     if receipts:
         raise TypeScriptExpertAdapterError("read-only-effect-leak")
