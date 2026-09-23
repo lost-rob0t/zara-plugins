@@ -66,8 +66,10 @@ def _validate_projected_evidence(operation: str, evidence: Any) -> None:
 
     allow_verified_postcondition = operation in {"repair.verify", "repair.apply"}
     for reference in evidence:
-        if not isinstance(reference, str) or not reference:
-            _invalid("Lisp projected evidence must contain non-empty references")
+        if type(reference) is not str or not reference:
+            _invalid(
+                "Lisp projected evidence must contain exact built-in string references"
+            )
         if reference == _CORE_LISP_EVIDENCE_REF:
             continue
         if _is_content_addressed_lisp_evidence(reference):
