@@ -44,7 +44,6 @@ durable.EXPECTED_ZARA_CORE_COMMIT = CURRENT_ZARA_CORE
 if durable.ZARA_CURRENT_CORE_ROOT:
     from zara.database import DatabaseManager
     from zara.desktop.conversation import ConversationStore, SymbolicConversationProjection
-    from zara.desktop.conversation.models import MessageRecord, MessageRole, MessageStatus
     from zara.desktop.conversation.symbolic_runtime import PureSymbolicProjectionAdapter
     from zara.runtime.pure_symbolic_backend import PureSymbolicRuntimeBackend
 
@@ -61,27 +60,6 @@ class NixBashClarificationContinuityE2ETests(
         durable.EXPECTED_DOTFILES_COMMIT = CURRENT_DOTFILES
         durable.EXPECTED_ZARA_CORE_COMMIT = CURRENT_ZARA_CORE
         super().setUpClass()
-
-    @staticmethod
-    def _message(
-        conversation_id: str,
-        sequence: int,
-        turn_id: str,
-        role: Any,
-        content: str,
-    ) -> Any:
-        timestamp = f"2026-09-22T22:20:{sequence:02d}.000000"
-        return MessageRecord(
-            id=f"nix-bash-clarification-message-{sequence}",
-            conversation_id=conversation_id,
-            sequence=sequence,
-            turn_id=turn_id,
-            role=role,
-            content=content,
-            status=MessageStatus.COMPLETE,
-            created_at=timestamp,
-            updated_at=timestamp,
-        )
 
     async def _symbolic_turn(
         self,
@@ -121,26 +99,56 @@ class NixBashClarificationContinuityE2ETests(
 
     def test_evidence_survives_clarification_restart_and_answer(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            database_path = Path(temporary) / "nix-bash-clarification.db"
+            root = Path(temporary)
+            expert_evidence = self._real_evidence(root / "expert-state")
+            self.assertEqual(len(expert_evidence), 2)
+            for item in expert_evidence:
+                self.assertEqual(item["model_calls"], 0)
+                self.assertEqual(item["effect_receipts"], [])
+
+            database_path = root / "nix-bash-clarification.db"
             manager = DatabaseManager(database_path)
             store = ConversationStore(manager)
             conversation = store.create_conversation(
                 "Nix Bash clarification continuity",
                 conversation_id="conv-nix-bash-clarification",
             )
-            principal = PrincipalContext(
-                principal_id="user:nix-bash-clarification",
+            expert_projection = store.save_symbolic_projection(
+                SymbolicConversationProjection(
+                    conversation_id=conversation.id,
+                    projection_generation=1,
+                    runtime_generation=1,
+                    turn_id="turn-nix-bash-expert-answer",
+                    outcome="success",
+                    project_id=PROJECT_ID,
+                    project_generation=1,
+                    dialogue_act="expert.answer",
+                    dialogue_state={
+                        "active_project": PROJECT_ID,
+                        "selected_experts": [
+                            "zara:expert/nix",
+                            "zara:expert/bash",
+                        ],
+                        "followups": ["why", "show evidence"],
+                    },
+                    expert_evidence=expert_evidence,
+                    renderer_provenance=SYMBOLIC_RENDERER,
+                    providers_enabled=False,
+                    max_model_calls=0,
+                    provider_calls=0,
+                    model_calls=0,
+                ),
+                expected_generation=0,
             )
-            expert_projection = self._persist_real_expert_answer(
-                store,
-                conversation.id,
-                principal,
+            expert_projection.assert_pure_symbolic()
+            self.assertNotIn(
+                "prolog_context_project_id",
+                expert_projection.dialogue_state,
             )
-            expert_evidence = list(expert_projection.expert_evidence)
-            project_id = expert_projection.project_id
-            project_generation = expert_projection.project_generation
-            self.assertEqual(project_id, PROJECT_ID)
-            self.assertEqual(len(expert_evidence), 2)
+            self.assertNotIn(
+                "prolog_context_project_generation",
+                expert_projection.dialogue_state,
+            )
 
             clarification = asyncio.run(
                 self._symbolic_turn(
@@ -159,8 +167,8 @@ class NixBashClarificationContinuityE2ETests(
             self.assertIsNotNone(clarified)
             clarified.assert_pure_symbolic()
             self.assertEqual(clarified.expert_evidence, expert_evidence)
-            self.assertEqual(clarified.project_id, project_id)
-            self.assertEqual(clarified.project_generation, project_generation)
+            self.assertEqual(clarified.project_id, PROJECT_ID)
+            self.assertEqual(clarified.project_generation, 1)
             self.assertEqual(clarified.dialogue_act, "clarify")
             self.assertTrue(
                 any(
@@ -169,6 +177,14 @@ class NixBashClarificationContinuityE2ETests(
                 )
             )
             self.assertIn("partial_frame", clarified.dialogue_state["prolog_context_term"])
+            self.assertEqual(
+                clarified.dialogue_state["prolog_context_project_id"],
+                PROJECT_ID,
+            )
+            self.assertEqual(
+                clarified.dialogue_state["prolog_context_project_generation"],
+                1,
+            )
 
             manager.close()
 
@@ -178,8 +194,8 @@ class NixBashClarificationContinuityE2ETests(
             self.assertIsNotNone(recovered)
             recovered.assert_pure_symbolic()
             self.assertEqual(recovered.expert_evidence, expert_evidence)
-            self.assertEqual(recovered.project_id, project_id)
-            self.assertEqual(recovered.project_generation, project_generation)
+            self.assertEqual(recovered.project_id, PROJECT_ID)
+            self.assertEqual(recovered.project_generation, 1)
             self.assertEqual(recovered.dialogue_act, "clarify")
             self.assertIn("partial_frame", recovered.dialogue_state["prolog_context_term"])
 
@@ -201,8 +217,8 @@ class NixBashClarificationContinuityE2ETests(
             self.assertIsNotNone(answered)
             answered.assert_pure_symbolic()
             self.assertEqual(answered.expert_evidence, expert_evidence)
-            self.assertEqual(answered.project_id, project_id)
-            self.assertEqual(answered.project_generation, project_generation)
+            self.assertEqual(answered.project_id, PROJECT_ID)
+            self.assertEqual(answered.project_generation, 1)
             self.assertEqual(answered.dialogue_act, "dispatch_required")
             self.assertIn("completed_frame", answered.dialogue_state["prolog_context_term"])
             self.assertFalse(answered.providers_enabled)
@@ -212,8 +228,8 @@ class NixBashClarificationContinuityE2ETests(
 
             android = durable._android_twin(answered)
             self.assertEqual(android["expertEvidenceJson"], durable._canonical_json(expert_evidence))
-            self.assertEqual(android["projectId"], project_id)
-            self.assertEqual(android["projectGeneration"], project_generation)
+            self.assertEqual(android["projectId"], PROJECT_ID)
+            self.assertEqual(android["projectGeneration"], 1)
             self.assertEqual(android["dialogueAct"], "dispatch_required")
             self.assertFalse(android["providersEnabled"])
             self.assertEqual(android["maxModelCalls"], 0)
