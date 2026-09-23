@@ -13,7 +13,7 @@ from zara_bash_expert.plugin import BashExpertAdapterError, ZaraBashExpertPlugin
 
 
 EXPECTED_MANIFEST_DIGEST = (
-    "sha256:ec1ff72739eeaa11b7fc0fef282378066fb30ecb4d58fd8ebc5d5852a9d1cef4"
+    "sha256:8b341e589cb6611312855437475c8e03bf03eef77fdb636f429d7e4021b8ee61"
 )
 ACTIVATION_ID = "act:" + ("b" * 32)
 
@@ -37,7 +37,7 @@ class FakeRuntime:
             "invocation_id": "inv:" + ("b" * 32),
             "activation_id": request["activation_id"],
             "expert_id": request["expert_id"],
-            "expert_version": "0.1.0",
+            "expert_version": "1",
             "manifest_digest": EXPECTED_MANIFEST_DIGEST,
             "expert_operation": request["expert_operation"],
             "resolved_registry_generation": request["expected_registry_generation"],
@@ -52,8 +52,8 @@ class FakeRuntime:
 
 def invoke(
     plugin: ZaraBashExpertPlugin,
-    operation: str = "parse",
-    payload: str = '{"source":"echo ok"}',
+    operation: str = "inspect",
+    payload: str = '{"source":"echo ok","source_generation":"fixture:bash:1"}',
 ) -> str:
     return plugin.invoke(
         "req-2",
@@ -78,12 +78,13 @@ class BashExpertPluginTests(unittest.TestCase):
 
         self.assertEqual(descriptor["protocol"], "ZARA-EXPERT/1")
         self.assertEqual(descriptor["expert_id"], "zara:expert/bash")
+        self.assertEqual(descriptor["expert_version"], "1")
         self.assertEqual(descriptor["manifest_digest"], EXPECTED_MANIFEST_DIGEST)
         self.assertEqual(descriptor["source_reference"], "dotfiles:.zara/experts/bash")
         self.assertEqual(descriptor["reasoning_kind"], "symbolic")
         self.assertEqual(descriptor["fallback_policy"], "fail_closed")
         self.assertEqual(descriptor["delegation_policy"], "never")
-        self.assertEqual(descriptor["possible_effects"], ["none"])
+        self.assertEqual(descriptor["possible_effects"], ["filesystem_write"])
         self.assertEqual(descriptor["supported_engines"], ["swipl"])
         self.assertEqual(
             descriptor["applicability"],
@@ -101,18 +102,21 @@ class BashExpertPluginTests(unittest.TestCase):
         self.assertEqual(
             {operation["operation_id"] for operation in descriptor["operations"]},
             {
-                "parse",
-                "inspect_startup",
-                "inspect_source_graph",
-                "diagnose_quoting",
-                "style_check",
-                "check_plan",
+                "match",
+                "inspect",
+                "diagnose",
+                "repair.preview",
+                "repair.verify",
+                "style.rules",
+                "explain",
+                "repair.apply",
             },
         )
         for operation in descriptor["operations"]:
             self.assertEqual(set(operation), {"operation_id", "input_schema", "output_schema"})
             self.assertIsInstance(operation["input_schema"]["fields"], list)
-            self.assertEqual(operation["output_schema"], {"fields": []})
+            self.assertIsInstance(operation["output_schema"]["fields"], list)
+            self.assertTrue(operation["output_schema"]["fields"])
         self.assertEqual(runtime.resolved, [])
         self.assertEqual(runtime.requests, [])
 
@@ -122,7 +126,11 @@ class BashExpertPluginTests(unittest.TestCase):
         plugin.start(runtime)
 
         result = json.loads(
-            invoke(plugin, "inspect_source_graph", '{"path":".bashrc"}')
+            invoke(
+                plugin,
+                "inspect",
+                '{"source":"echo ok","source_generation":"fixture:bash:1"}',
+            )
         )
 
         self.assertEqual(runtime.resolved, ["expert.invoke"])
@@ -132,14 +140,14 @@ class BashExpertPluginTests(unittest.TestCase):
         self.assertEqual(request["request_id"], "req-2")
         self.assertEqual(request["activation_id"], ACTIVATION_ID)
         self.assertEqual(request["expert_id"], "zara:expert/bash")
-        self.assertEqual(request["expert_operation"], "inspect_source_graph")
+        self.assertEqual(request["expert_operation"], "inspect")
         self.assertEqual(request["expected_registry_generation"], 7)
         self.assertEqual(request["expected_runtime_generation"], 3)
         self.assertEqual(request["limits"]["max_model_calls"], 0)
         self.assertEqual(result["usage"]["model_calls"], 0)
         self.assertEqual(result["effect_receipts"], [])
 
-    def test_effectful_or_unknown_operation_is_rejected_before_host(self) -> None:
+    def test_unknown_operation_is_rejected_before_host(self) -> None:
         runtime = FakeRuntime()
         plugin = ZaraBashExpertPlugin()
         plugin.start(runtime)
@@ -156,13 +164,17 @@ class BashExpertPluginTests(unittest.TestCase):
         plugin.start(runtime)
 
         cases = (
-            ("inspect_startup", "{}", "missing-operation-input"),
+            ("inspect", '{"source":"echo ok"}', "missing-operation-input"),
             (
-                "parse",
-                '{"source":"echo ok","provider_fallback":true}',
+                "inspect",
+                '{"source":"echo ok","source_generation":"fixture:1","provider_fallback":true}',
                 "unknown-operation-input",
             ),
-            ("parse", '{"source":7}', "invalid-operation-input"),
+            (
+                "inspect",
+                '{"source":7,"source_generation":"fixture:1"}',
+                "invalid-operation-input",
+            ),
         )
         for operation, payload, error in cases:
             with self.subTest(operation=operation, error=error):
@@ -178,9 +190,9 @@ class BashExpertPluginTests(unittest.TestCase):
         plugin.start(runtime)
 
         with self.assertRaisesRegex(BashExpertAdapterError, "invalid-runtime-generation"):
-            plugin.invoke("req-2", ACTIVATION_ID, "parse", 1, False)
+            plugin.invoke("req-2", ACTIVATION_ID, "inspect", 1, False)
         with self.assertRaisesRegex(BashExpertAdapterError, "invalid-timeout-ms"):
-            plugin.invoke("req-2", ACTIVATION_ID, "parse", 1, 1, timeout_ms=3001)
+            plugin.invoke("req-2", ACTIVATION_ID, "inspect", 1, 1, timeout_ms=3001)
 
         self.assertEqual(runtime.requests, [])
 
@@ -200,10 +212,10 @@ class BashExpertPluginTests(unittest.TestCase):
             arguments = {
                 "request_id": "req:zero",
                 "activation_id": ACTIVATION_ID,
-                "expert_operation": "parse",
+                "expert_operation": "inspect",
                 "expected_registry_generation": 0,
                 "expected_runtime_generation": 0,
-                "input_json": '{"source":"echo ok"}',
+                "input_json": '{"source":"echo ok","source_generation":"fixture:bash:1"}',
                 "timeout_ms": 2500,
                 "max_results": 8,
                 "max_output_bytes": 32768,
@@ -214,9 +226,9 @@ class BashExpertPluginTests(unittest.TestCase):
                     plugin.invoke(**arguments)
 
         with self.assertRaisesRegex(BashExpertAdapterError, "invalid-registry-generation"):
-            plugin.invoke("req-2", ACTIVATION_ID, "parse", True, 1)
+            plugin.invoke("req-2", ACTIVATION_ID, "inspect", True, 1)
         with self.assertRaisesRegex(BashExpertAdapterError, "invalid-runtime-generation"):
-            plugin.invoke("req-2", ACTIVATION_ID, "parse", 1, 1.5)
+            plugin.invoke("req-2", ACTIVATION_ID, "inspect", 1, 1.5)
 
         self.assertEqual(runtime.requests, [])
 
@@ -226,7 +238,7 @@ class BashExpertPluginTests(unittest.TestCase):
         plugin.start(runtime)
 
         with self.assertRaisesRegex(BashExpertAdapterError, "invalid-activation-id"):
-            plugin.invoke("req-2", "activation-2", "parse", 1, 1)
+            plugin.invoke("req-2", "activation-2", "inspect", 1, 1)
 
         self.assertEqual(runtime.requests, [])
 
