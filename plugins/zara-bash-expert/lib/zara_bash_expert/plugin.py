@@ -410,6 +410,38 @@ def _operation_descriptor(operation: str) -> dict[str, object]:
     }
 
 
+def _validate_output_field(field: Mapping[str, object], value: object) -> None:
+    kind = field["type"]
+    valid = (
+        type(value) is bool
+        if kind == "boolean"
+        else type(value) is dict
+        if kind == "object"
+        else type(value) is list
+        if kind == "list"
+        else False
+    )
+    if not valid:
+        raise BashExpertAdapterError("invalid-expert-output")
+
+
+def _validate_operation_output(operation: str, verdict: str, data: object) -> None:
+    if type(data) is not dict:
+        raise BashExpertAdapterError("invalid-expert-output")
+    if verdict != "succeeded":
+        if data:
+            raise BashExpertAdapterError("invalid-expert-output")
+        return
+    declared = {field["name"]: field for field in OPERATION_OUTPUT_FIELDS[operation]}
+    if set(data) - set(declared):
+        raise BashExpertAdapterError("invalid-expert-output")
+    for name, field in declared.items():
+        if field["required"] and name not in data:
+            raise BashExpertAdapterError("invalid-expert-output")
+        if name in data:
+            _validate_output_field(field, data[name])
+
+
 def _validate_result_data_tree(data: dict[str, object]) -> None:
     stack: list[tuple[bool, object]] = [(False, data)]
     active_containers: set[int] = set()
@@ -563,6 +595,7 @@ def _validate_result(
     if verdict == "cancelled":
         if data or evidence_refs:
             raise BashExpertAdapterError("cancelled-expert-output-leak")
+    _validate_operation_output(expert_operation, verdict, data)
 
 
 class ZaraBashExpertPlugin(ServicePlugin):

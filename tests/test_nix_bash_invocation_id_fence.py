@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REQUEST_ID = "req-invocation-id-fence"
 ACTIVATION_ID = "act:" + ("d" * 32)
 INVOCATION_ID = "inv:" + ("a" * 32)
-EXPERT_OPERATION = "parse"
+EXPERT_OPERATION = "inspect"
 EXPECTED_GENERATION = 1
 
 
@@ -88,7 +88,7 @@ def _result(module) -> dict[str, object]:
         "resolved_registry_generation": EXPECTED_GENERATION,
         "resolved_runtime_generation": EXPECTED_GENERATION,
         "verdict": "succeeded",
-        "data": {"verdict": "clean"},
+        "data": {"result": {}},
         "evidence_refs": ["source:fixture"],
         "usage": {"model_calls": 0},
         "effect_receipts": [],

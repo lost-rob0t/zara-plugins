@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REQUEST_ID = "req-core-evidence-bounds"
 ACTIVATION_ID = "act:" + ("d" * 32)
 INVOCATION_ID = "inv:" + ("c" * 32)
-EXPERT_OPERATION = "parse"
+EXPERT_OPERATION = "inspect"
 EXPECTED_GENERATION = 1
 CORE_MAX_EVIDENCE_REFS = 32
 CORE_MAX_EVIDENCE_REF_LENGTH = 128
@@ -90,7 +90,7 @@ def _result(module, evidence_refs: list[str]) -> dict[str, object]:
         "resolved_registry_generation": EXPECTED_GENERATION,
         "resolved_runtime_generation": EXPECTED_GENERATION,
         "verdict": "succeeded",
-        "data": {"verdict": "clean"},
+        "data": {"result": {}},
         "evidence_refs": evidence_refs,
         "usage": {"model_calls": 0},
         "effect_receipts": [],
