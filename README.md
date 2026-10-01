@@ -16,7 +16,7 @@ bundled tool, with Nix, or (once landed in Zara) with a native
 | [zara-avatar](plugins/zara-avatar/) | 0.1.0 | service | Zara-owned 3D avatar presentation (VRM renderer, expression, lip sync) |
 | [zara-discord](plugins/zara-discord/) | 0.3.0 | service | Talk to Zara through Discord with access controls, bare mentions, and spontaneous replies |
 | [zara-persona](plugins/zara-persona/) | 0.1.0 | service | Operator-owned persona context with optional SWI-Prolog |
-| [zara-starintel-server](plugins/zara-starintel-server/) | 0.1.0 | service | Use every HTTP API operation allowed by a StarIntel Server credential |
+| [zara-starintel-server](plugins/zara-starintel-server/) | 0.2.0 | service | Agentic StarKB expert plus bounded live StarIntel Server API access |
 
 ## Registry
 
