@@ -56,6 +56,49 @@ The base Lisp adapter maps structural check, diagnosis, missing-parenthesis repa
 
 `repair.apply` is intentionally **not** a Prolog predicate. Its public ZARA-EXPERT/1 operation schema declares a filesystem-write effect and requires a repair proposal, expected preimage, and source generation. The expert host and composition bridge both refuse to apply the edit. Application must cross Zara's canonical typed edit/effect boundary and only succeeds after fresh postcondition evidence verifies the repaired structure. Until that capability is composed, `repair.apply` fails closed rather than writing files itself.
 
+## Strange-loop management worker
+
+The expert host can run a private symbolic management loop over the configured
+expert/KB system. The loop is opt-in and is intentionally separate from the
+public `expert.query` host: callers cannot invoke the mutation tick by naming
+its namespace or predicate.
+
+The controller is supplied as trusted local Prolog source and should compose
+Prolog-RLM's `rlm_strange_loop` library. It must expose the fixed private ABI
+`strange_loop_tick/3` and `strange_loop_status/1`. The three tick arguments
+are the host-owned `max_iterations`, `max_candidates`, and
+`min_improvement` bounds.
+
+```yaml
+plugins:
+  zara-expert:
+    strange_loop:
+      enabled: true
+      background: true
+      interval_seconds: 60
+      max_iterations: 8
+      max_candidates: 16
+      min_improvement: 0.01
+      sources:
+        - /path/to/prolog-rlm/prolog/rlm_strange_loop.pl
+        - /path/to/.zara/experts/strange-loop/controller.pl
+      tick_predicate: strange_loop_tick
+      status_predicate: strange_loop_status
+```
+
+The manager runs through Zara's bounded `PluginRuntime.start_worker` lifecycle;
+it does not create another assistant scheduler. Lifecycle observers may attach
+to `configured`, `before_tick`, `after_tick`, `error`, and `stopped`
+with `register_strange_loop_hook`. Those callbacks are observers only: one
+failing observer cannot replace the controller, widen capabilities, or turn
+candidate data into executable handlers.
+
+The intended Prolog-RLM loop is declarative RSI: mutable snapshots contain
+facts, symbolic rules, and strategy metadata; evaluator/proposer/verifier hooks
+remain trusted and fixed for the run. Candidate promotion is bounded by
+verification and score improvement, with semantic-cycle and iteration guards.
+Pure symbolic ticks remain `model_calls=0`.
+
 ## Verification predicates
 
 Domain packages may expose only predicates registered by trusted construction-time code. Lisp-family adapters privately bind `can_handle/2`, `structural_check/2`, `structural_diagnose/2`, `preview_repair/3`, `verify_repair/3`, `style_rules/2`, and `explain_decision/2`. Backend evidence is returned as structured data; a model claim is never treated as proof.
