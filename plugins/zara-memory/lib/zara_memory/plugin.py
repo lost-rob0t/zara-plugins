@@ -120,6 +120,53 @@ class ZaraMemoryPlugin(ServicePlugin):
         client = self._require_native()
         return json.dumps(client.get(memory_id), sort_keys=True)
 
+    def observe_preference(
+        self,
+        domain: str,
+        item: str,
+        signal: str = "selected",
+        provider: str = "",
+        merchant: str = "",
+        context: dict[str, str] | None = None,
+        scope: str = "project",
+        retention: str = "long_term",
+    ) -> str:
+        client = self._require_native()
+        observation = {
+            "domain": domain,
+            "item": item,
+            "signal": signal,
+            "provider": provider,
+            "merchant": merchant,
+            "context": dict(context or {}),
+        }
+        return json.dumps(
+            client.observe_preference(
+                observation,
+                scope=scope,
+                retention=retention,
+            ),
+            sort_keys=True,
+        )
+
+    def preference_patterns(
+        self,
+        domain: str = "",
+        provider: str = "",
+        context: dict[str, str] | None = None,
+        min_observations: int = 2,
+        limit: int = 10,
+    ) -> str:
+        client = self._require_native()
+        query = {
+            "domain": domain,
+            "provider": provider,
+            "context": dict(context or {}),
+            "min_observations": min_observations,
+            "limit": limit,
+        }
+        return json.dumps(client.preference_patterns(query), sort_keys=True)
+
     def tools(self) -> Sequence[StructuredTool]:
         return (
             StructuredTool.from_function(
@@ -140,6 +187,22 @@ class ZaraMemoryPlugin(ServicePlugin):
                 func=self.get,
                 name="memory.get",
                 description="Fetch one known native symbolic-memory record by stable ID when authorized.",
+            ),
+            StructuredTool.from_function(
+                func=self.observe_preference,
+                name="memory.preference.observe",
+                description=(
+                    "Record one bounded low-authority preference observation for later deterministic "
+                    "pattern learning. This never grants permission to spend or take external actions."
+                ),
+            ),
+            StructuredTool.from_function(
+                func=self.preference_patterns,
+                name="memory.preference.patterns",
+                description=(
+                    "Derive ranked generic item preferences from authorized structured observations, "
+                    "optionally filtered by provider and context."
+                ),
             ),
         )
 
