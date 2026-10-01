@@ -391,7 +391,7 @@ def _validate_result(
     ):
         raise JavaExpertAdapterError("stale-expert-result")
     verdict = result.get("verdict")
-    if verdict not in RESULT_VERDICTS:
+    if type(verdict) is not str or verdict not in RESULT_VERDICTS:
         raise JavaExpertAdapterError("invalid-expert-verdict")
     _validate_result_usage(result)
     receipts = result.get("effect_receipts")
@@ -498,7 +498,7 @@ class ZaraJavaExpertPlugin(ServicePlugin):
         expected_runtime_generation: int,
         input_json: str = "{}",
     ) -> str:
-        if expert_operation not in ALLOWED_OPERATIONS:
+        if type(expert_operation) is not str or expert_operation not in ALLOWED_OPERATIONS:
             raise JavaExpertAdapterError("unsupported-expert-operation")
         if type(request_id) is not str or REQUEST_ID_RE.fullmatch(request_id) is None:
             raise JavaExpertAdapterError("invalid-request-id")
