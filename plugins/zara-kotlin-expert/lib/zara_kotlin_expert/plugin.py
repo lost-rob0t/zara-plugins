@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from zara.plugins import PluginMetadata, ServicePlugin
@@ -166,14 +168,131 @@ LANGUAGE_BOUNDARIES = {
     "gradle_project_metadata": True,
     "android_project_metadata": True,
 }
+SOURCE_LOCK_FIELDS = frozenset(
+    {
+        "schema_version",
+        "expert_id",
+        "adapter_version",
+        "canonical_source",
+        "runtime_contract",
+        "zara_contract",
+    }
+)
+CANONICAL_SOURCE_FIELDS = frozenset(
+    {"repository", "path", "issue", "producer_pr", "commit"}
+)
+RUNTIME_CONTRACT_FIELDS = frozenset({"repository", "issue"})
+ZARA_CONTRACT_FIELDS = frozenset({"repository", "issue", "schema_pr"})
+CANONICAL_SOURCE_REFERENCE = "dotfiles:.zara/experts/kotlin"
+CANONICAL_SOURCE_ISSUE = 292
+CANONICAL_SOURCE_PRODUCER_PR = 299
+ZARA_CONTRACT_REPOSITORY = "lost-rob0t/zara"
+ZARA_CONTRACT_ISSUE = 1233
+ZARA_CONTRACT_SCHEMA_PR = 1273
 
 
 class KotlinExpertAdapterError(RuntimeError):
     """Fail closed: this adapter never falls back to a provider or model."""
 
 
+def _source_lock_path() -> Path:
+    return Path(__file__).resolve().parents[2] / "expert-source.lock.json"
+
+
+def _reject_source_lock_duplicate_object_pairs(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    value: dict[str, object] = {}
+    for key, child in pairs:
+        if type(key) is not str or key in value:
+            raise ValueError("duplicate-json-key")
+        value[key] = child
+    return value
+
+
 def _reject_json_constant(_value: str) -> None:
     raise ValueError("non-finite JSON number")
+
+
+def _validate_source_lock() -> None:
+    try:
+        raw = _source_lock_path().read_bytes()
+    except OSError as error:
+        raise KotlinExpertAdapterError("source-lock-unavailable") from error
+    if "sha256:" + hashlib.sha256(raw).hexdigest() != MANIFEST_DIGEST:
+        raise KotlinExpertAdapterError("source-lock-digest-mismatch")
+    try:
+        lock = json.loads(
+            raw,
+            parse_constant=_reject_json_constant,
+            object_pairs_hook=_reject_source_lock_duplicate_object_pairs,
+        )
+    except (TypeError, UnicodeDecodeError, ValueError) as error:
+        raise KotlinExpertAdapterError("source-lock-invalid") from error
+    if type(lock) is not dict:
+        raise KotlinExpertAdapterError("source-lock-invalid")
+
+    canonical = lock.get("canonical_source")
+    runtime_contract = lock.get("runtime_contract")
+    zara_contract = lock.get("zara_contract")
+    runtime_repo, runtime_issue = UPSTREAM_CONTRACT.rsplit("#", 1)
+    if not (
+        set(lock) == SOURCE_LOCK_FIELDS
+        and type(lock.get("schema_version")) is int
+        and lock.get("schema_version") == 1
+        and type(lock.get("expert_id")) is str
+        and lock.get("expert_id") == EXPERT_ID
+        and type(lock.get("adapter_version")) is str
+        and lock.get("adapter_version") == PLUGIN_VERSION
+        and type(canonical) is dict
+        and set(canonical) == CANONICAL_SOURCE_FIELDS
+        and canonical.get("repository") == "lost-rob0t/dotfiles"
+        and canonical.get("path") == CANONICAL_SOURCE_REFERENCE.removeprefix("dotfiles:")
+        and type(canonical.get("issue")) is int
+        and canonical.get("issue") == CANONICAL_SOURCE_ISSUE
+        and type(canonical.get("producer_pr")) is int
+        and canonical.get("producer_pr") == CANONICAL_SOURCE_PRODUCER_PR
+        and type(canonical.get("commit")) is str
+        and re.fullmatch(r"[a-f0-9]{40}", canonical["commit"]) is not None
+        and type(runtime_contract) is dict
+        and set(runtime_contract) == RUNTIME_CONTRACT_FIELDS
+        and runtime_contract.get("repository") == runtime_repo
+        and type(runtime_contract.get("issue")) is int
+        and str(runtime_contract.get("issue")) == runtime_issue
+        and type(zara_contract) is dict
+        and set(zara_contract) == ZARA_CONTRACT_FIELDS
+        and zara_contract.get("repository") == ZARA_CONTRACT_REPOSITORY
+        and type(zara_contract.get("issue")) is int
+        and zara_contract.get("issue") == ZARA_CONTRACT_ISSUE
+        and type(zara_contract.get("schema_pr")) is int
+        and zara_contract.get("schema_pr") == ZARA_CONTRACT_SCHEMA_PR
+    ):
+        raise KotlinExpertAdapterError("source-lock-identity-mismatch")
+
+    try:
+        from zara_expert import language_family as language_family_module
+    except ImportError:
+        return
+    try:
+        specs = tuple(
+            spec
+            for spec in language_family_module.language_family_specs()
+            if getattr(spec, "key", None) == "kotlin"
+        )
+    except Exception as error:
+        raise KotlinExpertAdapterError("source-lock-host-unavailable") from error
+    if len(specs) != 1:
+        raise KotlinExpertAdapterError("source-lock-host-mismatch")
+    spec = specs[0]
+    if not (
+        getattr(spec, "expert_id", None) == EXPERT_ID
+        and getattr(spec, "source_reference", None) == CANONICAL_SOURCE_REFERENCE
+        and getattr(spec, "upstream_issue", None) == UPSTREAM_CONTRACT
+        and tuple(getattr(spec, "extensions", ())) == tuple(LANGUAGE_BOUNDARIES["extensions"])
+        and tuple(getattr(spec, "applicability_keywords", ()))
+        == ("kotlin", "kt", "kts", "kotlinc")
+    ):
+        raise KotlinExpertAdapterError("source-lock-host-mismatch")
 
 
 def _validate_json_tree(value: object, *, depth: int = 0) -> None:
@@ -454,6 +573,7 @@ class ZaraKotlinExpertPlugin(ServicePlugin):
         return value
 
     def descriptor(self) -> str:
+        _validate_source_lock()
         return self._json(
             {
                 "protocol": PROTOCOL,
@@ -507,6 +627,7 @@ class ZaraKotlinExpertPlugin(ServicePlugin):
         expected_runtime_generation: int,
         input_json: str = "{}",
     ) -> str:
+        _validate_source_lock()
         if expert_operation not in ALLOWED_OPERATIONS:
             raise KotlinExpertAdapterError("unsupported-expert-operation")
         if type(request_id) is not str or REQUEST_ID_RE.fullmatch(request_id) is None:
