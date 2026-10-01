@@ -17,6 +17,9 @@ The plugin does not bypass StarIntel authorization. Zara can do everything permi
 - `starintel_api_operations` — list live operation IDs, methods, paths, authorities, scopes, request schemas, and responses.
 - `starintel_call_operation` — call any operation by its live `operation_id`, with JSON path parameters, query parameters, body, and headers.
 - `starintel_api_request` — issue a bounded `GET`, `POST`, `PUT`, `PATCH`, or `DELETE` against any relative StarIntel path. It supports JSON, form, and text bodies.
+- `star_funds_status` — inspect the private Star Funds execution/expert state through the same StarIntel credential.
+- `star_funds_research` — discover current prediction-market research candidates without creating an order.
+- `star_funds_paper_attempt` — request a Prolog-authorized, hard-risk-gated PAPER attempt; the client has no live-order method.
 
 Use `starintel_call_operation` when the route appears in the client manifest. Use `starintel_api_request` for legacy views, OAuth routes, or a server route deployed after this plugin version.
 
@@ -110,3 +113,15 @@ When selected through the declarative Zara Home Manager plugin registry, the dis
 ## License
 
 GPL-3.0-or-later.
+
+
+## Star Funds
+
+When the connected StarIntel Server loads the private Star Funds extension, its live
+manifest advertises `star-funds.status.get` and `star-funds.tasks.call`. These
+tools reuse that discovered contract; there is no second finance credential store or
+parallel HTTP client.
+
+The Zara layer is deliberately not trading authority. It can ask Star Funds to
+research a market or run a paper attempt. Star Funds performs evidence collection,
+Prolog decision logic, deterministic risk and paper-ledger writes server-side.
